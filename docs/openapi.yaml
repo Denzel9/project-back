@@ -1,0 +1,1101 @@
+openapi: 3.0.0
+paths:
+  /:
+    get:
+      operationId: AppController_getHello
+      parameters: []
+      responses:
+        "200":
+          description: ""
+  /users/{id}:
+    get:
+      operationId: UsersController_getProfile
+      summary: Получить профиль по id
+      description: "Публичные данные User: avatar, bio, creatorProfile/companyProfile
+        и т.д. Email не возвращается (он хранится в Account). Доступен любому
+        авторизованному пользователю."
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Данные профиля
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      role:
+                        type: string
+                        enum:
+                          - CREATOR
+                          - COMPANY
+                      membershipRole:
+                        type: string
+                        enum:
+                          - OWNER
+                          - ADMIN
+                          - EDITOR
+                          - VIEWER
+                      contacts:
+                        type: array
+                        nullable: true
+                        items:
+                          type: object
+                          properties:
+                            type:
+                              type: string
+                              enum:
+                                - phone
+                                - telegram
+                                - whatsapp
+                                - instagram
+                                - youtube
+                                - vk
+                                - website
+                                - other
+                            value:
+                              type: string
+                              example: "+79991234567"
+                            label:
+                              type: string
+                              nullable: true
+                              example: WhatsApp
+                          required:
+                            - type
+                            - value
+                      phone:
+                        type: string
+                        nullable: true
+                        example: "+79991234567"
+                      location:
+                        type: string
+                        nullable: true
+                      avatar:
+                        type: string
+                        nullable: true
+                      bio:
+                        type: string
+                        nullable: true
+                      followers:
+                        type: number
+                        example: 0
+                      aboutMe:
+                        type: string
+                        nullable: true
+                      name:
+                        type: string
+                      lastName:
+                        type: string
+                      companyName:
+                        type: string
+        "404":
+          description: Пользователь не найден
+      tags: &a1
+        - users
+      security: &a2
+        - access-token: []
+  /users/update:
+    patch:
+      operationId: UsersController_updateProfile
+      summary: Обновить активный профиль
+      description: "Единственный эндпоинт редактирования профиля. Обновляет **текущий
+        активный** User из JWT. Для CREATOR: name, lastName + общие поля. Для
+        COMPANY: companyName + общие поля. Общие поля: phone, contacts,
+        location, avatar, bio, aboutMe, banner. VIEWER получит 403. Для смены
+        профиля перед редактированием — switch-profile."
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserDto"
+      responses:
+        "200":
+          description: Обновлённый профиль
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      role:
+                        type: string
+                        enum:
+                          - CREATOR
+                          - COMPANY
+                      membershipRole:
+                        type: string
+                        enum:
+                          - OWNER
+                          - ADMIN
+                          - EDITOR
+                          - VIEWER
+                      contacts:
+                        type: array
+                        nullable: true
+                        items:
+                          type: object
+                          properties:
+                            type:
+                              type: string
+                              enum:
+                                - phone
+                                - telegram
+                                - whatsapp
+                                - instagram
+                                - youtube
+                                - vk
+                                - website
+                                - other
+                            value:
+                              type: string
+                              example: "+79991234567"
+                            label:
+                              type: string
+                              nullable: true
+                              example: WhatsApp
+                          required:
+                            - type
+                            - value
+                      phone:
+                        type: string
+                        nullable: true
+                        example: "+79991234567"
+                      location:
+                        type: string
+                        nullable: true
+                      avatar:
+                        type: string
+                        nullable: true
+                      bio:
+                        type: string
+                        nullable: true
+                      followers:
+                        type: number
+                        example: 0
+                      aboutMe:
+                        type: string
+                        nullable: true
+                      name:
+                        type: string
+                      lastName:
+                        type: string
+                      companyName:
+                        type: string
+        "403":
+          description: Недостаточно прав (роль VIEWER)
+      tags: *a1
+      security: *a2
+  /auth/register/creator:
+    post:
+      operationId: AuthController_registerCreator
+      summary: Регистрация креатора
+      description: "Первый вход: создаёт Account (email/password) и первый профиль
+        User с ролью CREATOR. Выставляет cookies access-token и refresh-token.
+        Email должен быть уникальным."
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterCreatorDto"
+      responses:
+        "201":
+          description: Account и профиль созданы, пользователь авторизован
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionUserResponse"
+        "409":
+          description: Email уже зарегистрирован
+      tags: &a3
+        - auth
+  /auth/register/company:
+    post:
+      operationId: AuthController_registerCompany
+      summary: Регистрация компании
+      description: "Первый вход: создаёт Account (email/password) и первый профиль
+        User с ролью COMPANY. Выставляет cookies. Email должен быть уникальным."
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterCompanyDto"
+      responses:
+        "201":
+          description: Account и профиль созданы, пользователь авторизован
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionUserResponse"
+        "409":
+          description: Email уже зарегистрирован
+      tags: *a3
+  /auth/login:
+    post:
+      operationId: AuthController_login
+      summary: Вход
+      description: Аутентификация по email и password Account. Активирует первый
+        доступный профиль (или тот, что был при последнем switch). Выставляет
+        cookies. rememberMe=true — refresh на 30 дней, иначе 7 дней.
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginDto"
+      responses:
+        "200":
+          description: Успешный вход
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionUserResponse"
+        "401":
+          description: Неверный email или пароль
+      tags: *a3
+  /auth/profiles:
+    get:
+      operationId: AuthController_listProfiles
+      summary: Список доступных профилей
+      description: "Все профили User, к которым текущий Account имеет доступ: свои
+        (OWNER) и чужие через invite. Используйте для переключателя профилей на
+        фронте. Поле isActive — текущий профиль в JWT."
+      parameters: []
+      responses:
+        "200":
+          description: Массив профилей с displayName, role, membershipRole
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProfileSummaryResponse"
+      tags: *a3
+      security:
+        - access-token: []
+  /auth/switch-profile:
+    post:
+      operationId: AuthController_switchProfile
+      summary: Переключить активный профиль
+      description: Меняет активный User в JWT (sub). Нужен userId из GET
+        /auth/profiles. После переключения все запросы (чат, PATCH профиля) идут
+        от имени выбранного профиля. Обновляет cookies.
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SwitchProfileDto"
+      responses:
+        "200":
+          description: Профиль переключён, новые cookies
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionUserResponse"
+        "403":
+          description: Нет membership к этому профилю
+      tags: *a3
+      security:
+        - access-token: []
+  /auth/invites:
+    post:
+      operationId: AuthController_createInvite
+      summary: Пригласить менеджера к существующему профилю
+      description: "Отправляет письмо на email приглашённого. userId —
+        **существующий** профиль, которым вы управляете. Требуется роль OWNER
+        или ADMIN на этом профиле. Роли invite: ADMIN, EDITOR, VIEWER (не
+        OWNER). Приглашённый должен зарегистрироваться/войти своим email и
+        принять invite."
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInviteDto"
+      responses:
+        "201":
+          description: Приглашение создано, письмо отправлено
+        "403":
+          description: Недостаточно прав (нужен OWNER/ADMIN на профиле)
+      tags: *a3
+      security:
+        - access-token: []
+  /auth/invites/accept:
+    post:
+      operationId: AuthController_acceptInvite
+      summary: Принять приглашение
+      description: Принимает invite по token из письма (ссылка
+        /invites/accept?token=...). Email залогиненного Account должен совпадать
+        с email в приглашении. После accept профиль появится в GET
+        /auth/profiles.
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcceptInviteDto"
+      responses:
+        "200":
+          description: Приглашение принято, membership создан
+        "400":
+          description: Недействительный или просроченный token
+        "403":
+          description: Email аккаунта не совпадает с email в приглашении
+      tags: *a3
+      security:
+        - access-token: []
+  /auth/memberships/{id}:
+    delete:
+      operationId: AuthController_revokeMembership
+      summary: Отозвать доступ к профилю
+      description: Удаляет membership другого человека к профилю, которым вы
+        управляете. id — membershipId из GET /auth/profiles. Нельзя отозвать
+        OWNER. Требуется OWNER или ADMIN на профиле.
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Доступ отозван
+        "403":
+          description: Недостаточно прав
+      tags: *a3
+      security:
+        - access-token: []
+  /auth/recovery-password:
+    post:
+      operationId: AuthController_recoveryPassword
+      summary: Запрос сброса пароля
+      description: Отправляет письмо со ссылкой сброса, если Account с таким email
+        существует. Всегда возвращает успех (защита от перебора email).
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestPasswordResetDto"
+      responses:
+        "200":
+          description: Сообщение об отправке письма (независимо от наличия email)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+      tags: *a3
+  /auth/reset-password:
+    post:
+      operationId: AuthController_resetPassword
+      summary: Установить новый пароль
+      description: Меняет password Account по token из письма. Token передаёт фронт из
+        query-параметра URL письма.
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordDto"
+      responses:
+        "200":
+          description: Пароль изменён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "400":
+          description: Недействительный или просроченный token
+      tags: *a3
+  /auth/refresh:
+    post:
+      operationId: AuthController_refresh
+      summary: Обновить access token
+      description: Читает refresh-token из cookie, выдаёт новую пару токенов. Вызывать
+        при истечении access-token или proактивно с фронта.
+      parameters: []
+      responses:
+        "200":
+          description: Токены обновлены
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionUserResponse"
+        "401":
+          description: Неверный или устаревший refresh token (нужен перелогин)
+      tags: *a3
+  /auth/logout:
+    post:
+      operationId: AuthController_logout
+      summary: Выход
+      description: Очищает cookies access-token и refresh-token.
+      parameters: []
+      responses:
+        "204":
+          description: Выход выполнен
+      tags: *a3
+  /chat/conversations:
+    get:
+      operationId: ChatController_listConversations
+      summary: Список диалогов
+      description: "Все 1:1 диалоги активного профиля. Для каждого: собеседник (peer),
+        preview последнего сообщения, updatedAt. Отправка сообщений в realtime —
+        WebSocket /chat (событие send_message)."
+      parameters: []
+      responses:
+        "200":
+          description: Список диалогов с preview последнего сообщения
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChatConversationResponse"
+      tags: &a4
+        - chat
+      security: &a5
+        - access-token: []
+    post:
+      operationId: ChatController_createConversation
+      summary: Начать или открыть диалог
+      description: Создаёт 1:1 диалог с recipientId или возвращает существующий.
+        Участники должны быть CREATOR и COMPANY (разные роли). Нельзя написать
+        самому себе. recipientId — userId собеседника.
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConversationDto"
+      responses:
+        "201":
+          description: Диалог создан или найден существующий
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatConversationResponse"
+        "403":
+          description: Нельзя создать диалог (одинаковые роли или с самим собой)
+        "404":
+          description: Получатель не найден
+      tags: *a4
+      security: *a5
+  /chat/conversations/{id}/messages:
+    get:
+      operationId: ChatController_listMessages
+      summary: История сообщений
+      description: Сообщения диалога с cursor-пагинацией (от новых к старым). cursor —
+        id сообщения, limit по умолчанию 50. Только для участников диалога.
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: cursor
+          required: false
+          in: query
+          description: "Cursor-пагинация: id сообщения, старше которого загружать историю"
+          schema:
+            format: uuid
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: Сколько сообщений вернуть (по умолчанию 50, макс. 100)
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 50
+            type: number
+      responses:
+        "200":
+          description: Массив сообщений (хронологический порядок в ответе)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChatMessageResponse"
+        "403":
+          description: Нет доступа к диалогу
+      tags: *a4
+      security: *a5
+  /creator/profile:
+    get:
+      operationId: CreatorController_getProfile
+      summary: Краткая информация об активном профиле креатора
+      description: Возвращает id, role и membershipRole **активного** профиля из JWT.
+        Доступен только если активный профиль — CREATOR (после switch-profile).
+        Полные данные профиля — GET /users/:id или PATCH /users/update для
+        редактирования.
+      parameters: []
+      responses:
+        "200":
+          description: id, role, membershipRole
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionUserResponse"
+        "403":
+          description: Активный профиль не CREATOR
+      tags:
+        - creator
+      security:
+        - access-token: []
+  /company/profile:
+    get:
+      operationId: CompanyController_getProfile
+      summary: Краткая информация об активном профиле компании
+      description: Возвращает id, role и membershipRole **активного** профиля из JWT.
+        Доступен только если активный профиль — COMPANY. Полные данные — GET
+        /users/:id, редактирование — PATCH /users/update.
+      parameters: []
+      responses:
+        "200":
+          description: id, role, membershipRole
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionUserResponse"
+        "403":
+          description: Активный профиль не COMPANY
+      tags:
+        - company
+      security:
+        - access-token: []
+info:
+  title: Project Back API
+  description: >-
+    # Project Back API
+
+
+    Backend для marketplace creator ↔ company. Документация для фронтенда и
+    AI-ассистентов.
+
+
+    ## Модель данных
+
+
+    | Сущность | Что это |
+
+    |----------|---------|
+
+    | **Account** | Login: email + password. Один человек = один Account. |
+
+    | **User** | Публичный профиль: CREATOR или COMPANY. При регистрации
+    создаётся один User на Account. |
+
+    | **Membership** | Доступ Account к User: OWNER / ADMIN / EDITOR / VIEWER. |
+
+    | **Invite** | Приглашение другому человеку управлять **существующим**
+    профилем. |
+
+
+    **Активный профиль** — тот, чей `userId` в JWT (`sub`). Переключение: `POST
+    /auth/switch-profile`.
+
+
+    ## Cookies и CORS
+
+
+    - После login/register/refresh выставляются httpOnly cookies:
+    `access-token`, `refresh-token`.
+
+    - Все запросы с `credentials: 'include'`.
+
+    - CORS origin: `CORS_ORIGIN` (обычно http://localhost:3000).
+
+
+    ## Сценарии
+
+
+    ### Первый вход
+
+    1. `POST /auth/register/creator` или `/auth/register/company` — создаёт
+    Account + первый профиль.
+
+    2. `POST /auth/login` — вход по email/password.
+
+
+    ### Совместное управление (менеджер)
+
+    1. Владелец: `POST /auth/invites` — email менеджера + `userId`
+    **существующего** профиля + роль.
+
+    2. Менеджер: регистрация/логин **своим** email → `POST
+    /auth/invites/accept`.
+
+    3. Менеджер: `GET /auth/profiles` → `POST /auth/switch-profile`.
+
+
+    ### Редактирование профиля
+
+    - `PATCH /users/update` — единственный эндпоинт обновления (поля User +
+    name/companyName по роли).
+
+    - VIEWER не может редактировать (403).
+
+
+    ### Чат
+
+    - REST: список диалогов и история.
+
+    - WebSocket `/chat`: realtime-сообщения (Socket.IO).
+
+    - Только 1:1 между CREATOR и COMPANY.
+
+
+    ### Сброс пароля
+
+    1. `POST /auth/recovery-password` — письмо на email Account.
+
+    2. Ссылка: `{FRONTEND_URL}/reset-password?token=...`
+
+    3. `POST /auth/reset-password` — новый пароль Account.
+
+
+    ## WebSocket /chat
+
+
+    - URL: `http://localhost:3010/chat`, `withCredentials: true`.
+
+    - `join_conversation` → `{ conversationId }`
+
+    - `send_message` → `{ conversationId, content }`
+
+    - Ответ: `message`, ошибки: `error`
+  version: "1.0"
+  contact: {}
+tags:
+  - name: auth
+    description: Регистрация, вход, профили Account, переключение, приглашения
+      (invite), сброс пароля
+  - name: users
+    description: "Публичный профиль User: просмотр по id, редактирование активного профиля"
+  - name: creator
+    description: Эндпоинты только для активного профиля с ролью CREATOR
+  - name: company
+    description: Эндпоинты только для активного профиля с ролью COMPANY
+  - name: chat
+    description: Личные сообщения creator ↔ company (REST). Realtime — WebSocket /chat
+servers:
+  - url: http://localhost:3010
+    description: Локальная разработка
+components:
+  securitySchemes:
+    cookie:
+      type: apiKey
+      in: cookie
+      name: access-token
+  schemas:
+    ContactItemDto:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - phone
+            - telegram
+            - whatsapp
+            - instagram
+            - youtube
+            - vk
+            - website
+            - other
+          example: phone
+          description: "Тип контакта: phone, telegram, instagram и т.д."
+        value:
+          type: string
+          example: "+79991234567"
+          description: Номер телефона или URL соцсети
+        label:
+          type: string
+          example: WhatsApp
+          description: "Подпись: «Рабочий», «Личный Telegram»"
+      required:
+        - type
+        - value
+    UpdateCreatorProfileDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: John
+        lastName:
+          type: string
+          example: Doe
+    UpdateCompanyProfileDto:
+      type: object
+      properties:
+        companyName:
+          type: string
+          example: Acme Inc.
+    UpdateUserDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: John
+        lastName:
+          type: string
+          example: Doe
+        companyName:
+          type: string
+          example: Acme Inc.
+        contacts:
+          description: "Контакты: телефоны и ссылки на соцсети"
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactItemDto"
+        phone:
+          type: string
+          example: "+79991234567"
+          description: Основной телефон
+        location:
+          type: string
+          example: Moscow
+        avatar:
+          type: string
+          example: https://example.com/avatar.png
+        bio:
+          type: string
+          example: Short bio
+        aboutMe:
+          type: string
+          example: More about me
+        banner:
+          type: string
+          example: https://example.com/banner.png
+        creatorProfile:
+          $ref: "#/components/schemas/UpdateCreatorProfileDto"
+        companyProfile:
+          $ref: "#/components/schemas/UpdateCompanyProfileDto"
+    RegisterCreatorDto:
+      type: object
+      properties:
+        contacts:
+          description: "Контакты: телефоны и ссылки на соцсети"
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactItemDto"
+        phone:
+          type: string
+          example: "+79991234567"
+          description: Основной телефон
+        location:
+          type: string
+          example: Moscow
+        avatar:
+          type: string
+          example: https://example.com/avatar.png
+        bio:
+          type: string
+          example: Short bio
+        aboutMe:
+          type: string
+          example: More about me
+        email:
+          type: string
+          example: creator@example.com
+        password:
+          type: string
+          example: password123
+          minLength: 8
+        name:
+          type: string
+          example: John
+        lastName:
+          type: string
+          example: Doe
+      required:
+        - email
+        - password
+        - name
+        - lastName
+    AuthSessionUserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+            - CREATOR
+            - COMPANY
+        membershipRole:
+          type: string
+          enum:
+            - OWNER
+            - ADMIN
+            - EDITOR
+            - VIEWER
+      required:
+        - id
+        - role
+        - membershipRole
+    RegisterCompanyDto:
+      type: object
+      properties:
+        contacts:
+          description: "Контакты: телефоны и ссылки на соцсети"
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactItemDto"
+        phone:
+          type: string
+          example: "+79991234567"
+          description: Основной телефон
+        location:
+          type: string
+          example: Moscow
+        avatar:
+          type: string
+          example: https://example.com/avatar.png
+        bio:
+          type: string
+          example: Short bio
+        aboutMe:
+          type: string
+          example: More about me
+        email:
+          type: string
+          example: company@example.com
+        password:
+          type: string
+          example: password123
+          minLength: 8
+        companyName:
+          type: string
+          example: Acme Inc.
+      required:
+        - email
+        - password
+        - companyName
+    LoginDto:
+      type: object
+      properties:
+        email:
+          type: string
+          example: user@example.com
+        password:
+          type: string
+          example: password123
+        rememberMe:
+          type: boolean
+          default: false
+          description: "Запомнить меня: refresh-токен и cookie живут 30 дней вместо 7"
+      required:
+        - email
+        - password
+    ProfileSummaryResponse:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+            - CREATOR
+            - COMPANY
+        displayName:
+          type: string
+          example: John Doe
+        avatar:
+          type: string
+          nullable: true
+        membershipRole:
+          type: string
+          enum:
+            - OWNER
+            - ADMIN
+            - EDITOR
+            - VIEWER
+        membershipId:
+          type: string
+          format: uuid
+        isActive:
+          type: boolean
+      required:
+        - userId
+        - role
+        - displayName
+        - avatar
+        - membershipRole
+        - membershipId
+        - isActive
+    SwitchProfileDto:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+          description: userId профиля из GET /auth/profiles, на который переключиться
+      required:
+        - userId
+    CreateInviteDto:
+      type: object
+      properties:
+        email:
+          type: string
+          example: manager@example.com
+          description: Email приглашённого (должен совпасть с Account при accept)
+        userId:
+          type: string
+          format: uuid
+          description: userId существующего профиля, к которому даётся доступ
+        role:
+          type: string
+          enum:
+            - ADMIN
+            - EDITOR
+            - VIEWER
+          description: ADMIN — полный доступ + invite; EDITOR — редактирование; VIEWER —
+            только чтение
+      required:
+        - email
+        - userId
+        - role
+    AcceptInviteDto:
+      type: object
+      properties:
+        token:
+          type: string
+          description: Token из ссылки в письме-приглашении
+      required:
+        - token
+    RequestPasswordResetDto:
+      type: object
+      properties:
+        email:
+          type: string
+          example: user@example.com
+      required:
+        - email
+    ResetPasswordDto:
+      type: object
+      properties:
+        token:
+          type: string
+          description: Token из ссылки в письме сброса пароля
+        newPassword:
+          type: string
+          example: newPassword123
+          minLength: 8
+          description: Новый пароль Account (мин. 8 символов)
+      required:
+        - token
+        - newPassword
+    ChatPeerResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+            - CREATOR
+            - COMPANY
+          example: CREATOR
+        avatar:
+          type: string
+          nullable: true
+          example: https://example.com/avatar.png
+        displayName:
+          type: string
+          example: John Doe
+      required:
+        - id
+        - role
+        - avatar
+        - displayName
+    ChatMessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        conversationId:
+          type: string
+          format: uuid
+        senderId:
+          type: string
+          format: uuid
+        content:
+          type: string
+          example: Hello!
+        createdAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - conversationId
+        - senderId
+        - content
+        - createdAt
+    ChatConversationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        peer:
+          $ref: "#/components/schemas/ChatPeerResponse"
+        lastMessage:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ChatMessageResponse"
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - peer
+        - lastMessage
+        - updatedAt
+    CreateConversationDto:
+      type: object
+      properties:
+        recipientId:
+          type: string
+          format: uuid
+          description: userId собеседника (CREATOR или COMPANY, противоположная ваша роль)
+      required:
+        - recipientId
