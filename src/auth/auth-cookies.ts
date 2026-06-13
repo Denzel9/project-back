@@ -4,16 +4,23 @@ import type { AuthCookieOptions, AuthTokens } from './auth.types';
 export const ACCESS_TOKEN_COOKIE = 'access-token';
 export const REFRESH_TOKEN_COOKIE = 'refresh-token';
 
-function getCookieOptions(maxAgeMs: number): CookieOptions {
-  const sameSite = (process.env.COOKIE_SAME_SITE ?? 'none') as
+function resolveCookieBaseOptions(): Pick<CookieOptions, 'secure' | 'sameSite'> {
+  const sameSite = (process.env.COOKIE_SAME_SITE ?? 'lax') as
     | 'lax'
     | 'strict'
     | 'none';
 
+  // SameSite=None требует Secure. Safari не принимает Secure-cookie по HTTP
+  // (Chrome делает исключение для localhost, Safari — нет).
+  const secure = process.env.COOKIE_SECURE === 'true' || sameSite === 'none';
+
+  return { sameSite, secure };
+}
+
+function getCookieOptions(maxAgeMs: number): CookieOptions {
   return {
     httpOnly: true,
-    secure: process.env.COOKIE_SECURE === 'true' || sameSite === 'none',
-    sameSite,
+    ...resolveCookieBaseOptions(),
     path: '/',
     maxAge: maxAgeMs,
   };
@@ -76,11 +83,7 @@ export function setAuthCookies(
 export function clearAuthCookies(res: Response): void {
   const options: CookieOptions = {
     httpOnly: true,
-    secure: process.env.COOKIE_SECURE === 'true',
-    sameSite: (process.env.COOKIE_SAME_SITE ?? 'none') as
-      | 'lax'
-      | 'strict'
-      | 'none',
+    ...resolveCookieBaseOptions(),
     path: '/',
   };
 

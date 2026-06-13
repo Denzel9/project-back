@@ -7,6 +7,7 @@ const PROPERTY_LABELS: Record<string, string> = {
   userId: 'userId',
   recipientId: 'recipientId',
   contacts: 'контакты',
+  person: 'person',
   phone: 'телефон',
   name: 'имя',
   lastName: 'фамилия',

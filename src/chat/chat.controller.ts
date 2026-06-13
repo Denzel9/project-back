@@ -25,6 +25,10 @@ import { ChatConversationResponse } from './dto/chat-conversation.response';
 import { ChatMessageResponse } from './dto/chat-message.response';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { ListMessagesQueryDto } from './dto/list-messages-query.dto';
+import { SearchMessagesQueryDto } from './dto/search-messages-query.dto';
+import { SearchMessagesResponse } from './dto/search-messages-response.dto';
+import { ListAttachmentsQueryDto } from './dto/list-attachments-query.dto';
+import { ListAttachmentsResponse } from './dto/list-attachments-response.dto';
 
 @ApiTags('chat')
 @ApiCookieAuth('access-token')
@@ -75,11 +79,32 @@ export class ChatController {
     );
   }
 
+  @Get('conversations/:id/messages/search')
+  @ApiOperation({
+    summary: 'Поиск сообщений в диалоге',
+    description:
+      'Поиск по тексту content (без учёта регистра). Пагинация page/limit. ' +
+      'Сообщения возвращаются с media[]. Только для участников диалога.',
+  })
+  @ApiOkResponse({
+    description: 'Найденные сообщения с пагинацией',
+    type: SearchMessagesResponse,
+  })
+  @ApiForbiddenResponse({ description: 'Нет доступа к диалогу' })
+  searchMessages(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) conversationId: string,
+    @Query() query: SearchMessagesQueryDto
+  ) {
+    return this.chatService.searchMessages(conversationId, user.userId, query);
+  }
+
   @Get('conversations/:id/messages')
   @ApiOperation({
     summary: 'История сообщений',
     description:
       'Сообщения диалога с cursor-пагинацией (от новых к старым). ' +
+      'Каждое сообщение содержит media[] (фото/видео). ' +
       'cursor — id сообщения, limit по умолчанию 50. Только для участников диалога.',
   })
   @ApiOkResponse({
@@ -99,5 +124,25 @@ export class ChatController {
       query.cursor,
       query.limit
     );
+  }
+
+  @Get('conversations/:id/attachments')
+  @ApiOperation({
+    summary: 'Все вложения диалога',
+    description:
+      'Список всех медиа-вложений (фото/видео) в диалоге. ' +
+      'Опциональный фильтр type=image|video. Пагинация page/limit. Только для участников.',
+  })
+  @ApiOkResponse({
+    description: 'Вложения с контекстом сообщения (messageId, senderId, createdAt)',
+    type: ListAttachmentsResponse,
+  })
+  @ApiForbiddenResponse({ description: 'Нет доступа к диалогу' })
+  listAttachments(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) conversationId: string,
+    @Query() query: ListAttachmentsQueryDto
+  ) {
+    return this.chatService.listAttachments(conversationId, user.userId, query);
   }
 }

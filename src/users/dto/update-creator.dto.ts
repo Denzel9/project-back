@@ -11,5 +11,4 @@ export class UpdateCreatorProfileDto {
     @IsOptional()
     @IsString()
     lastName?: string;
-
 }

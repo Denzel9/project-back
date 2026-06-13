@@ -134,7 +134,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const message = await this.chatService.createMessage(
         payload.conversationId,
         user.userId,
-        payload.content
+        payload.content ?? '',
+        payload.media ?? []
       );
 
       await client.join(this.getRoomName(payload.conversationId));

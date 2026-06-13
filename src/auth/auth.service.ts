@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -153,7 +154,7 @@ export class AuthService {
     const account = await this.accountsService.findByEmail(dto.email);
 
     if (!account) {
-      throw new UnauthorizedException('Неверный email или пароль');
+      throw new ForbiddenException('Неверный email или пароль');
     }
 
     const passwordMatches = await bcrypt.compare(
@@ -162,7 +163,7 @@ export class AuthService {
     );
 
     if (!passwordMatches) {
-      throw new UnauthorizedException('Неверный email или пароль');
+      throw new ForbiddenException('Неверный email или пароль');
     }
 
     const membership = await this.membershipService.getDefaultProfile(
@@ -283,12 +284,7 @@ export class AuthService {
 
     const rememberMe = this.parseRememberMeFromRefreshToken(refreshToken);
 
-    return this.buildAuthResponse(
-      account,
-      user,
-      membership.role,
-      rememberMe
-    );
+    return this.buildAuthResponse(account, user, membership.role, rememberMe);
   }
 
   createInvite(authUser: AuthUser, dto: CreateInviteDto) {

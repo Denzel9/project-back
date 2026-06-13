@@ -1,5 +1,6 @@
 import { MembershipRole, Role } from '@prisma/client';
 import { ContactItem } from '../users/dto/contact-item.dto';
+import { Person } from '../users/dto/person.dto';
 
 export type JwtPayload = {
   sub: string;
@@ -42,6 +43,7 @@ export type SafeUser = {
   id: string;
   role: Role;
   contacts: ContactItem[] | null;
+  person: Person | null;
   phone: string | null;
   location: string | null;
   avatar: string | null;
@@ -54,12 +56,13 @@ export type SafeUser = {
 };
 
 export type UserProfileFields = {
-  contacts?: ContactItem[];
-  phone?: string;
-  location?: string;
-  avatar?: string;
-  bio?: string;
-  aboutMe?: string;
+  contacts?: ContactItem[] | null;
+  person?: Person | null;
+  phone?: string | null;
+  location?: string | null;
+  avatar?: string | null;
+  bio?: string | null;
+  aboutMe?: string | null;
 };
 
 export type AuthSessionUser = {

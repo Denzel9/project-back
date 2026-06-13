@@ -68,8 +68,9 @@ export class AuthController {
     @Body() dto: RegisterCreatorDto,
     @Res({ passthrough: true }) res: Response
   ) {
-    const { user, tokens, rememberMe } =
-      await this.authService.registerCreator(dto);
+    const { user, tokens, rememberMe } = await this.authService.registerCreator(
+      dto
+    );
     setAuthCookies(res, tokens, { rememberMe });
     return { user };
   }
@@ -90,8 +91,9 @@ export class AuthController {
     @Body() dto: RegisterCompanyDto,
     @Res({ passthrough: true }) res: Response
   ) {
-    const { user, tokens, rememberMe } =
-      await this.authService.registerCompany(dto);
+    const { user, tokens, rememberMe } = await this.authService.registerCompany(
+      dto
+    );
     setAuthCookies(res, tokens, { rememberMe });
     return { user };
   }
@@ -160,8 +162,11 @@ export class AuthController {
     const refreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE] as
       | string
       | undefined;
-    const { user: activeUser, tokens, rememberMe } =
-      await this.authService.switchProfile(user, dto, refreshToken);
+    const {
+      user: activeUser,
+      tokens,
+      rememberMe,
+    } = await this.authService.switchProfile(user, dto, refreshToken);
     setAuthCookies(res, tokens, { rememberMe });
     return { user: activeUser };
   }

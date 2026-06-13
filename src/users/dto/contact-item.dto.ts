@@ -39,12 +39,7 @@ function IsContactValue(validationOptions?: ValidationOptions) {
             return value.length <= 50;
           }
 
-          try {
-            new URL(value);
-            return true;
-          } catch {
-            return false;
-          }
+          return true;
         },
         defaultMessage(args: ValidationArguments) {
           const { type } = args.object as ContactItemDto;

@@ -1,12 +1,5 @@
 openapi: 3.0.0
 paths:
-  /:
-    get:
-      operationId: AppController_getHello
-      parameters: []
-      responses:
-        "200":
-          description: ""
   /users/{id}:
     get:
       operationId: UsersController_getProfile
@@ -73,6 +66,34 @@ paths:
                           required:
                             - type
                             - value
+                      person:
+                        type: object
+                        nullable: true
+                        properties:
+                          height:
+                            type: string
+                            nullable: true
+                            example: "180"
+                          weight:
+                            type: string
+                            nullable: true
+                            example: "75"
+                          size:
+                            type: string
+                            nullable: true
+                            example: M
+                          birthday:
+                            type: string
+                            nullable: true
+                            example: 1995-06-15
+                          gender:
+                            type: string
+                            nullable: true
+                            example: male
+                          parameters:
+                            type: string
+                            nullable: true
+                            example: 90-60-90
                       phone:
                         type: string
                         nullable: true
@@ -110,9 +131,12 @@ paths:
       summary: Обновить активный профиль
       description: "Единственный эндпоинт редактирования профиля. Обновляет **текущий
         активный** User из JWT. Для CREATOR: name, lastName + общие поля. Для
-        COMPANY: companyName + общие поля. Общие поля: phone, contacts,
-        location, avatar, bio, aboutMe, banner. VIEWER получит 403. Для смены
-        профиля перед редактированием — switch-profile."
+        COMPANY: companyName + общие поля. Общие поля: phone, contacts, person,
+        location, avatar, bio, aboutMe, banner. Передайте `null`, чтобы удалить
+        nullable поле (phone, bio и т.д.). person мержится с существующим:
+        `person: { height: null }` удаляет ключ, `person: null` — весь объект.
+        VIEWER получит 403. Для смены профиля перед редактированием —
+        switch-profile."
       parameters: []
       requestBody:
         required: true
@@ -173,6 +197,34 @@ paths:
                           required:
                             - type
                             - value
+                      person:
+                        type: object
+                        nullable: true
+                        properties:
+                          height:
+                            type: string
+                            nullable: true
+                            example: "180"
+                          weight:
+                            type: string
+                            nullable: true
+                            example: "75"
+                          size:
+                            type: string
+                            nullable: true
+                            example: M
+                          birthday:
+                            type: string
+                            nullable: true
+                            example: 1995-06-15
+                          gender:
+                            type: string
+                            nullable: true
+                            example: male
+                          parameters:
+                            type: string
+                            nullable: true
+                            example: 90-60-90
                       phone:
                         type: string
                         nullable: true
@@ -514,12 +566,58 @@ paths:
           description: Получатель не найден
       tags: *a4
       security: *a5
+  /chat/conversations/{id}/messages/search:
+    get:
+      operationId: ChatController_searchMessages
+      summary: Поиск сообщений в диалоге
+      description: Поиск по тексту content (без учёта регистра). Пагинация page/limit.
+        Сообщения возвращаются с media[]. Только для участников диалога.
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: q
+          required: true
+          in: query
+          description: Строка поиска по тексту сообщения
+          schema:
+            example: договор
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Найденные сообщения с пагинацией
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchMessagesResponse"
+        "403":
+          description: Нет доступа к диалогу
+      tags: *a4
+      security: *a5
   /chat/conversations/{id}/messages:
     get:
       operationId: ChatController_listMessages
       summary: История сообщений
-      description: Сообщения диалога с cursor-пагинацией (от новых к старым). cursor —
-        id сообщения, limit по умолчанию 50. Только для участников диалога.
+      description: Сообщения диалога с cursor-пагинацией (от новых к старым). Каждое
+        сообщение содержит media[] (фото/видео). cursor — id сообщения, limit по
+        умолчанию 50. Только для участников диалога.
       parameters:
         - name: id
           required: true
@@ -551,6 +649,53 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ChatMessageResponse"
+        "403":
+          description: Нет доступа к диалогу
+      tags: *a4
+      security: *a5
+  /chat/conversations/{id}/attachments:
+    get:
+      operationId: ChatController_listAttachments
+      summary: Все вложения диалога
+      description: Список всех медиа-вложений (фото/видео) в диалоге. Опциональный
+        фильтр type=image|video. Пагинация page/limit. Только для участников.
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: type
+          required: false
+          in: query
+          description: "Фильтр по типу: image — только image/*, video — только video/*"
+          schema:
+            enum:
+              - image
+              - video
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Вложения с контекстом сообщения (messageId, senderId, createdAt)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListAttachmentsResponse"
         "403":
           description: Нет доступа к диалогу
       tags: *a4
@@ -598,6 +743,633 @@ paths:
         - company
       security:
         - access-token: []
+  /media/upload:
+    post:
+      operationId: MediaController_upload
+      summary: Загрузить фото или видео
+      description: "Без query — для профиля (`PATCH /users/update`). С `postId` — для
+        поста. С `conversationId` — для чата (затем `send_message` с media[]).
+        Фото: JPEG, PNG, WebP, GIF до 10 МБ. Видео: MP4, WebM, MOV до 100 МБ."
+      parameters:
+        - name: postId
+          required: false
+          in: query
+          description: UUID поста — файл сохранится в `posts/{postId}/...` и попадёт в
+            media поста
+          schema:
+            type: string
+        - name: conversationId
+          required: false
+          in: query
+          description: UUID диалога — файл в `chats/{conversationId}/...` для send_message
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Файл изображения или видео
+      responses:
+        "201":
+          description: Файл загружен
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResponseDto"
+        "400":
+          description: Файл не передан, неверный тип или превышен размер
+        "403":
+          description: Недостаточно прав (роль VIEWER, не владелец поста или не участник
+            диалога)
+        "404":
+          description: Пост не найден
+      tags:
+        - media
+      security:
+        - access-token: []
+  /posts:
+    post:
+      operationId: PostsController_create
+      summary: Создать пост
+      description: "Создаёт пост от имени активного профиля. `ownerId` и `type`
+        выставляются из JWT. Медиа загружаются отдельно: `POST
+        /media/upload?postId={id}`."
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePostDto"
+      responses:
+        "201":
+          description: Созданный пост
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostResponseDto"
+        "403":
+          description: Недостаточно прав (роль VIEWER)
+      tags: &a6
+        - posts
+      security: &a7
+        - access-token: []
+    get:
+      operationId: PostsController_list
+      summary: Список постов
+      description: "Без `ownerId` — лента: посты **противоположной** роли (CREATOR →
+        COMPANY, COMPANY → CREATOR), без своих постов. С `ownerId` — посты
+        владельца (свои: `?ownerId={userId}`), фильтр `type` опционален. Доп.
+        фильтры: `isArchived`. Пагинация: `page`, `limit`."
+      parameters:
+        - name: ownerId
+          required: false
+          in: query
+          description: Посты конкретного владельца. Без параметра — лента без постов
+            текущего пользователя
+          schema:
+            format: uuid
+            type: string
+        - name: type
+          required: false
+          in: query
+          description: Фильтр по типу поста. Только с ownerId; в ленте тип выставляется
+            автоматически
+          schema:
+            enum:
+              - CREATOR
+              - COMPANY
+            type: string
+        - name: isArchived
+          required: false
+          in: query
+          description: Фильтр по архивным постам
+          schema:
+            type: boolean
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Список постов с пагинацией
+      tags: *a6
+      security: *a7
+  /posts/{id}/applications:
+    get:
+      operationId: PostsController_listApplications
+      summary: Отклики на пост
+      description: Только владелец поста. Список откликов с данными соискателя
+        (applicant). Фильтр по status, пагинация page/limit.
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: postId
+          required: false
+          in: query
+          description: Фильтр по посту (для входящих откликов)
+          schema:
+            format: uuid
+            type: string
+        - name: status
+          required: false
+          in: query
+          schema:
+            enum:
+              - NEW
+              - VIEWED
+              - ACCEPTED
+              - REJECTED
+              - WITHDRAWN
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Список откликов на пост
+        "403":
+          description: Не владелец поста
+        "404":
+          description: Пост не найден
+      tags: *a6
+      security: *a7
+  /posts/{id}:
+    get:
+      operationId: PostsController_findById
+      summary: Получить пост по id
+      description: Возвращает пост с `media[]` — массив URL для отображения на фронте.
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Пост
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostResponseDto"
+        "404":
+          description: Пост не найден
+      tags: *a6
+      security: *a7
+    patch:
+      operationId: PostsController_update
+      summary: Обновить пост
+      description: "Только владелец поста (`ownerId`). `ownerId` и `type` изменить
+        нельзя. `isArchived: true` — архивировать пост."
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePostDto"
+      responses:
+        "200":
+          description: Обновлённый пост
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostResponseDto"
+        "403":
+          description: Недостаточно прав (не владелец или VIEWER)
+        "404":
+          description: Пост не найден
+      tags: *a6
+      security: *a7
+    delete:
+      operationId: PostsController_remove
+      summary: Удалить пост
+      description: Удаляет пост и связанные записи `PostMedia`. Файлы в S3 не удаляются.
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Пост удалён
+        "403":
+          description: Недостаточно прав (не владелец или VIEWER)
+        "404":
+          description: Пост не найден
+      tags: *a6
+      security: *a7
+  /applications:
+    post:
+      operationId: ApplicationsController_create
+      summary: Откликнуться на пост
+      description: CREATOR → посты COMPANY, COMPANY → посты CREATOR. Один отклик на
+        пост. Нельзя откликнуться на свой или архивный пост.
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApplicationDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationResponseDto"
+        "400":
+          description: Недопустимый отклик
+        "404":
+          description: Пост не найден
+        "409":
+          description: Уже откликались на этот пост
+      tags: &a8
+        - applications
+      security: &a9
+        - access-token: []
+  /applications/mine:
+    get:
+      operationId: ApplicationsController_listMine
+      summary: Мои отклики
+      description: Отклики активного профиля с краткой информацией о посте.
+      parameters:
+        - name: postId
+          required: false
+          in: query
+          description: Фильтр по посту (для входящих откликов)
+          schema:
+            format: uuid
+            type: string
+        - name: status
+          required: false
+          in: query
+          schema:
+            enum:
+              - NEW
+              - VIEWED
+              - ACCEPTED
+              - REJECTED
+              - WITHDRAWN
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Список откликов с пагинацией
+      tags: *a8
+      security: *a9
+  /applications/incoming:
+    get:
+      operationId: ApplicationsController_listIncoming
+      summary: Входящие отклики на мои посты
+      description: "Все отклики на посты владельца. Фильтры: postId, status. Содержит
+        данные соискателя (applicant)."
+      parameters:
+        - name: postId
+          required: false
+          in: query
+          description: Фильтр по посту (для входящих откликов)
+          schema:
+            format: uuid
+            type: string
+        - name: status
+          required: false
+          in: query
+          schema:
+            enum:
+              - NEW
+              - VIEWED
+              - ACCEPTED
+              - REJECTED
+              - WITHDRAWN
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Список входящих откликов с пагинацией
+      tags: *a8
+      security: *a9
+  /applications/{id}/withdraw:
+    patch:
+      operationId: ApplicationsController_withdraw
+      summary: Отозвать отклик
+      description: Только соискатель. Статусы NEW и VIEWED → WITHDRAWN.
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationResponseDto"
+        "400":
+          description: Нельзя отозвать в текущем статусе
+        "403":
+          description: Не ваш отклик
+        "404":
+          description: Отклик не найден
+      tags: *a8
+      security: *a9
+  /applications/{id}/status:
+    patch:
+      operationId: ApplicationsController_updateStatus
+      summary: Изменить статус отклика
+      description: Только владелец поста. NEW → VIEWED/ACCEPTED/REJECTED; VIEWED →
+        ACCEPTED/REJECTED.
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateApplicationStatusDto"
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationResponseDto"
+        "400":
+          description: Недопустимый переход статуса
+        "403":
+          description: Не владелец поста
+        "404":
+          description: Отклик не найден
+      tags: *a8
+      security: *a9
+  /favorites/groups:
+    get:
+      operationId: FavoritesController_listGroups
+      summary: Список групп избранного
+      description: Группы активного профиля с количеством постов в каждой.
+      parameters: []
+      responses:
+        "200":
+          description: Группы избранного
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FavoriteGroupResponseDto"
+      tags: &a10
+        - favorites
+      security: &a11
+        - access-token: []
+    post:
+      operationId: FavoritesController_createGroup
+      summary: Создать группу избранного
+      description: "Например: «спорт». Имя уникально в рамках профиля."
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFavoriteGroupDto"
+      responses:
+        "201":
+          description: Созданная группа
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FavoriteGroupResponseDto"
+        "409":
+          description: Группа с таким названием уже существует
+      tags: *a10
+      security: *a11
+  /favorites/groups/{id}:
+    patch:
+      operationId: FavoritesController_updateGroup
+      summary: Переименовать группу
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFavoriteGroupDto"
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FavoriteGroupResponseDto"
+        "404":
+          description: Группа не найдена
+        "409":
+          description: Группа с таким названием уже существует
+      tags: *a10
+      security: *a11
+    delete:
+      operationId: FavoritesController_deleteGroup
+      summary: Удалить группу
+      description: Посты из группы остаются в избранном без группы.
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Группа удалена
+        "404":
+          description: Группа не найдена
+      tags: *a10
+      security: *a11
+  /favorites:
+    get:
+      operationId: FavoritesController_listFavorites
+      summary: Список избранных постов
+      description: Все избранные, или фильтр `groupId`, или `ungrouped=true`. Каждый
+        элемент содержит полный пост с `media[]`.
+      parameters:
+        - name: groupId
+          required: false
+          in: query
+          description: Только избранное в указанной группе
+          schema:
+            format: uuid
+            type: string
+        - name: ungrouped
+          required: false
+          in: query
+          description: Только избранное без группы (не сочетается с groupId)
+          schema:
+            type: boolean
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Избранное с пагинацией
+      tags: *a10
+      security: *a11
+    post:
+      operationId: FavoritesController_addFavorite
+      summary: Добавить пост в избранное
+      description: "Upsert: повторный вызов обновляет группу. `groupId` опционален."
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddFavoriteDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FavoriteResponseDto"
+        "404":
+          description: Пост или группа не найдены
+      tags: *a10
+      security: *a11
+  /favorites/{postId}:
+    patch:
+      operationId: FavoritesController_moveFavorite
+      summary: Переместить избранный пост в группу
+      description: "`groupId: null` — убрать из группы, оставить в избранном."
+      parameters:
+        - name: postId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveFavoriteDto"
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FavoriteResponseDto"
+        "404":
+          description: Пост не найден в избранном или группа не найдена
+      tags: *a10
+      security: *a11
+    delete:
+      operationId: FavoritesController_removeFavorite
+      summary: Убрать пост из избранного
+      parameters:
+        - name: postId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Пост убран из избранного
+        "404":
+          description: Пост не найден в избранном
+      tags: *a10
+      security: *a11
 info:
   title: Project Back API
   description: >-
@@ -671,11 +1443,60 @@ info:
     - VIEWER не может редактировать (403).
 
 
+    ### Загрузка медиа
+
+    1. `POST /media/upload` — multipart, поле `file` (фото или видео). Ответ:
+    публичный `url`.
+
+    2. `PATCH /users/update` — сохранить URL в `avatar`, `banner` и т.д.
+
+
+    ### Посты с медиа
+
+    1. `POST /posts` — создать пост (без медиа).
+
+    2. `POST /media/upload?postId={id}` — загрузить файлы; они попадут в
+    `media[]` поста.
+
+    3. `GET /posts` — лента: CREATOR видит COMPANY, COMPANY видит CREATOR (без
+    своих); `?ownerId=` — посты владельца.
+
+    4. `GET /posts/:id` — получить пост с `media[].url` для `<img src>`.
+
+
+    ### Избранное
+
+    1. `POST /favorites/groups` — создать группу (например, «спорт»).
+
+    2. `POST /favorites` — сохранить пост (postId, опционально groupId).
+
+    3. `GET /favorites` — все избранные; `?groupId=` или `?ungrouped=true`.
+
+    4. `PATCH /favorites/:postId` — переместить в группу или groupId: null.
+
+
+    ### Отклики на посты
+
+    1. `POST /applications` — отклик (postId + message). CREATOR → COMPANY,
+    COMPANY → CREATOR.
+
+    2. `GET /applications/mine` — мои отклики.
+
+    3. `GET /applications/incoming` — входящие на мои посты.
+
+    4. `GET /posts/:id/applications` — отклики на конкретный пост (владелец).
+
+    5. `PATCH /applications/:id/status` — ACCEPTED / REJECTED / VIEWED
+    (владелец).
+
+
     ### Чат
 
-    - REST: список диалогов и история.
+    - REST: список диалогов и история (сообщения с media[]).
 
     - WebSocket `/chat`: realtime-сообщения (Socket.IO).
+
+    - Медиа: `POST /media/upload?conversationId=` → `send_message` с media[].
 
     - Только 1:1 между CREATOR и COMPANY.
 
@@ -696,7 +1517,7 @@ info:
 
     - `join_conversation` → `{ conversationId }`
 
-    - `send_message` → `{ conversationId, content }`
+    - `send_message` → `{ conversationId, content?, media? }`
 
     - Ответ: `message`, ошибки: `error`
   version: "1.0"
@@ -713,6 +1534,14 @@ tags:
     description: Эндпоинты только для активного профиля с ролью COMPANY
   - name: chat
     description: Личные сообщения creator ↔ company (REST). Realtime — WebSocket /chat
+  - name: media
+    description: Загрузка фото и видео в S3. Профиль — PATCH /users/update; пост — ?postId=
+  - name: posts
+    description: "Посты creator/company: CRUD, media[] с публичными URL для фронта"
+  - name: favorites
+    description: Избранные посты активного профиля с группами (спорт и т.д.)
+  - name: applications
+    description: "Отклики на посты: mine, incoming, статусы NEW/VIEWED/ACCEPTED/REJECTED"
 servers:
   - url: http://localhost:3010
     description: Локальная разработка
@@ -750,6 +1579,39 @@ components:
       required:
         - type
         - value
+    PersonDto:
+      type: object
+      properties:
+        height:
+          type: string
+          example: "180"
+          description: Рост
+          nullable: true
+        weight:
+          type: string
+          example: "75"
+          description: Вес
+          nullable: true
+        size:
+          type: string
+          example: M
+          description: Размер одежды
+          nullable: true
+        birthday:
+          type: string
+          example: 1995-06-15
+          description: Дата рождения
+          nullable: true
+        gender:
+          type: string
+          example: male
+          description: Пол
+          nullable: true
+        parameters:
+          type: string
+          example: 90-60-90
+          description: Параметры / замеры
+          nullable: true
     UpdateCreatorProfileDto:
       type: object
       properties:
@@ -778,29 +1640,48 @@ components:
           type: string
           example: Acme Inc.
         contacts:
-          description: "Контакты: телефоны и ссылки на соцсети"
+          nullable: true
+          description: "Контакты: телефоны и ссылки на соцсети. Передайте null, чтобы
+            удалить"
           type: array
           items:
             $ref: "#/components/schemas/ContactItemDto"
+        person:
+          nullable: true
+          description: "Антропометрия и параметры. Merge с существующим объектом; null на
+            поле удаляет ключ; person: null — очистить весь блок"
+          allOf:
+            - $ref: "#/components/schemas/PersonDto"
         phone:
           type: string
           example: "+79991234567"
-          description: Основной телефон
+          nullable: true
+          description: Основной телефон. Передайте null, чтобы удалить
         location:
           type: string
           example: Moscow
+          nullable: true
+          description: Передайте null, чтобы удалить
         avatar:
           type: string
           example: https://example.com/avatar.png
+          nullable: true
+          description: Передайте null, чтобы удалить
         bio:
           type: string
           example: Short bio
+          nullable: true
+          description: Передайте null, чтобы удалить
         aboutMe:
           type: string
           example: More about me
+          nullable: true
+          description: Передайте null, чтобы удалить
         banner:
           type: string
           example: https://example.com/banner.png
+          nullable: true
+          description: Передайте null, чтобы удалить
         creatorProfile:
           $ref: "#/components/schemas/UpdateCreatorProfileDto"
         companyProfile:
@@ -1061,6 +1942,19 @@ components:
         content:
           type: string
           example: Hello!
+        media:
+          type: array
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+              key:
+                type: string
+              size:
+                type: string
+              mimeType:
+                type: string
         createdAt:
           format: date-time
           type: string
@@ -1069,6 +1963,7 @@ components:
         - conversationId
         - senderId
         - content
+        - media
         - createdAt
     ChatConversationResponse:
       type: object
@@ -1099,3 +1994,572 @@ components:
           description: userId собеседника (CREATOR или COMPANY, противоположная ваша роль)
       required:
         - recipientId
+    SearchMessagesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessageResponse"
+        total:
+          type: number
+          example: 42
+        page:
+          type: number
+          example: 1
+        limit:
+          type: number
+          example: 20
+      required:
+        - items
+        - total
+        - page
+        - limit
+    ChatAttachmentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Id записи MessageMedia
+        messageId:
+          type: string
+          format: uuid
+        senderId:
+          type: string
+          format: uuid
+        url:
+          type: string
+          example: https://8e99a641-b75a-4250-a2a3-d3ec2dbeb156.selstorage.ru/chats/uuid/file.jpg
+        key:
+          type: string
+          example: chats/uuid/file.jpg
+        size:
+          type: string
+          example: "12345"
+        mimeType:
+          type: string
+          example: image/jpeg
+        createdAt:
+          format: date-time
+          type: string
+          description: Дата сообщения, к которому относится вложение
+      required:
+        - id
+        - messageId
+        - senderId
+        - url
+        - key
+        - size
+        - mimeType
+        - createdAt
+    ListAttachmentsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatAttachmentResponse"
+        total:
+          type: number
+          example: 15
+        page:
+          type: number
+          example: 1
+        limit:
+          type: number
+          example: 20
+      required:
+        - items
+        - total
+        - page
+        - limit
+    UploadResponseDto:
+      type: object
+      properties:
+        url:
+          type: string
+          example: https://s3.ru-7.storage.selcloud.ru/project-media/user-id/uuid.jpg
+          description: Публичный URL загруженного файла
+        key:
+          type: string
+          example: user-id/uuid.jpg
+          description: Ключ объекта в бакете
+        mimeType:
+          type: string
+          example: image/jpeg
+          description: MIME-тип файла
+        size:
+          type: number
+          example: 12345
+          description: Размер файла в байтах
+      required:
+        - url
+        - key
+        - mimeType
+        - size
+    CreatePostDto:
+      type: object
+      properties:
+        title:
+          type: string
+          example: Заголовок поста
+        permissions:
+          default: &a12 []
+          type: array
+          items:
+            type: string
+        chips:
+          default: &a13 []
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+          example: ""
+          default: ""
+        typeCooperation:
+          type: array
+          example: &a14
+            - ONE_TIME
+          items: &a15
+            type: string
+            enum:
+              - ONE_TIME
+              - LONG_TIME
+        urgent:
+          type: boolean
+          default: false
+        contentType:
+          type: string
+          enum: &a16
+            - PHOTO
+            - VIDEO
+            - PHOTO_VIDEO
+          example: PHOTO
+        photoCount:
+          type: string
+          example: "0"
+          default: "0"
+        videoCount:
+          type: string
+          example: "0"
+          default: "0"
+        finalPrice:
+          type: string
+          example: "5000"
+          default: ""
+        rangePrice:
+          default: &a17 []
+          type: array
+          items:
+            type: string
+        keyWords:
+          default: &a18 []
+          type: array
+          items:
+            type: string
+        categories:
+          default: &a19 []
+          type: array
+          items:
+            type: string
+      required:
+        - title
+        - typeCooperation
+        - contentType
+    PostMediaDto:
+      type: object
+      properties:
+        url:
+          type: string
+          example: https://s3.ru-7.storage.selcloud.ru/project-media/posts/uuid/file.jpg
+        key:
+          type: string
+          example: posts/uuid/file.jpg
+        size:
+          type: string
+          example: "12345"
+        mimeType:
+          type: string
+          example: image/jpeg
+      required:
+        - url
+        - key
+        - size
+        - mimeType
+    PostResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        permissions:
+          example: []
+          type: array
+          items:
+            type: string
+        media:
+          type: array
+          items:
+            $ref: "#/components/schemas/PostMediaDto"
+        title:
+          type: string
+          example: Заголовок поста
+        ownerId:
+          type: string
+          format: uuid
+        chips:
+          example:
+            - chip1
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+          example: Описание поста
+        typeCooperation:
+          type: array
+          example:
+            - ONE_TIME
+          items:
+            type: string
+            enum:
+              - ONE_TIME
+              - LONG_TIME
+        urgent:
+          type: boolean
+          example: false
+        contentType:
+          type: string
+          enum:
+            - PHOTO
+            - VIDEO
+            - PHOTO_VIDEO
+          example: PHOTO
+        photoCount:
+          type: string
+          example: "3"
+        videoCount:
+          type: string
+          example: "0"
+        finalPrice:
+          type: string
+          example: "5000"
+        rangePrice:
+          example:
+            - "1000"
+            - "5000"
+          type: array
+          items:
+            type: string
+        isArchived:
+          type: boolean
+          example: false
+        keyWords:
+          example:
+            - keyword
+          type: array
+          items:
+            type: string
+        categories:
+          example:
+            - category
+          type: array
+          items:
+            type: string
+        type:
+          type: string
+          enum:
+            - CREATOR
+            - COMPANY
+          example: CREATOR
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - permissions
+        - media
+        - title
+        - ownerId
+        - chips
+        - description
+        - typeCooperation
+        - urgent
+        - contentType
+        - photoCount
+        - videoCount
+        - finalPrice
+        - rangePrice
+        - isArchived
+        - keyWords
+        - categories
+        - type
+        - createdAt
+        - updatedAt
+    UpdatePostDto:
+      type: object
+      properties:
+        title:
+          type: string
+          example: Заголовок поста
+        permissions:
+          default: *a12
+          type: array
+          items:
+            type: string
+        chips:
+          default: *a13
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+          example: ""
+          default: ""
+        typeCooperation:
+          type: array
+          example: *a14
+          items: *a15
+        urgent:
+          type: boolean
+          default: false
+        contentType:
+          type: string
+          enum: *a16
+          example: PHOTO
+        photoCount:
+          type: string
+          example: "0"
+          default: "0"
+        videoCount:
+          type: string
+          example: "0"
+          default: "0"
+        finalPrice:
+          type: string
+          example: "5000"
+          default: ""
+        rangePrice:
+          default: *a17
+          type: array
+          items:
+            type: string
+        keyWords:
+          default: *a18
+          type: array
+          items:
+            type: string
+        categories:
+          default: *a19
+          type: array
+          items:
+            type: string
+        isArchived:
+          type: boolean
+          description: Архивировать или вернуть пост из архива
+    CreateApplicationDto:
+      type: object
+      properties:
+        postId:
+          type: string
+          format: uuid
+        message:
+          type: string
+          example: Готов обсудить сотрудничество. Опыт 3 года.
+          minLength: 1
+          maxLength: 2000
+      required:
+        - postId
+        - message
+    ApplicationPostSummaryDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Заголовок поста
+        type:
+          type: string
+          enum:
+            - CREATOR
+            - COMPANY
+        ownerId:
+          type: string
+          format: uuid
+      required:
+        - id
+        - title
+        - type
+        - ownerId
+    ApplicationApplicantDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+            - CREATOR
+            - COMPANY
+        avatar:
+          type: string
+          nullable: true
+        name:
+          type: string
+          example: John
+          description: Для CREATOR
+        lastName:
+          type: string
+          example: Doe
+          description: Для CREATOR
+        companyName:
+          type: string
+          example: Acme Inc.
+          description: Для COMPANY
+      required:
+        - id
+        - role
+    ApplicationResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        postId:
+          type: string
+          format: uuid
+        message:
+          type: string
+          example: Готов обсудить сотрудничество
+        status:
+          type: string
+          enum:
+            - NEW
+            - VIEWED
+            - ACCEPTED
+            - REJECTED
+            - WITHDRAWN
+          example: NEW
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        post:
+          $ref: "#/components/schemas/ApplicationPostSummaryDto"
+        applicant:
+          $ref: "#/components/schemas/ApplicationApplicantDto"
+      required:
+        - id
+        - postId
+        - message
+        - status
+        - createdAt
+        - updatedAt
+    UpdateApplicationStatusDto:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - VIEWED
+            - ACCEPTED
+            - REJECTED
+          example: ACCEPTED
+          description: VIEWED, ACCEPTED или REJECTED
+      required:
+        - status
+    FavoriteGroupResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: спорт
+        count:
+          type: number
+          example: 3
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - count
+        - createdAt
+        - updatedAt
+    CreateFavoriteGroupDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: спорт
+      required:
+        - name
+    UpdateFavoriteGroupDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: спорт
+      required:
+        - name
+    AddFavoriteDto:
+      type: object
+      properties:
+        postId:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+          description: Группа избранного. Без поля — сохранить без группы
+      required:
+        - postId
+    FavoriteResponseDto:
+      type: object
+      properties:
+        postId:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+          description: null — без группы
+        groupName:
+          type: string
+          example: спорт
+          nullable: true
+          description: null — без группы
+        savedAt:
+          type: string
+          format: date-time
+        post:
+          $ref: "#/components/schemas/PostResponseDto"
+      required:
+        - postId
+        - savedAt
+        - post
+    MoveFavoriteDto:
+      type: object
+      properties:
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID группы или null — убрать из группы

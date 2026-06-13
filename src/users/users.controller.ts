@@ -45,7 +45,9 @@ export class UsersController {
     description:
       'Единственный эндпоинт редактирования профиля. Обновляет **текущий активный** User из JWT. ' +
       'Для CREATOR: name, lastName + общие поля. Для COMPANY: companyName + общие поля. ' +
-      'Общие поля: phone, contacts, location, avatar, bio, aboutMe, banner. ' +
+      'Общие поля: phone, contacts, person, location, avatar, bio, aboutMe, banner. ' +
+      'Передайте `null`, чтобы удалить nullable поле (phone, bio и т.д.). ' +
+      'person мержится с существующим: `person: { height: null }` удаляет ключ, `person: null` — весь объект. ' +
       'VIEWER получит 403. Для смены профиля перед редактированием — switch-profile.',
   })
   @ApiOkResponse({

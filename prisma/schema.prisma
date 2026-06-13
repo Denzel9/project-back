@@ -19,6 +19,30 @@ enum MembershipRole {
   VIEWER
 }
 
+enum PostAuthorType {
+  CREATOR
+  COMPANY
+}
+
+enum TypeCooperation {
+  ONE_TIME
+  LONG_TIME
+}
+
+enum PostContentType {
+  PHOTO
+  VIDEO
+  PHOTO_VIDEO
+}
+
+enum ApplicationStatus {
+  NEW
+  VIEWED
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
 model Account {
   id          String              @id @default(uuid())
   email       String              @unique
@@ -73,6 +97,7 @@ model User {
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
   contacts                 Json?
+  person                   Json?
   phone                    String?
   location                 String?
   avatar                   String?
@@ -80,6 +105,10 @@ model User {
   followers                Int                       @default(0)
   aboutMe                  String?
   banner                   String?
+  posts                    Post[]
+  favoriteGroups           FavoriteGroup[]
+  favoritePosts            FavoritePost[]
+  applications             PostApplication[] @relation("PostApplications")
 }
 
 model Conversation {
@@ -102,15 +131,30 @@ model ConversationParticipant {
 }
 
 model Message {
-  id             String       @id @default(uuid())
+  id             String         @id @default(uuid())
   conversationId String
   senderId       String
   content        String
-  createdAt      DateTime     @default(now())
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+  conversation   Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User           @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  media          MessageMedia[]
 
   @@index([conversationId, createdAt])
+}
+
+model MessageMedia {
+  id        String   @id @default(uuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  url       String
+  key       String
+  size      String
+  mimeType  String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([messageId])
 }
 
 model CreatorProfile {
@@ -126,4 +170,92 @@ model CompanyProfile {
   userId      String @unique
   user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   companyName String
+}
+
+model Post {
+  id              String            @id @default(uuid())
+  permissions     String[]          @default([])
+  title           String
+  ownerId         String
+  owner           User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  chips           String[]          @default([])
+  description     String            @default("")
+  typeCooperation TypeCooperation[]
+  urgent          Boolean           @default(false)
+  contentType     PostContentType
+  photoCount      String            @default("0")
+  videoCount      String            @default("0")
+  finalPrice      String            @default("")
+  rangePrice      String[]          @default([])
+  isArchived      Boolean           @default(false)
+  keyWords        String[]          @default([])
+  categories      String[]          @default([])
+  type            PostAuthorType
+  media           PostMedia[]
+  favorites       FavoritePost[]
+  applications    PostApplication[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([ownerId])
+  @@index([isArchived])
+}
+
+model PostMedia {
+  id        String   @id @default(uuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  url       String
+  key       String
+  size      String
+  mimeType  String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([postId])
+}
+
+model FavoriteGroup {
+  id        String         @id @default(uuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  favorites FavoritePost[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model FavoritePost {
+  id        String         @id @default(uuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId    String
+  post      Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  groupId   String?
+  group     FavoriteGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  createdAt DateTime       @default(now())
+
+  @@unique([userId, postId])
+  @@index([userId])
+  @@index([groupId])
+}
+
+model PostApplication {
+  id          String            @id @default(uuid())
+  postId      String
+  post        Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
+  applicantId String
+  applicant   User              @relation("PostApplications", fields: [applicantId], references: [id], onDelete: Cascade)
+  message     String
+  status      ApplicationStatus @default(NEW)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@unique([postId, applicantId])
+  @@index([postId])
+  @@index([applicantId])
+  @@index([status])
 }

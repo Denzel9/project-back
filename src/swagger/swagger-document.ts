@@ -38,9 +38,33 @@ Backend для marketplace creator ↔ company. Документация для 
 - \`PATCH /users/update\` — единственный эндпоинт обновления (поля User + name/companyName по роли).
 - VIEWER не может редактировать (403).
 
+### Загрузка медиа
+1. \`POST /media/upload\` — multipart, поле \`file\` (фото или видео). Ответ: публичный \`url\`.
+2. \`PATCH /users/update\` — сохранить URL в \`avatar\`, \`banner\` и т.д.
+
+### Посты с медиа
+1. \`POST /posts\` — создать пост (без медиа).
+2. \`POST /media/upload?postId={id}\` — загрузить файлы; они попадут в \`media[]\` поста.
+3. \`GET /posts\` — лента: CREATOR видит COMPANY, COMPANY видит CREATOR (без своих); \`?ownerId=\` — посты владельца.
+4. \`GET /posts/:id\` — получить пост с \`media[].url\` для \`<img src>\`.
+
+### Избранное
+1. \`POST /favorites/groups\` — создать группу (например, «спорт»).
+2. \`POST /favorites\` — сохранить пост (postId, опционально groupId).
+3. \`GET /favorites\` — все избранные; \`?groupId=\` или \`?ungrouped=true\`.
+4. \`PATCH /favorites/:postId\` — переместить в группу или groupId: null.
+
+### Отклики на посты
+1. \`POST /applications\` — отклик (postId + message). CREATOR → COMPANY, COMPANY → CREATOR.
+2. \`GET /applications/mine\` — мои отклики.
+3. \`GET /applications/incoming\` — входящие на мои посты.
+4. \`GET /posts/:id/applications\` — отклики на конкретный пост (владелец).
+5. \`PATCH /applications/:id/status\` — ACCEPTED / REJECTED / VIEWED (владелец).
+
 ### Чат
-- REST: список диалогов и история.
+- REST: список диалогов и история (сообщения с media[]).
 - WebSocket \`/chat\`: realtime-сообщения (Socket.IO).
+- Медиа: \`POST /media/upload?conversationId=\` → \`send_message\` с media[].
 - Только 1:1 между CREATOR и COMPANY.
 
 ### Сброс пароля
@@ -52,7 +76,7 @@ Backend для marketplace creator ↔ company. Документация для 
 
 - URL: \`http://localhost:3010/chat\`, \`withCredentials: true\`.
 - \`join_conversation\` → \`{ conversationId }\`
-- \`send_message\` → \`{ conversationId, content }\`
+- \`send_message\` → \`{ conversationId, content?, media? }\`
 - Ответ: \`message\`, ошибки: \`error\`
 `.trim();
 
@@ -75,6 +99,22 @@ export function createSwaggerConfig() {
     .addTag(
       'chat',
       'Личные сообщения creator ↔ company (REST). Realtime — WebSocket /chat'
+    )
+    .addTag(
+      'media',
+      'Загрузка фото и видео в S3. Профиль — PATCH /users/update; пост — ?postId='
+    )
+    .addTag(
+      'posts',
+      'Посты creator/company: CRUD, media[] с публичными URL для фронта'
+    )
+    .addTag(
+      'favorites',
+      'Избранные посты активного профиля с группами (спорт и т.д.)'
+    )
+    .addTag(
+      'applications',
+      'Отклики на посты: mine, incoming, статусы NEW/VIEWED/ACCEPTED/REJECTED'
     )
     .addCookieAuth('access-token')
     .build();

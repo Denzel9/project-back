@@ -20,6 +20,19 @@ export const contactItemSchema = {
   required: ['type', 'value'],
 };
 
+export const personSchema = {
+  type: 'object',
+  nullable: true,
+  properties: {
+    height: { type: 'string', nullable: true, example: '180' },
+    weight: { type: 'string', nullable: true, example: '75' },
+    size: { type: 'string', nullable: true, example: 'M' },
+    birthday: { type: 'string', nullable: true, example: '1995-06-15' },
+    gender: { type: 'string', nullable: true, example: 'male' },
+    parameters: { type: 'string', nullable: true, example: '90-60-90' },
+  },
+};
+
 export const userResponseSchema = {
   type: 'object',
   properties: {
@@ -37,6 +50,7 @@ export const userResponseSchema = {
           nullable: true,
           items: contactItemSchema,
         },
+        person: personSchema,
         phone: { type: 'string', nullable: true, example: '+79991234567' },
         location: { type: 'string', nullable: true },
         avatar: { type: 'string', nullable: true },

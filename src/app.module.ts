@@ -8,6 +8,10 @@ import { CompanyModule } from './company/company.module';
 import { CreatorModule } from './creator/creator.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
+import { MediaModule } from './media/media.module';
+import { PostsModule } from './posts/posts.module';
+import { FavoritesModule } from './favorites/favorites.module';
+import { ApplicationsModule } from './applications/applications.module';
 
 @Module({
   imports: [
@@ -18,6 +22,10 @@ import { UsersModule } from './users/users.module';
     ChatModule,
     CreatorModule,
     CompanyModule,
+    MediaModule,
+    PostsModule,
+    FavoritesModule,
+    ApplicationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
