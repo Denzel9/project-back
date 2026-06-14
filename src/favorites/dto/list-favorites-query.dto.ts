@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, IsUUID, Max, Min, MinLength } from 'class-validator';
 
 export class ListFavoritesQueryDto {
   @ApiPropertyOptional({
@@ -22,6 +22,19 @@ export class ListFavoritesQueryDto {
   })
   @IsBoolean()
   ungrouped?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Поиск по названию поста или названию компании-автора',
+    example: 'реклама',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    const trimmed = typeof value === 'string' ? value.trim() : value;
+    return trimmed === '' ? undefined : trimmed;
+  })
+  @IsString()
+  @MinLength(1)
+  q?: string;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()

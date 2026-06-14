@@ -45,13 +45,13 @@ Backend для marketplace creator ↔ company. Документация для 
 ### Посты с медиа
 1. \`POST /posts\` — создать пост (без медиа).
 2. \`POST /media/upload?postId={id}\` — загрузить файлы; они попадут в \`media[]\` поста.
-3. \`GET /posts\` — лента: CREATOR видит COMPANY, COMPANY видит CREATOR (без своих); \`?ownerId=\` — посты владельца.
+3. \`GET /posts\` — все посты кроме своих; \`?q=\` — поиск по title или companyName; \`?ownerId=\`, \`?type=\`, \`?isArchived=\`.
 4. \`GET /posts/:id\` — получить пост с \`media[].url\` для \`<img src>\`.
 
 ### Избранное
 1. \`POST /favorites/groups\` — создать группу (например, «спорт»).
 2. \`POST /favorites\` — сохранить пост (postId, опционально groupId).
-3. \`GET /favorites\` — все избранные; \`?groupId=\` или \`?ungrouped=true\`.
+3. \`GET /favorites\` — все избранные; \`?q=\` — поиск по title или companyName; \`?groupId=\` или \`?ungrouped=true\`.
 4. \`PATCH /favorites/:postId\` — переместить в группу или groupId: null.
 
 ### Отклики на посты

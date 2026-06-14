@@ -6,16 +6,17 @@ import {
   IsEnum,
   IsInt,
   IsOptional,
+  IsString,
   IsUUID,
   Max,
   Min,
+  MinLength,
 } from 'class-validator';
 
 export class ListPostsQueryDto {
   @ApiPropertyOptional({
     format: 'uuid',
-    description:
-      'Посты конкретного владельца. Без параметра — лента без постов текущего пользователя',
+    description: 'Фильтр по владельцу. Без параметра — все посты, кроме своих',
   })
   @IsOptional()
   @IsUUID()
@@ -23,8 +24,7 @@ export class ListPostsQueryDto {
 
   @ApiPropertyOptional({
     enum: PostAuthorType,
-    description:
-      'Фильтр по типу поста. Только с ownerId; в ленте тип выставляется автоматически',
+    description: 'Фильтр по типу поста (CREATOR / COMPANY)',
   })
   @IsOptional()
   @IsEnum(PostAuthorType)
@@ -39,6 +39,19 @@ export class ListPostsQueryDto {
   })
   @IsBoolean()
   isArchived?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Поиск по названию поста или названию компании-автора',
+    example: 'реклама',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    const trimmed = typeof value === 'string' ? value.trim() : value;
+    return trimmed === '' ? undefined : trimmed;
+  })
+  @IsString()
+  @MinLength(1)
+  q?: string;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()

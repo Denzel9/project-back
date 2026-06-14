@@ -825,24 +825,22 @@ paths:
     get:
       operationId: PostsController_list
       summary: Список постов
-      description: "Без `ownerId` — лента: посты **противоположной** роли (CREATOR →
-        COMPANY, COMPANY → CREATOR), без своих постов. С `ownerId` — посты
-        владельца (свои: `?ownerId={userId}`), фильтр `type` опционален. Доп.
-        фильтры: `isArchived`. Пагинация: `page`, `limit`."
+      description: "Без `ownerId` — все посты кроме своих. С `ownerId` — посты
+        указанного владельца. Поиск: `q` — по названию поста или названию
+        компании. Опциональные фильтры: `type`, `isArchived`. Пагинация: `page`,
+        `limit`."
       parameters:
         - name: ownerId
           required: false
           in: query
-          description: Посты конкретного владельца. Без параметра — лента без постов
-            текущего пользователя
+          description: Фильтр по владельцу. Без параметра — все посты, кроме своих
           schema:
             format: uuid
             type: string
         - name: type
           required: false
           in: query
-          description: Фильтр по типу поста. Только с ownerId; в ленте тип выставляется
-            автоматически
+          description: Фильтр по типу поста (CREATOR / COMPANY)
           schema:
             enum:
               - CREATOR
@@ -854,6 +852,13 @@ paths:
           description: Фильтр по архивным постам
           schema:
             type: boolean
+        - name: q
+          required: false
+          in: query
+          description: Поиск по названию поста или названию компании-автора
+          schema:
+            example: реклама
+            type: string
         - name: page
           required: false
           in: query
@@ -1268,8 +1273,9 @@ paths:
     get:
       operationId: FavoritesController_listFavorites
       summary: Список избранных постов
-      description: Все избранные, или фильтр `groupId`, или `ungrouped=true`. Каждый
-        элемент содержит полный пост с `media[]`.
+      description: "Все избранные, или фильтр `groupId`, или `ungrouped=true`. Поиск:
+        `q` — по названию поста или названию компании. Каждый элемент содержит
+        полный пост с `media[]`."
       parameters:
         - name: groupId
           required: false
@@ -1284,6 +1290,13 @@ paths:
           description: Только избранное без группы (не сочетается с groupId)
           schema:
             type: boolean
+        - name: q
+          required: false
+          in: query
+          description: Поиск по названию поста или названию компании-автора
+          schema:
+            example: реклама
+            type: string
         - name: page
           required: false
           in: query
@@ -1458,8 +1471,8 @@ info:
     2. `POST /media/upload?postId={id}` — загрузить файлы; они попадут в
     `media[]` поста.
 
-    3. `GET /posts` — лента: CREATOR видит COMPANY, COMPANY видит CREATOR (без
-    своих); `?ownerId=` — посты владельца.
+    3. `GET /posts` — все посты кроме своих; `?q=` — поиск по title или
+    companyName; `?ownerId=`, `?type=`, `?isArchived=`.
 
     4. `GET /posts/:id` — получить пост с `media[].url` для `<img src>`.
 
@@ -1470,7 +1483,8 @@ info:
 
     2. `POST /favorites` — сохранить пост (postId, опционально groupId).
 
-    3. `GET /favorites` — все избранные; `?groupId=` или `?ungrouped=true`.
+    3. `GET /favorites` — все избранные; `?q=` — поиск по title или companyName;
+    `?groupId=` или `?ungrouped=true`.
 
     4. `PATCH /favorites/:postId` — переместить в группу или groupId: null.
 

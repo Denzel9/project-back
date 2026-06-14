@@ -77,19 +77,24 @@ export class PostsService {
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
 
-    const isFeed = query.ownerId === undefined;
-
     const where: Prisma.PostWhereInput = {
-      ...(isFeed
-        ? {
-            ownerId: { not: user.userId },
-            type: this.oppositePostAuthorType(user.role),
-          }
-        : {
-            ownerId: query.ownerId,
-            ...(query.type !== undefined && { type: query.type }),
-          }),
+      ...(query.ownerId !== undefined
+        ? { ownerId: query.ownerId }
+        : { ownerId: { not: user.userId } }),
+      ...(query.type !== undefined && { type: query.type }),
       ...(query.isArchived !== undefined && { isArchived: query.isArchived }),
+      ...(query.q !== undefined && {
+        OR: [
+          { title: { contains: query.q, mode: 'insensitive' } },
+          {
+            owner: {
+              companyProfile: {
+                companyName: { contains: query.q, mode: 'insensitive' },
+              },
+            },
+          },
+        ],
+      }),
     };
 
     const [items, total] = await Promise.all([
@@ -104,7 +109,7 @@ export class PostsService {
     ]);
 
     return {
-      items: items.map((post) => this.toResponse(post)),
+      items: items.map(post => this.toResponse(post)),
       total,
       page,
       limit,
@@ -146,7 +151,9 @@ export class PostsService {
     }
 
     if (post.ownerId !== userId) {
-      throw new ForbiddenException('Недостаточно прав для загрузки в этот пост');
+      throw new ForbiddenException(
+        'Недостаточно прав для загрузки в этот пост'
+      );
     }
 
     return post;
@@ -199,18 +206,6 @@ export class PostsService {
     throw new BadRequestException('Недопустимая роль для создания поста');
   }
 
-  private oppositePostAuthorType(role: Role): PostAuthorType {
-    if (role === Role.CREATOR) {
-      return PostAuthorType.COMPANY;
-    }
-
-    if (role === Role.COMPANY) {
-      return PostAuthorType.CREATOR;
-    }
-
-    throw new BadRequestException('Недопустимая роль');
-  }
-
   private buildUpdateData(dto: UpdatePostDto): Prisma.PostUpdateInput {
     const data: Prisma.PostUpdateInput = {};
 
@@ -238,7 +233,7 @@ export class PostsService {
     return {
       id: post.id,
       permissions: post.permissions,
-      media: post.media.map((item) => ({
+      media: post.media.map(item => ({
         url: item.url,
         key: item.key,
         size: item.size,

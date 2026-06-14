@@ -224,6 +224,20 @@ export class FavoritesService {
       userId: user.userId,
       ...(query.groupId !== undefined && { groupId: query.groupId }),
       ...(query.ungrouped === true && { groupId: null }),
+      ...(query.q !== undefined && {
+        post: {
+          OR: [
+            { title: { contains: query.q, mode: 'insensitive' } },
+            {
+              owner: {
+                companyProfile: {
+                  companyName: { contains: query.q, mode: 'insensitive' },
+                },
+              },
+            },
+          ],
+        },
+      }),
     };
 
     const [items, total] = await Promise.all([

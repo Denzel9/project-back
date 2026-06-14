@@ -64,7 +64,9 @@ export class FavoritesController {
     type: FavoriteGroupResponseDto,
     description: 'Созданная группа',
   })
-  @ApiConflictResponse({ description: 'Группа с таким названием уже существует' })
+  @ApiConflictResponse({
+    description: 'Группа с таким названием уже существует',
+  })
   createGroup(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateFavoriteGroupDto
@@ -76,7 +78,9 @@ export class FavoritesController {
   @ApiOperation({ summary: 'Переименовать группу' })
   @ApiOkResponse({ type: FavoriteGroupResponseDto })
   @ApiNotFoundResponse({ description: 'Группа не найдена' })
-  @ApiConflictResponse({ description: 'Группа с таким названием уже существует' })
+  @ApiConflictResponse({
+    description: 'Группа с таким названием уже существует',
+  })
   updateGroup(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -105,6 +109,7 @@ export class FavoritesController {
     summary: 'Список избранных постов',
     description:
       'Все избранные, или фильтр `groupId`, или `ungrouped=true`. ' +
+      'Поиск: `q` — по названию поста или названию компании. ' +
       'Каждый элемент содержит полный пост с `media[]`.',
   })
   @ApiOkResponse({ description: 'Избранное с пагинацией' })
@@ -133,7 +138,9 @@ export class FavoritesController {
     description: '`groupId: null` — убрать из группы, оставить в избранном.',
   })
   @ApiOkResponse({ type: FavoriteResponseDto })
-  @ApiNotFoundResponse({ description: 'Пост не найден в избранном или группа не найдена' })
+  @ApiNotFoundResponse({
+    description: 'Пост не найден в избранном или группа не найдена',
+  })
   moveFavorite(
     @CurrentUser() user: AuthUser,
     @Param('postId', ParseUUIDPipe) postId: string,

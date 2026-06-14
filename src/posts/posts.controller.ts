@@ -62,9 +62,9 @@ export class PostsController {
   @ApiOperation({
     summary: 'Список постов',
     description:
-      'Без `ownerId` — лента: посты **противоположной** роли (CREATOR → COMPANY, COMPANY → CREATOR), ' +
-      'без своих постов. С `ownerId` — посты владельца (свои: `?ownerId={userId}`), фильтр `type` опционален. ' +
-      'Доп. фильтры: `isArchived`. Пагинация: `page`, `limit`.',
+      'Без `ownerId` — все посты кроме своих. С `ownerId` — посты указанного владельца. ' +
+      'Поиск: `q` — по названию поста или названию компании. ' +
+      'Опциональные фильтры: `type`, `isArchived`. Пагинация: `page`, `limit`.',
   })
   @ApiOkResponse({ description: 'Список постов с пагинацией' })
   list(@CurrentUser() user: AuthUser, @Query() query: ListPostsQueryDto) {
