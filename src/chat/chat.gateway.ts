@@ -126,10 +126,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     try {
-      await this.membershipService.assertCanWrite(
-        user.accountId,
-        user.userId
-      );
+      await this.membershipService.assertCanWrite(user.accountId, user.userId);
 
       const message = await this.chatService.createMessage(
         payload.conversationId,
