@@ -544,8 +544,7 @@ paths:
       operationId: ChatController_createConversation
       summary: Начать или открыть диалог
       description: Создаёт 1:1 диалог с recipientId или возвращает существующий.
-        Участники должны быть CREATOR и COMPANY (разные роли). Нельзя написать
-        самому себе. recipientId — userId собеседника.
+        Нельзя написать самому себе. recipientId — userId собеседника.
       parameters: []
       requestBody:
         required: true
@@ -561,7 +560,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ChatConversationResponse"
         "403":
-          description: Нельзя создать диалог (одинаковые роли или с самим собой)
+          description: Нельзя создать диалог с самим собой
         "404":
           description: Получатель не найден
       tags: *a4
@@ -909,6 +908,22 @@ paths:
               - REJECTED
               - WITHDRAWN
             type: string
+        - name: q
+          required: false
+          in: query
+          description: Поиск по названию поста или названию компании-автора
+          schema:
+            example: реклама
+            type: string
+        - name: type
+          required: false
+          in: query
+          description: Фильтр по типу поста (CREATOR / COMPANY)
+          schema:
+            enum:
+              - CREATOR
+              - COMPANY
+            type: string
         - name: page
           required: false
           in: query
@@ -1008,8 +1023,8 @@ paths:
     post:
       operationId: ApplicationsController_create
       summary: Откликнуться на пост
-      description: CREATOR → посты COMPANY, COMPANY → посты CREATOR. Один отклик на
-        пост. Нельзя откликнуться на свой или архивный пост.
+      description: Один отклик на пост. Нельзя откликнуться на свой или архивный пост.
+        Создаёт сообщение «Новый отклик» в диалоге с владельцем поста.
       parameters: []
       requestBody:
         required: true
@@ -1038,7 +1053,9 @@ paths:
     get:
       operationId: ApplicationsController_listMine
       summary: Мои отклики
-      description: Отклики активного профиля с краткой информацией о посте.
+      description: "Отклики активного профиля с краткой информацией о посте. Фильтры:
+        `type` (CREATOR / COMPANY), `status`. Поиск: `q` — по названию поста или
+        названию компании."
       parameters:
         - name: postId
           required: false
@@ -1057,6 +1074,22 @@ paths:
               - ACCEPTED
               - REJECTED
               - WITHDRAWN
+            type: string
+        - name: q
+          required: false
+          in: query
+          description: Поиск по названию поста или названию компании-автора
+          schema:
+            example: реклама
+            type: string
+        - name: type
+          required: false
+          in: query
+          description: Фильтр по типу поста (CREATOR / COMPANY)
+          schema:
+            enum:
+              - CREATOR
+              - COMPANY
             type: string
         - name: page
           required: false
@@ -1102,6 +1135,22 @@ paths:
               - ACCEPTED
               - REJECTED
               - WITHDRAWN
+            type: string
+        - name: q
+          required: false
+          in: query
+          description: Поиск по названию поста или названию компании-автора
+          schema:
+            example: реклама
+            type: string
+        - name: type
+          required: false
+          in: query
+          description: Фильтр по типу поста (CREATOR / COMPANY)
+          schema:
+            enum:
+              - CREATOR
+              - COMPANY
             type: string
         - name: page
           required: false
@@ -1491,10 +1540,10 @@ info:
 
     ### Отклики на посты
 
-    1. `POST /applications` — отклик (postId + message). CREATOR → COMPANY,
-    COMPANY → CREATOR.
+    1. `POST /applications` — отклик (postId + message); создаёт сообщение в
+    чате с владельцем поста.
 
-    2. `GET /applications/mine` — мои отклики.
+    2. `GET /applications/mine` — мои отклики; `?type=`, `?q=`, `?status=`.
 
     3. `GET /applications/incoming` — входящие на мои посты.
 
@@ -1512,7 +1561,7 @@ info:
 
     - Медиа: `POST /media/upload?conversationId=` → `send_message` с media[].
 
-    - Только 1:1 между CREATOR и COMPANY.
+    - 1:1 диалог между любыми пользователями.
 
 
     ### Сброс пароля
@@ -2005,7 +2054,7 @@ components:
         recipientId:
           type: string
           format: uuid
-          description: userId собеседника (CREATOR или COMPANY, противоположная ваша роль)
+          description: userId собеседника
       required:
         - recipientId
     SearchMessagesResponse:

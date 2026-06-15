@@ -1,7 +1,16 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { ApplicationStatus } from '@prisma/client';
-import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { ApplicationStatus, PostAuthorType } from '@prisma/client';
+import { Type, Transform } from 'class-transformer';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class ListApplicationsQueryDto {
   @ApiPropertyOptional({
@@ -16,6 +25,27 @@ export class ListApplicationsQueryDto {
   @IsOptional()
   @IsEnum(ApplicationStatus)
   status?: ApplicationStatus;
+
+  @ApiPropertyOptional({
+    description: 'Поиск по названию поста или названию компании-автора',
+    example: 'реклама',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    const trimmed = typeof value === 'string' ? value.trim() : value;
+    return trimmed === '' ? undefined : trimmed;
+  })
+  @IsString()
+  @MinLength(1)
+  q?: string;
+
+  @ApiPropertyOptional({
+    enum: PostAuthorType,
+    description: 'Фильтр по типу поста (CREATOR / COMPANY)',
+  })
+  @IsOptional()
+  @IsEnum(PostAuthorType)
+  type?: PostAuthorType;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()

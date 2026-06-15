@@ -17,6 +17,7 @@ import { JwtPayload } from '../auth/auth.types';
 import { ChatService } from './chat.service';
 import {
   ChatErrorPayload,
+  ChatMessageDto,
   JoinConversationPayload,
   SendMessagePayload,
 } from './chat.types';
@@ -137,12 +138,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       await client.join(this.getRoomName(payload.conversationId));
 
-      this.server
-        .to(this.getRoomName(payload.conversationId))
-        .emit('message', message);
+      this.broadcastMessage(payload.conversationId, message);
     } catch (error) {
       this.emitError(client, this.getErrorMessage(error));
     }
+  }
+
+  broadcastMessage(conversationId: string, message: ChatMessageDto): void {
+    this.server.to(this.getRoomName(conversationId)).emit('message', message);
   }
 
   private getRoomName(conversationId: string): string {

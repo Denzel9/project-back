@@ -40,8 +40,8 @@ export class ApplicationsController {
   @ApiOperation({
     summary: 'Откликнуться на пост',
     description:
-      'CREATOR → посты COMPANY, COMPANY → посты CREATOR. Один отклик на пост. ' +
-      'Нельзя откликнуться на свой или архивный пост.',
+      'Один отклик на пост. Нельзя откликнуться на свой или архивный пост. ' +
+      'Создаёт сообщение «Новый отклик» в диалоге с владельцем поста.',
   })
   @ApiCreatedResponse({ type: ApplicationResponseDto })
   @ApiNotFoundResponse({ description: 'Пост не найден' })
@@ -54,7 +54,10 @@ export class ApplicationsController {
   @Get('mine')
   @ApiOperation({
     summary: 'Мои отклики',
-    description: 'Отклики активного профиля с краткой информацией о посте.',
+    description:
+      'Отклики активного профиля с краткой информацией о посте. ' +
+      'Фильтры: `type` (CREATOR / COMPANY), `status`. ' +
+      'Поиск: `q` — по названию поста или названию компании.',
   })
   @ApiOkResponse({ description: 'Список откликов с пагинацией' })
   listMine(

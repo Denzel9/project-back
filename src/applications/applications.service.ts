@@ -12,6 +12,8 @@ import {
   Role,
 } from '@prisma/client';
 import { AuthUser } from '../auth/auth.types';
+import { ChatGateway } from '../chat/chat.gateway';
+import { ChatService } from '../chat/chat.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApplicationApplicantDto } from './dto/application-applicant.dto';
 import { ApplicationResponseDto } from './dto/application-response.dto';
@@ -65,7 +67,11 @@ const OWNER_TRANSITIONS: Record<ApplicationStatus, ApplicationStatus[]> = {
 
 @Injectable()
 export class ApplicationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly chatService: ChatService,
+    private readonly chatGateway: ChatGateway
+  ) {}
 
   async create(
     user: AuthUser,
@@ -82,15 +88,36 @@ export class ApplicationsService {
 
     this.assertCanApply(user, post);
 
+    const chatContent = 'Новый отклик';
+
     try {
-      const application = await this.prisma.postApplication.create({
-        data: {
-          postId: dto.postId,
-          applicantId: user.userId,
-          message: dto.message,
-        },
-        include: applicationInclude,
-      });
+      const { application, conversationId, message } =
+        await this.prisma.$transaction(async tx => {
+          const created = await tx.postApplication.create({
+            data: {
+              postId: dto.postId,
+              applicantId: user.userId,
+              message: dto.message,
+            },
+            include: applicationInclude,
+          });
+
+          const chatResult =
+            await this.chatService.sendApplicationMessageInTransaction(
+              tx,
+              user.userId,
+              post.ownerId,
+              chatContent
+            );
+
+          return {
+            application: created,
+            conversationId: chatResult.conversationId,
+            message: chatResult.message,
+          };
+        });
+
+      this.chatGateway.broadcastMessage(conversationId, message);
 
       return this.mapApplication(application, { includePost: true });
     } catch (error) {
@@ -106,10 +133,13 @@ export class ApplicationsService {
   }
 
   async listMine(user: AuthUser, query: ListApplicationsQueryDto) {
+    const postFilter = this.buildPostListFilter(query);
+
     return this.listApplications(
       {
         applicantId: user.userId,
         ...(query.status !== undefined && { status: query.status }),
+        ...(postFilter !== undefined && { post: postFilter }),
       },
       query,
       { includePost: true }
@@ -130,7 +160,11 @@ export class ApplicationsService {
     );
   }
 
-  async listByPost(user: AuthUser, postId: string, query: ListApplicationsQueryDto) {
+  async listByPost(
+    user: AuthUser,
+    postId: string,
+    query: ListApplicationsQueryDto
+  ) {
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
       select: { ownerId: true },
@@ -211,6 +245,45 @@ export class ApplicationsService {
     return this.mapApplication(updated, { includeApplicant: true });
   }
 
+  private buildPostListFilter(
+    query: Pick<ListApplicationsQueryDto, 'q' | 'type'>
+  ): Prisma.PostWhereInput | undefined {
+    const parts: Prisma.PostWhereInput[] = [];
+
+    if (query.q !== undefined) {
+      parts.push(this.buildPostSearchWhere(query.q));
+    }
+
+    if (query.type !== undefined) {
+      parts.push({ type: query.type });
+    }
+
+    if (parts.length === 0) {
+      return undefined;
+    }
+
+    if (parts.length === 1) {
+      return parts[0];
+    }
+
+    return { AND: parts };
+  }
+
+  private buildPostSearchWhere(q: string): Prisma.PostWhereInput {
+    return {
+      OR: [
+        { title: { contains: q, mode: 'insensitive' } },
+        {
+          owner: {
+            companyProfile: {
+              companyName: { contains: q, mode: 'insensitive' },
+            },
+          },
+        },
+      ],
+    };
+  }
+
   private async listApplications(
     where: Prisma.PostApplicationWhereInput,
     query: ListApplicationsQueryDto,
@@ -232,7 +305,7 @@ export class ApplicationsService {
     ]);
 
     return {
-      items: items.map((item) => this.mapApplication(item, options)),
+      items: items.map(item => this.mapApplication(item, options)),
       total,
       page,
       limit,
@@ -269,18 +342,6 @@ export class ApplicationsService {
 
     if (post.isArchived) {
       throw new BadRequestException('Нельзя откликнуться на архивный пост');
-    }
-
-    if (user.role === Role.CREATOR && post.type !== PostAuthorType.COMPANY) {
-      throw new BadRequestException(
-        'CREATOR может откликаться только на посты COMPANY'
-      );
-    }
-
-    if (user.role === Role.COMPANY && post.type !== PostAuthorType.CREATOR) {
-      throw new BadRequestException(
-        'COMPANY может откликаться только на посты CREATOR'
-      );
     }
   }
 

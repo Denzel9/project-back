@@ -33,6 +33,8 @@ const messageWithMediaInclude = {
 
 type UserWithProfile = Awaited<ReturnType<UsersService['findById']>>;
 
+type PrismaTx = Prisma.TransactionClient;
+
 @Injectable()
 export class ChatService {
   constructor(
@@ -70,7 +72,7 @@ export class ChatService {
 
     return participations.map(({ conversation }) => {
       const peerParticipant = conversation.participants.find(
-        (participant) => participant.userId !== userId
+        participant => participant.userId !== userId
       );
 
       if (!peerParticipant) {
@@ -104,8 +106,6 @@ export class ChatService {
     if (!currentUser || !recipient) {
       throw new NotFoundException('Пользователь не найден');
     }
-
-    this.assertOppositeRoles(currentUser.role, recipient.role);
 
     const existing = await this.prisma.conversation.findFirst({
       where: {
@@ -167,11 +167,14 @@ export class ChatService {
 
     const cursorMessage = cursor
       ? await this.prisma.message.findUnique({
-          where: { id: cursor },
-        })
+        where: { id: cursor },
+      })
       : null;
 
-    if (cursor && (!cursorMessage || cursorMessage.conversationId !== conversationId)) {
+    if (
+      cursor &&
+      (!cursorMessage || cursorMessage.conversationId !== conversationId)
+    ) {
       throw new BadRequestException('Недействительный курсор пагинации');
     }
 
@@ -180,14 +183,14 @@ export class ChatService {
         conversationId,
         ...(cursorMessage
           ? {
-              OR: [
-                { createdAt: { lt: cursorMessage.createdAt } },
-                {
-                  createdAt: cursorMessage.createdAt,
-                  id: { lt: cursorMessage.id },
-                },
-              ],
-            }
+            OR: [
+              { createdAt: { lt: cursorMessage.createdAt } },
+              {
+                createdAt: cursorMessage.createdAt,
+                id: { lt: cursorMessage.id },
+              },
+            ],
+          }
           : {}),
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -195,7 +198,7 @@ export class ChatService {
       include: messageWithMediaInclude,
     });
 
-    return messages.reverse().map((message) => this.mapMessage(message));
+    return messages.reverse().map(message => this.mapMessage(message));
   }
 
   async searchMessages(
@@ -231,7 +234,7 @@ export class ChatService {
     ]);
 
     return {
-      items: messages.map((message) => this.mapMessage(message)),
+      items: messages.map(message => this.mapMessage(message)),
       total,
       page,
       limit,
@@ -284,7 +287,7 @@ export class ChatService {
     ]);
 
     return {
-      items: attachments.map((attachment) => this.mapAttachment(attachment)),
+      items: attachments.map(attachment => this.mapAttachment(attachment)),
       total,
       page,
       limit,
@@ -309,43 +312,145 @@ export class ChatService {
     const expectedKeyPrefix = `chats/${conversationId}/`;
     for (const item of normalizedMedia) {
       if (!item.key.startsWith(expectedKeyPrefix)) {
-        throw new BadRequestException('Недопустимый ключ медиа для этого диалога');
+        throw new BadRequestException(
+          'Недопустимый ключ медиа для этого диалога'
+        );
       }
     }
 
-    const message = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.message.create({
-        data: {
-          conversationId,
-          senderId,
-          content: trimmedContent,
-          ...(normalizedMedia.length > 0 && {
-            media: {
-              create: normalizedMedia.map((item, index) => ({
-                url: item.url,
-                key: item.key,
-                size: String(item.size),
-                mimeType: item.mimeType,
-                sortOrder: index,
-              })),
-            },
-          }),
-        },
-        include: messageWithMediaInclude,
-      });
-
-      await tx.conversation.update({
-        where: { id: conversationId },
-        data: { updatedAt: created.createdAt },
-      });
-
-      return created;
-    });
+    const message = await this.prisma.$transaction(tx =>
+      this.createMessageInTransaction(
+        tx,
+        conversationId,
+        senderId,
+        trimmedContent,
+        normalizedMedia
+      )
+    );
 
     return this.mapMessage(message);
   }
 
-  async assertParticipant(conversationId: string, userId: string): Promise<void> {
+  async sendApplicationMessageInTransaction(
+    tx: PrismaTx,
+    applicantId: string,
+    postOwnerId: string,
+    content: string
+  ): Promise<{ conversationId: string; message: ChatMessageDto }> {
+    if (applicantId === postOwnerId) {
+      throw new BadRequestException('Нельзя создать диалог с самим собой');
+    }
+
+    const [currentUser, recipient] = await Promise.all([
+      this.usersService.findById(applicantId),
+      this.usersService.findById(postOwnerId),
+    ]);
+
+    if (!currentUser || !recipient) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+
+    const conversationId = await this.findOrCreateConversationIdInTransaction(
+      tx,
+      applicantId,
+      postOwnerId
+    );
+    const message = await this.createMessageInTransaction(
+      tx,
+      conversationId,
+      applicantId,
+      content
+    );
+
+    return { conversationId, message };
+  }
+
+  private async findOrCreateConversationIdInTransaction(
+    tx: PrismaTx,
+    userId: string,
+    recipientId: string
+  ): Promise<string> {
+    const existing = await tx.conversation.findFirst({
+      where: {
+        AND: [
+          { participants: { some: { userId } } },
+          { participants: { some: { userId: recipientId } } },
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      return existing.id;
+    }
+
+    const created = await tx.conversation.create({
+      data: {
+        participants: {
+          create: [{ userId }, { userId: recipientId }],
+        },
+      },
+      select: { id: true },
+    });
+
+    return created.id;
+  }
+
+  private async createMessageInTransaction(
+    tx: PrismaTx,
+    conversationId: string,
+    senderId: string,
+    content: string,
+    media: ChatMessageMediaInput[] = []
+  ) {
+    const trimmedContent = content.trim();
+    const normalizedMedia = media ?? [];
+
+    if (!trimmedContent && normalizedMedia.length === 0) {
+      throw new BadRequestException('Сообщение не может быть пустым');
+    }
+
+    const expectedKeyPrefix = `chats/${conversationId}/`;
+    for (const item of normalizedMedia) {
+      if (!item.key.startsWith(expectedKeyPrefix)) {
+        throw new BadRequestException(
+          'Недопустимый ключ медиа для этого диалога'
+        );
+      }
+    }
+
+    const created = await tx.message.create({
+      data: {
+        conversationId,
+        senderId,
+        content: trimmedContent,
+        ...(normalizedMedia.length > 0 && {
+          media: {
+            create: normalizedMedia.map((item, index) => ({
+              url: item.url,
+              key: item.key,
+              size: String(item.size),
+              mimeType: item.mimeType,
+              sortOrder: index,
+            })),
+          },
+        }),
+      },
+      include: messageWithMediaInclude,
+    });
+
+    await tx.conversation.update({
+      where: { id: conversationId },
+      data: { updatedAt: created.createdAt },
+    });
+
+    return created;
+  }
+
+  async assertParticipant(
+    conversationId: string,
+    userId: string
+  ): Promise<void> {
     const participant = await this.prisma.conversationParticipant.findUnique({
       where: {
         conversationId_userId: {
@@ -357,14 +462,6 @@ export class ChatService {
 
     if (!participant) {
       throw new ForbiddenException('Нет доступа к этому диалогу');
-    }
-  }
-
-  private assertOppositeRoles(currentRole: Role, recipientRole: Role): void {
-    if (currentRole === recipientRole) {
-      throw new BadRequestException(
-        'Диалог возможен только между креатором и компанией'
-      );
     }
   }
 
@@ -393,7 +490,7 @@ export class ChatService {
     userId: string
   ): ChatConversationDto {
     const peerParticipant = conversation.participants.find(
-      (participant) => participant.userId !== userId
+      participant => participant.userId !== userId
     );
 
     if (!peerParticipant) {
@@ -455,7 +552,7 @@ export class ChatService {
       conversationId: message.conversationId,
       senderId: message.senderId,
       content: message.content,
-      media: (message.media ?? []).map((item) => ({
+      media: (message.media ?? []).map(item => ({
         url: item.url,
         key: item.key,
         size: item.size,

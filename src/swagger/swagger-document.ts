@@ -55,8 +55,8 @@ Backend для marketplace creator ↔ company. Документация для 
 4. \`PATCH /favorites/:postId\` — переместить в группу или groupId: null.
 
 ### Отклики на посты
-1. \`POST /applications\` — отклик (postId + message). CREATOR → COMPANY, COMPANY → CREATOR.
-2. \`GET /applications/mine\` — мои отклики.
+1. \`POST /applications\` — отклик (postId + message); создаёт сообщение в чате с владельцем поста.
+2. \`GET /applications/mine\` — мои отклики; \`?type=\`, \`?q=\`, \`?status=\`.
 3. \`GET /applications/incoming\` — входящие на мои посты.
 4. \`GET /posts/:id/applications\` — отклики на конкретный пост (владелец).
 5. \`PATCH /applications/:id/status\` — ACCEPTED / REJECTED / VIEWED (владелец).
@@ -65,7 +65,7 @@ Backend для marketplace creator ↔ company. Документация для 
 - REST: список диалогов и история (сообщения с media[]).
 - WebSocket \`/chat\`: realtime-сообщения (Socket.IO).
 - Медиа: \`POST /media/upload?conversationId=\` → \`send_message\` с media[].
-- Только 1:1 между CREATOR и COMPANY.
+- 1:1 диалог между любыми пользователями.
 
 ### Сброс пароля
 1. \`POST /auth/recovery-password\` — письмо на email Account.

@@ -58,7 +58,6 @@ export class ChatController {
     summary: 'Начать или открыть диалог',
     description:
       'Создаёт 1:1 диалог с recipientId или возвращает существующий. ' +
-      'Участники должны быть CREATOR и COMPANY (разные роли). ' +
       'Нельзя написать самому себе. recipientId — userId собеседника.',
   })
   @ApiCreatedResponse({
@@ -66,9 +65,7 @@ export class ChatController {
     type: ChatConversationResponse,
   })
   @ApiNotFoundResponse({ description: 'Получатель не найден' })
-  @ApiForbiddenResponse({
-    description: 'Нельзя создать диалог (одинаковые роли или с самим собой)',
-  })
+  @ApiForbiddenResponse({ description: 'Нельзя создать диалог с самим собой' })
   createConversation(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateConversationDto
