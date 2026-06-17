@@ -59,7 +59,14 @@ Backend для marketplace creator ↔ company. Документация для 
 2. \`GET /applications/mine\` — мои отклики; \`?type=\`, \`?q=\`, \`?status=\`.
 3. \`GET /applications/incoming\` — входящие на мои посты.
 4. \`GET /posts/:id/applications\` — отклики на конкретный пост (владелец).
-5. \`PATCH /applications/:id/status\` — ACCEPTED / REJECTED / VIEWED (владелец).
+5. \`PATCH /applications/:id/status\` — ACCEPTED создаёт задачу; REJECTED / VIEWED (владелец).
+
+### Задачи
+1. Создаются автоматически при \`PATCH /applications/:id/status\` → ACCEPTED.
+2. \`GET /tasks\` — список (\`?role=owner|executor\`, \`?status=\`).
+3. \`GET /tasks/:id\` — задача с комментариями.
+4. \`PATCH /tasks/:id\` — owner: все поля; executor: только status.
+5. Комментарии: \`GET/POST /tasks/:id/comments\`, \`PATCH/DELETE .../comments/:commentId\`.
 
 ### Чат
 - REST: список диалогов и история (сообщения с media[]).
@@ -115,6 +122,10 @@ export function createSwaggerConfig() {
     .addTag(
       'applications',
       'Отклики на посты: mine, incoming, статусы NEW/VIEWED/ACCEPTED/REJECTED'
+    )
+    .addTag(
+      'tasks',
+      'Задачи: автосоздание при ACCEPTED, owner/executor, комментарии'
     )
     .addCookieAuth('access-token')
     .build();

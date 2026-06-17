@@ -1,5 +1,7 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PostAuthorType } from '@prisma/client';
+import { ApplicationOwnerDto } from './application-owner.dto';
+import { PostMediaDto } from 'src/posts/dto/post-media.dto';
 
 export class ApplicationPostSummaryDto {
   @ApiProperty({ format: 'uuid' })
@@ -13,4 +15,10 @@ export class ApplicationPostSummaryDto {
 
   @ApiProperty({ format: 'uuid' })
   ownerId: string;
+
+  @ApiPropertyOptional({ type: ApplicationOwnerDto })
+  owner?: ApplicationOwnerDto;
+
+  @ApiPropertyOptional({ type: [PostMediaDto] })
+  media?: PostMediaDto[];
 }

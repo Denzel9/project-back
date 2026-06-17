@@ -2,11 +2,13 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { Post, PostAuthorType, Prisma, Role } from '@prisma/client';
 import { AuthUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../media/storage.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
 import { PostResponseDto } from './dto/post-response.dto';
@@ -20,6 +22,7 @@ export const postWithMediaInclude = {
 
 export type PostWithMedia = Post & {
   media: {
+    id: string;
     url: string;
     key: string;
     size: string;
@@ -30,7 +33,10 @@ export type PostWithMedia = Post & {
 
 @Injectable()
 export class PostsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storageService: StorageService
+  ) {}
 
   async create(user: AuthUser, dto: CreatePostDto): Promise<PostResponseDto> {
     const postType = this.roleToPostAuthorType(user.role);
@@ -179,6 +185,32 @@ export class PostsService {
     });
   }
 
+  async removeMedia(
+    userId: string,
+    postId: string,
+    mediaId: string
+  ): Promise<void> {
+    await this.assertOwner(userId, postId);
+
+    const media = await this.prisma.postMedia.findFirst({
+      where: { id: mediaId, postId },
+    });
+
+    if (!media) {
+      throw new NotFoundException('Медиа не найдено');
+    }
+
+    try {
+      await this.storageService.deleteObject(media.key);
+    } catch {
+      throw new InternalServerErrorException('Не удалось удалить файл');
+    }
+
+    await this.prisma.postMedia.delete({
+      where: { id: mediaId },
+    });
+  }
+
   private async assertOwner(userId: string, postId: string) {
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
@@ -234,6 +266,7 @@ export class PostsService {
       id: post.id,
       permissions: post.permissions,
       media: post.media.map(item => ({
+        id: item.id,
         url: item.url,
         key: item.key,
         size: item.size,

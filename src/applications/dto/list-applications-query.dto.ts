@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   Min,
   MinLength,
@@ -46,6 +47,17 @@ export class ListApplicationsQueryDto {
   @IsOptional()
   @IsEnum(PostAuthorType)
   type?: PostAuthorType;
+
+  @ApiPropertyOptional({
+    format: 'date',
+    description: 'Фильтр по дате обновления отклика (календарный день, UTC)',
+    example: '2026-06-14',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'updatedDate должен быть в формате YYYY-MM-DD',
+  })
+  updatedDate?: string;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()

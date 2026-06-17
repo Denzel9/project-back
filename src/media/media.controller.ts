@@ -1,6 +1,11 @@
 import {
   BadRequestException,
   Controller,
+  Delete,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
   Post,
   Query,
   UploadedFile,
@@ -15,6 +20,7 @@ import {
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOperation,
   ApiQuery,
@@ -49,6 +55,7 @@ export class MediaController {
     description:
       'Без query — для профиля (`PATCH /users/update`). ' +
       'С `postId` — для поста. С `conversationId` — для чата (затем `send_message` с media[]). ' +
+      'С `taskId` — для задачи. ' +
       'Фото: JPEG, PNG, WebP, GIF до 10 МБ. Видео: MP4, WebM, MOV до 100 МБ.',
   })
   @ApiQuery({
@@ -64,6 +71,13 @@ export class MediaController {
     type: String,
     description:
       'UUID диалога — файл в `chats/{conversationId}/...` для send_message',
+  })
+  @ApiQuery({
+    name: 'taskId',
+    required: false,
+    type: String,
+    description:
+      'UUID задачи — файл сохранится в `tasks/{taskId}/...` и попадёт в media задачи',
   })
   @ApiBody({
     schema: {
@@ -87,22 +101,24 @@ export class MediaController {
   })
   @ApiForbiddenResponse({
     description:
-      'Недостаточно прав (роль VIEWER, не владелец поста или не участник диалога)',
+      'Недостаточно прав (роль VIEWER, не владелец поста, не участник задачи или не участник диалога)',
   })
-  @ApiNotFoundResponse({ description: 'Пост не найден' })
+  @ApiNotFoundResponse({ description: 'Пост или задача не найдены' })
   async upload(
     @CurrentUser() user: AuthUser,
     @Query('postId') postId: string | undefined,
     @Query('conversationId') conversationId: string | undefined,
+    @Query('taskId') taskId: string | undefined,
     @UploadedFile() file?: Express.Multer.File
   ): Promise<UploadResponseDto> {
     if (!file) {
       throw new BadRequestException('Файл не передан');
     }
 
-    if (postId && conversationId) {
+    const targetCount = [postId, conversationId, taskId].filter(Boolean).length;
+    if (targetCount > 1) {
       throw new BadRequestException(
-        'Нельзя одновременно указать postId и conversationId'
+        'Укажите только один из: postId, conversationId, taskId'
       );
     }
 
@@ -136,6 +152,66 @@ export class MediaController {
     return this.mediaService.upload(user.userId, file, {
       ...(postId && { postId }),
       ...(conversationId && { conversationId }),
+      ...(taskId && { taskId }),
+    });
+  }
+
+  @Delete(':mediaId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Удалить медиа',
+    description:
+      'С `postId` — из поста (только owner). ' +
+      'С `taskId` — из задачи (owner или executor). ' +
+      'С `conversationId` — из чата (только отправитель сообщения). ' +
+      'Удаляет запись в БД и файл в S3.',
+  })
+  @ApiQuery({
+    name: 'postId',
+    required: false,
+    type: String,
+    description: 'UUID поста',
+  })
+  @ApiQuery({
+    name: 'conversationId',
+    required: false,
+    type: String,
+    description: 'UUID диалога',
+  })
+  @ApiQuery({
+    name: 'taskId',
+    required: false,
+    type: String,
+    description: 'UUID задачи',
+  })
+  @ApiNoContentResponse({ description: 'Медиа удалено' })
+  @ApiBadRequestResponse({
+    description: 'Не указан контекст или указано несколько параметров',
+  })
+  @ApiForbiddenResponse({
+    description: 'Недостаточно прав',
+  })
+  @ApiNotFoundResponse({
+    description: 'Медиа, пост, задача или диалог не найдены',
+  })
+  async delete(
+    @CurrentUser() user: AuthUser,
+    @Param('mediaId', ParseUUIDPipe) mediaId: string,
+    @Query('postId') postId: string | undefined,
+    @Query('conversationId') conversationId: string | undefined,
+    @Query('taskId') taskId: string | undefined
+  ): Promise<void> {
+    const targetCount = [postId, conversationId, taskId].filter(Boolean).length;
+    if (targetCount !== 1) {
+      throw new BadRequestException(
+        'Укажите ровно один из: postId, conversationId, taskId'
+      );
+    }
+
+    await this.mediaService.delete(user.userId, mediaId, {
+      ...(postId && { postId }),
+      ...(conversationId && { conversationId }),
+      ...(taskId && { taskId }),
     });
   }
 }

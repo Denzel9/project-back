@@ -43,6 +43,22 @@ enum ApplicationStatus {
   WITHDRAWN
 }
 
+enum TaskStatus {
+  PREPARING
+  PENDING_APPROVAL
+  IN_PROGRESS
+  REVISION
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskActivityType {
+  STATUS_CHANGED
+  FIELD_UPDATED
+  MEDIA_ADDED
+  MEDIA_REMOVED
+}
+
 model Account {
   id          String              @id @default(uuid())
   email       String              @unique
@@ -109,6 +125,10 @@ model User {
   favoriteGroups           FavoriteGroup[]
   favoritePosts            FavoritePost[]
   applications             PostApplication[] @relation("PostApplications")
+  ownedTasks               Task[]            @relation("OwnedTasks")
+  executedTasks            Task[]            @relation("ExecutedTasks")
+  taskComments             TaskComment[]
+  taskActivities           TaskActivity[]
 }
 
 model Conversation {
@@ -194,6 +214,7 @@ model Post {
   media           PostMedia[]
   favorites       FavoritePost[]
   applications    PostApplication[]
+  tasks           Task[]
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
@@ -251,6 +272,7 @@ model PostApplication {
   applicant   User              @relation("PostApplications", fields: [applicantId], references: [id], onDelete: Cascade)
   message     String
   status      ApplicationStatus @default(NEW)
+  task        Task?
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
@@ -258,4 +280,71 @@ model PostApplication {
   @@index([postId])
   @@index([applicantId])
   @@index([status])
+}
+
+model Task {
+  id            String          @id @default(uuid())
+  applicationId String          @unique
+  application   PostApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  postId        String
+  post          Post            @relation(fields: [postId], references: [id], onDelete: Cascade)
+  ownerId       String
+  owner         User            @relation("OwnedTasks", fields: [ownerId], references: [id], onDelete: Cascade)
+  executorId    String
+  executor      User            @relation("ExecutedTasks", fields: [executorId], references: [id], onDelete: Cascade)
+  status        TaskStatus      @default(PREPARING)
+  description   String          @default("")
+  finalDate     DateTime?
+  photoCount    String          @default("0")
+  videoCount    String          @default("0")
+  urgent        Boolean         @default(false)
+  media         TaskMedia[]
+  comments      TaskComment[]
+  activities    TaskActivity[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([ownerId])
+  @@index([executorId])
+  @@index([status])
+}
+
+model TaskComment {
+  id        String   @id @default(uuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taskId])
+}
+
+model TaskMedia {
+  id        String   @id @default(uuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  url       String
+  key       String
+  size      String
+  mimeType  String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+}
+
+model TaskActivity {
+  id        String           @id @default(uuid())
+  taskId    String
+  task      Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actorId   String
+  actor     User             @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  type      TaskActivityType
+  payload   Json
+  createdAt DateTime         @default(now())
+
+  @@index([taskId, createdAt])
 }

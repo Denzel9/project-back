@@ -75,12 +75,12 @@ export class PostsController {
   @ApiOperation({
     summary: 'Отклики на пост',
     description:
-      'Только владелец поста. Список откликов с данными соискателя (applicant). ' +
-      'Фильтр по status, пагинация page/limit.',
+      'Владелец поста — все отклики с данными соискателя (applicant). ' +
+      'Соискатель — только свой отклик. Фильтр по status, пагинация page/limit.',
   })
   @ApiOkResponse({ description: 'Список откликов на пост' })
   @ApiNotFoundResponse({ description: 'Пост не найден' })
-  @ApiForbiddenResponse({ description: 'Не владелец поста' })
+  @ApiForbiddenResponse({ description: 'Нет доступа к откликам на этот пост' })
   listApplications(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,

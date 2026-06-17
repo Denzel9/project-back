@@ -1,11 +1,12 @@
 import {
-  ForbiddenException,
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { PrismaService } from '../prisma/prisma.service';
+import { ChatService } from '../chat/chat.service';
 import { PostsService } from '../posts/posts.service';
+import { TasksService } from '../tasks/tasks.service';
 import { MIME_TO_EXTENSION } from './media.constants';
 import { UploadResponseDto } from './dto/upload-response.dto';
 import { StorageService } from './storage.service';
@@ -13,6 +14,13 @@ import { StorageService } from './storage.service';
 export type MediaUploadTarget = {
   postId?: string;
   conversationId?: string;
+  taskId?: string;
+};
+
+export type MediaDeleteTarget = {
+  postId?: string;
+  conversationId?: string;
+  taskId?: string;
 };
 
 @Injectable()
@@ -20,7 +28,8 @@ export class MediaService {
   constructor(
     private readonly storageService: StorageService,
     private readonly postsService: PostsService,
-    private readonly prisma: PrismaService
+    private readonly tasksService: TasksService,
+    private readonly chatService: ChatService
   ) {}
 
   async upload(
@@ -29,7 +38,7 @@ export class MediaService {
     target: MediaUploadTarget = {}
   ): Promise<UploadResponseDto> {
     const extension = MIME_TO_EXTENSION[file.mimetype];
-    const { postId, conversationId } = target;
+    const { postId, conversationId, taskId } = target;
 
     let key: string;
 
@@ -37,8 +46,11 @@ export class MediaService {
       await this.postsService.assertOwnerForMedia(userId, postId);
       key = `posts/${postId}/${randomUUID()}.${extension}`;
     } else if (conversationId) {
-      await this.assertConversationParticipant(userId, conversationId);
+      await this.chatService.assertParticipant(conversationId, userId);
       key = `chats/${conversationId}/${randomUUID()}.${extension}`;
+    } else if (taskId) {
+      await this.tasksService.assertParticipantForMedia(userId, taskId);
+      key = `tasks/${taskId}/${randomUUID()}.${extension}`;
     } else {
       key = `${userId}/${randomUUID()}.${extension}`;
     }
@@ -58,6 +70,13 @@ export class MediaService {
         size: String(file.size),
         mimeType: file.mimetype,
       });
+    } else if (taskId) {
+      await this.tasksService.addMedia(taskId, userId, {
+        url,
+        key,
+        size: String(file.size),
+        mimeType: file.mimetype,
+      });
     }
 
     return {
@@ -68,21 +87,28 @@ export class MediaService {
     };
   }
 
-  private async assertConversationParticipant(
+  async delete(
     userId: string,
-    conversationId: string
-  ) {
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: {
-        conversationId_userId: {
-          conversationId,
-          userId,
-        },
-      },
-    });
+    mediaId: string,
+    target: MediaDeleteTarget
+  ): Promise<void> {
+    const { postId, conversationId, taskId } = target;
 
-    if (!participant) {
-      throw new ForbiddenException('Нет доступа к этому диалогу');
+    if (postId) {
+      await this.postsService.removeMedia(userId, postId, mediaId);
+      return;
     }
+
+    if (taskId) {
+      await this.tasksService.removeMedia(userId, taskId, mediaId);
+      return;
+    }
+
+    if (conversationId) {
+      await this.chatService.removeAttachment(userId, conversationId, mediaId);
+      return;
+    }
+
+    throw new BadRequestException('Укажите postId, taskId или conversationId');
   }
 }

@@ -12,6 +12,7 @@ import { MediaModule } from './media/media.module';
 import { PostsModule } from './posts/posts.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { ApplicationsModule } from './applications/applications.module';
+import { TasksModule } from './tasks/tasks.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ApplicationsModule } from './applications/applications.module';
     PostsModule,
     FavoritesModule,
     ApplicationsModule,
+    TasksModule,
   ],
   controllers: [AppController],
   providers: [AppService],

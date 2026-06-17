@@ -2,9 +2,11 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { Role, Prisma } from '@prisma/client';
+import { StorageService } from '../media/storage.service';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -39,7 +41,8 @@ type PrismaTx = Prisma.TransactionClient;
 export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly usersService: UsersService
+    private readonly usersService: UsersService,
+    private readonly storageService: StorageService
   ) {}
 
   async listConversations(userId: string): Promise<ChatConversationDto[]> {
@@ -292,6 +295,62 @@ export class ChatService {
       page,
       limit,
     };
+  }
+
+  async removeAttachment(
+    userId: string,
+    conversationId: string,
+    mediaId: string
+  ): Promise<void> {
+    await this.assertParticipant(conversationId, userId);
+
+    const media = await this.prisma.messageMedia.findFirst({
+      where: {
+        id: mediaId,
+        message: { conversationId },
+      },
+      include: {
+        message: {
+          select: {
+            id: true,
+            senderId: true,
+            content: true,
+            media: { select: { id: true } },
+          },
+        },
+      },
+    });
+
+    if (!media) {
+      throw new NotFoundException('Медиа не найдено');
+    }
+
+    if (media.message.senderId !== userId) {
+      throw new ForbiddenException('Недостаточно прав для удаления вложения');
+    }
+
+    try {
+      await this.storageService.deleteObject(media.key);
+    } catch {
+      throw new InternalServerErrorException('Не удалось удалить файл');
+    }
+
+    const remainingMediaCount = media.message.media.filter(
+      item => item.id !== mediaId
+    ).length;
+    const hasContent = media.message.content.trim().length > 0;
+
+    await this.prisma.$transaction(async tx => {
+      await tx.messageMedia.delete({
+        where: { id: mediaId },
+      });
+
+      if (!hasContent && remainingMediaCount === 0) {
+        await tx.message.delete({
+          where: { id: media.message.id },
+        });
+      }
+    });
   }
 
   async createMessage(

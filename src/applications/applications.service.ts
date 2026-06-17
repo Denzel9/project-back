@@ -15,6 +15,7 @@ import { AuthUser } from '../auth/auth.types';
 import { ChatGateway } from '../chat/chat.gateway';
 import { ChatService } from '../chat/chat.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { TasksService } from '../tasks/tasks.service';
 import { ApplicationApplicantDto } from './dto/application-applicant.dto';
 import { ApplicationResponseDto } from './dto/application-response.dto';
 import { CreateApplicationDto } from './dto/create-application.dto';
@@ -33,6 +34,31 @@ const applicationInclude = {
       title: true,
       type: true,
       ownerId: true,
+      media: {
+        select: {
+          id: true,
+          url: true,
+          key: true,
+          size: true,
+          mimeType: true,
+        },
+      },
+      owner: {
+        select: {
+          id: true,
+          creatorProfile: {
+            select: {
+              name: true,
+              lastName: true,
+            },
+          },
+          companyProfile: {
+            select: {
+              companyName: true,
+            },
+          },
+        },
+      },
     },
   },
   applicant: {
@@ -70,7 +96,8 @@ export class ApplicationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly chatService: ChatService,
-    private readonly chatGateway: ChatGateway
+    private readonly chatGateway: ChatGateway,
+    private readonly tasksService: TasksService
   ) {}
 
   async create(
@@ -134,12 +161,14 @@ export class ApplicationsService {
 
   async listMine(user: AuthUser, query: ListApplicationsQueryDto) {
     const postFilter = this.buildPostListFilter(query);
+    const updatedAtFilter = this.buildUpdatedDateFilter(query.updatedDate);
 
     return this.listApplications(
       {
         applicantId: user.userId,
         ...(query.status !== undefined && { status: query.status }),
         ...(postFilter !== undefined && { post: postFilter }),
+        ...(updatedAtFilter !== undefined && { updatedAt: updatedAtFilter }),
       },
       query,
       { includePost: true }
@@ -174,17 +203,34 @@ export class ApplicationsService {
       throw new NotFoundException('Пост не найден');
     }
 
-    if (post.ownerId !== user.userId) {
-      throw new ForbiddenException('Недостаточно прав для просмотра откликов');
+    const isOwner = post.ownerId === user.userId;
+
+    if (!isOwner) {
+      const ownApplication = await this.prisma.postApplication.findUnique({
+        where: {
+          postId_applicantId: {
+            postId,
+            applicantId: user.userId,
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!ownApplication) {
+        throw new ForbiddenException(
+          'Недостаточно прав для просмотра откликов'
+        );
+      }
     }
 
     return this.listApplications(
       {
         postId,
+        ...(!isOwner && { applicantId: user.userId }),
         ...(query.status !== undefined && { status: query.status }),
       },
       query,
-      { includeApplicant: true }
+      { includeApplicant: isOwner }
     );
   }
 
@@ -236,13 +282,38 @@ export class ApplicationsService {
       throw new BadRequestException('Недопустимый статус');
     }
 
-    const updated = await this.prisma.postApplication.update({
-      where: { id },
-      data: { status: dto.status },
-      include: applicationInclude,
+    const updated = await this.prisma.$transaction(async tx => {
+      const application = await tx.postApplication.update({
+        where: { id },
+        data: { status: dto.status },
+        include: applicationInclude,
+      });
+
+      if (dto.status === ApplicationStatus.ACCEPTED) {
+        await this.tasksService.createFromAcceptedApplication(tx, id);
+      }
+
+      return application;
     });
 
     return this.mapApplication(updated, { includeApplicant: true });
+  }
+
+  private buildUpdatedDateFilter(
+    updatedDate?: string
+  ): Prisma.DateTimeFilter | undefined {
+    if (updatedDate === undefined) {
+      return undefined;
+    }
+
+    const start = new Date(`${updatedDate}T00:00:00.000Z`);
+    const end = new Date(`${updatedDate}T23:59:59.999Z`);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      throw new BadRequestException('Некорректная дата');
+    }
+
+    return { gte: start, lte: end };
   }
 
   private buildPostListFilter(
@@ -287,7 +358,11 @@ export class ApplicationsService {
   private async listApplications(
     where: Prisma.PostApplicationWhereInput,
     query: ListApplicationsQueryDto,
-    options: { includePost?: boolean; includeApplicant?: boolean }
+    options: {
+      includePost?: boolean;
+      includeApplicant?: boolean;
+      includeOwner?: boolean;
+    }
   ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -378,7 +453,6 @@ export class ApplicationsService {
   ): ApplicationResponseDto {
     return {
       id: application.id,
-      postId: application.postId,
       message: application.message,
       status: application.status,
       createdAt: application.createdAt.toISOString(),
@@ -388,7 +462,24 @@ export class ApplicationsService {
           id: application.post.id,
           title: application.post.title,
           type: application.post.type,
-          ownerId: application.post.ownerId,
+          ownerId: application.post.owner.id,
+          owner: {
+            id: application.post.owner.id,
+            creatorProfile: {
+              name: application.post.owner.creatorProfile?.name,
+              lastName: application.post.owner.creatorProfile?.lastName,
+            },
+            companyProfile: {
+              companyName: application.post.owner.companyProfile?.companyName,
+            },
+          },
+          media: application.post.media.map(media => ({
+            id: media.id,
+            url: media.url,
+            key: media.key,
+            size: media.size,
+            mimeType: media.mimeType,
+          })),
         },
       }),
       ...(options.includeApplicant && {

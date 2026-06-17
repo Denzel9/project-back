@@ -7,9 +7,6 @@ export class ApplicationResponseDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
-  @ApiProperty({ format: 'uuid' })
-  postId: string;
-
   @ApiProperty({ example: 'Готов обсудить сотрудничество' })
   message: string;
 
