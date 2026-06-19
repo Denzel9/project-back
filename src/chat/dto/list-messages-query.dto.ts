@@ -5,7 +5,8 @@ import { IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
 export class ListMessagesQueryDto {
   @ApiPropertyOptional({
     format: 'uuid',
-    description: 'Cursor-пагинация: id сообщения, старше которого загружать историю',
+    description:
+      'Cursor-пагинация: id сообщения, старше которого загружать историю',
   })
   @IsOptional()
   @IsUUID()

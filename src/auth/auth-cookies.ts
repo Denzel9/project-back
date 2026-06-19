@@ -4,7 +4,10 @@ import type { AuthCookieOptions, AuthTokens } from './auth.types';
 export const ACCESS_TOKEN_COOKIE = 'access-token';
 export const REFRESH_TOKEN_COOKIE = 'refresh-token';
 
-function resolveCookieBaseOptions(): Pick<CookieOptions, 'secure' | 'sameSite'> {
+function resolveCookieBaseOptions(): Pick<
+  CookieOptions,
+  'secure' | 'sameSite'
+> {
   const sameSite = (process.env.COOKIE_SAME_SITE ?? 'lax') as
     | 'lax'
     | 'strict'

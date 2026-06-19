@@ -9,9 +9,9 @@ import {
   Min,
 } from 'class-validator';
 
-export class SearchMessagesQueryDto {
+export class SearchTaskCommentsQueryDto {
   @ApiProperty({
-    description: 'Строка поиска по тексту сообщения',
+    description: 'Строка поиска по тексту комментария',
     example: 'договор',
   })
   @IsString()

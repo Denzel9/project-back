@@ -32,9 +32,10 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
 import { UploadResponseDto } from './dto/upload-response.dto';
 import {
-  ALLOWED_IMAGE_MIME_TYPES,
-  ALLOWED_MEDIA_MIME_TYPES,
-  ALLOWED_VIDEO_MIME_TYPES,
+  isAllowedDocumentMime,
+  isAllowedImageMime,
+  isAllowedVideoMime,
+  MAX_DOCUMENT_SIZE_BYTES,
   MAX_IMAGE_SIZE_BYTES,
   MAX_VIDEO_SIZE_BYTES,
 } from './media.constants';
@@ -51,12 +52,13 @@ export class MediaController {
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
-    summary: 'Загрузить фото или видео',
+    summary: 'Загрузить файл',
     description:
       'Без query — для профиля (`PATCH /users/update`). ' +
       'С `postId` — для поста. С `conversationId` — для чата (затем `send_message` с media[]). ' +
-      'С `taskId` — для задачи. ' +
-      'Фото: JPEG, PNG, WebP, GIF до 10 МБ. Видео: MP4, WebM, MOV до 100 МБ.',
+      'С `taskId` — для задачи (media задачи). `forComment=true` + `taskId` — для вложения в комментарий (без добавления в media задачи). ' +
+      'Фото: JPEG, PNG, WebP, GIF до 10 МБ. Видео: MP4, WebM, MOV до 100 МБ. ' +
+      'Документы (PDF, XLS, XLSX, DOC, DOCX до 25 МБ) — только с `taskId` или `conversationId`.',
   })
   @ApiQuery({
     name: 'postId',
@@ -77,7 +79,14 @@ export class MediaController {
     required: false,
     type: String,
     description:
-      'UUID задачи — файл сохранится в `tasks/{taskId}/...` и попадёт в media задачи',
+      'UUID задачи — `tasks/{taskId}/...`. С `forComment=true` — только для комментария',
+  })
+  @ApiQuery({
+    name: 'forComment',
+    required: false,
+    type: Boolean,
+    description:
+      'С `taskId`: загрузка для комментария (ключ tasks/{taskId}/..., не попадает в media задачи)',
   })
   @ApiBody({
     schema: {
@@ -87,7 +96,8 @@ export class MediaController {
         file: {
           type: 'string',
           format: 'binary',
-          description: 'Файл изображения или видео',
+          description:
+            'Файл: изображение, видео или документ (документ — только задача/чат)',
         },
       },
     },
@@ -109,10 +119,19 @@ export class MediaController {
     @Query('postId') postId: string | undefined,
     @Query('conversationId') conversationId: string | undefined,
     @Query('taskId') taskId: string | undefined,
+    @Query('forComment') forCommentRaw: string | undefined,
     @UploadedFile() file?: Express.Multer.File
   ): Promise<UploadResponseDto> {
     if (!file) {
       throw new BadRequestException('Файл не передан');
+    }
+
+    const forComment = forCommentRaw === 'true';
+
+    if (forComment && !taskId) {
+      throw new BadRequestException(
+        'forComment можно использовать только вместе с taskId'
+      );
     }
 
     const targetCount = [postId, conversationId, taskId].filter(Boolean).length;
@@ -122,37 +141,40 @@ export class MediaController {
       );
     }
 
-    if (
-      !(ALLOWED_MEDIA_MIME_TYPES as readonly string[]).includes(file.mimetype)
-    ) {
+    const isImage = isAllowedImageMime(file.mimetype);
+    const isVideo = isAllowedVideoMime(file.mimetype);
+    const isDocument = isAllowedDocumentMime(file.mimetype);
+
+    if (!isImage && !isVideo && !isDocument) {
       throw new BadRequestException(
-        'Недопустимый тип файла. Разрешены: JPEG, PNG, WebP, GIF, MP4, WebM, MOV'
+        'Недопустимый тип файла. Разрешены: JPEG, PNG, WebP, GIF, MP4, WebM, MOV, PDF, XLS, XLSX, DOC, DOCX'
       );
     }
 
-    const isImage = (ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(
-      file.mimetype
-    );
-    const maxSize = isImage ? MAX_IMAGE_SIZE_BYTES : MAX_VIDEO_SIZE_BYTES;
+    if (isDocument && !taskId && !conversationId) {
+      throw new BadRequestException(
+        'Документы можно загружать только в задачу или чат'
+      );
+    }
+
+    const maxSize = isImage
+      ? MAX_IMAGE_SIZE_BYTES
+      : isVideo
+        ? MAX_VIDEO_SIZE_BYTES
+        : MAX_DOCUMENT_SIZE_BYTES;
 
     if (file.size > maxSize) {
-      const limitMb = isImage ? 10 : 100;
+      const limitMb = isImage ? 10 : isVideo ? 100 : 25;
       throw new BadRequestException(
         `Превышен максимальный размер файла (${limitMb} МБ)`
       );
-    }
-
-    const isVideo = (ALLOWED_VIDEO_MIME_TYPES as readonly string[]).includes(
-      file.mimetype
-    );
-    if (!isImage && !isVideo) {
-      throw new BadRequestException('Недопустимый тип файла');
     }
 
     return this.mediaService.upload(user.userId, file, {
       ...(postId && { postId }),
       ...(conversationId && { conversationId }),
       ...(taskId && { taskId }),
+      ...(forComment && { forComment: true }),
     });
   }
 

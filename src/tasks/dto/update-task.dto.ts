@@ -16,7 +16,12 @@ export class UpdateTaskDto {
   @IsEnum(TaskStatus)
   status?: TaskStatus;
 
-  @ApiPropertyOptional({ maxLength: 5000 })
+  @ApiPropertyOptional({
+    maxLength: 5000,
+    description:
+      'Описание задачи в формате Markdown. Сервер хранит как есть, рендеринг на клиенте.',
+    example: '## Требования\n\n- 3 фото\n- Дедлайн **завтра**',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(5000)

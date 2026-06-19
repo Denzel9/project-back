@@ -39,7 +39,7 @@ Backend для marketplace creator ↔ company. Документация для 
 - VIEWER не может редактировать (403).
 
 ### Загрузка медиа
-1. \`POST /media/upload\` — multipart, поле \`file\` (фото или видео). Ответ: публичный \`url\`.
+1. \`POST /media/upload\` — multipart, поле \`file\`. Фото/видео — профиль, пост, чат, задача. Документы (PDF, XLS, XLSX, DOC, DOCX) — только чат (\`?conversationId=\`) и задача (\`?taskId=\`). Ответ: публичный \`url\`.
 2. \`PATCH /users/update\` — сохранить URL в \`avatar\`, \`banner\` и т.д.
 
 ### Посты с медиа
@@ -63,15 +63,15 @@ Backend для marketplace creator ↔ company. Документация для 
 
 ### Задачи
 1. Создаются автоматически при \`PATCH /applications/:id/status\` → ACCEPTED.
-2. \`GET /tasks\` — список (\`?role=owner|executor\`, \`?status=\`).
+2. \`GET /tasks\` — список (\`?role=owner|executor\`, \`?status=\`, \`?updatedDate=YYYY-MM-DD\`, \`?q=\` по title или companyName).
 3. \`GET /tasks/:id\` — задача с комментариями.
-4. \`PATCH /tasks/:id\` — owner: все поля; executor: только status.
-5. Комментарии: \`GET/POST /tasks/:id/comments\`, \`PATCH/DELETE .../comments/:commentId\`.
+4. \`PATCH /tasks/:id\` — owner: все поля; executor: только status. \`description\` — Markdown (хранится как строка).
+5. Комментарии: \`GET/POST /tasks/:id/comments\`, \`GET .../comments/search?q=\`, \`GET .../comments/attachments\`, \`PATCH/DELETE .../comments/:commentId\`.
 
 ### Чат
 - REST: список диалогов и история (сообщения с media[]).
 - WebSocket \`/chat\`: realtime-сообщения (Socket.IO).
-- Медиа: \`POST /media/upload?conversationId=\` → \`send_message\` с media[].
+- Медиа: \`POST /media/upload?conversationId=\` → \`send_message\` с media[] (фото, видео, документы).
 - 1:1 диалог между любыми пользователями.
 
 ### Сброс пароля
@@ -109,7 +109,7 @@ export function createSwaggerConfig() {
     )
     .addTag(
       'media',
-      'Загрузка фото и видео в S3. Профиль — PATCH /users/update; пост — ?postId='
+      'Загрузка в S3: фото/видео (профиль, пост, чат, задача); документы PDF/Office — чат и задача'
     )
     .addTag(
       'posts',

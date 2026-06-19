@@ -1,7 +1,16 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskStatus } from '@prisma/client';
-import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export enum TaskListRole {
   OWNER = 'owner',
@@ -11,7 +20,8 @@ export enum TaskListRole {
 export class ListTasksQueryDto {
   @ApiPropertyOptional({
     enum: TaskListRole,
-    description: 'owner — задачи на мои посты; executor — задачи где я исполнитель',
+    description:
+      'owner — задачи на мои посты; executor — задачи где я исполнитель',
   })
   @IsOptional()
   @IsEnum(TaskListRole)
@@ -21,6 +31,30 @@ export class ListTasksQueryDto {
   @IsOptional()
   @IsEnum(TaskStatus)
   status?: TaskStatus;
+
+  @ApiPropertyOptional({
+    format: 'date',
+    description: 'Фильтр по дате обновления задачи (календарный день, UTC)',
+    example: '2026-06-14',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'updatedDate должен быть в формате YYYY-MM-DD',
+  })
+  updatedDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Поиск по названию поста или названию компании-автора',
+    example: 'реклама',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    const trimmed = typeof value === 'string' ? value.trim() : value;
+    return trimmed === '' ? undefined : trimmed;
+  })
+  @IsString()
+  @MinLength(1)
+  q?: string;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()

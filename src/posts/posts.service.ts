@@ -18,6 +18,23 @@ export const postWithMediaInclude = {
   media: {
     orderBy: { sortOrder: 'asc' as const },
   },
+  owner: {
+    select: {
+      id: true,
+      avatar: true,
+      creatorProfile: {
+        select: {
+          name: true,
+          lastName: true,
+        },
+      },
+      companyProfile: {
+        select: {
+          companyName: true,
+        },
+      },
+    },
+  },
 } satisfies Prisma.PostInclude;
 
 export type PostWithMedia = Post & {
@@ -29,6 +46,17 @@ export type PostWithMedia = Post & {
     mimeType: string;
     sortOrder: number;
   }[];
+  owner: {
+    id: string;
+    avatar: string;
+    creatorProfile: {
+      name: string;
+      lastName: string;
+    };
+    companyProfile: {
+      companyName: string;
+    };
+  };
 };
 
 @Injectable()
@@ -273,7 +301,17 @@ export class PostsService {
         mimeType: item.mimeType,
       })),
       title: post.title,
-      ownerId: post.ownerId,
+      owner: {
+        id: post.owner.id,
+        avatar: post.owner.avatar,
+        creatorProfile: {
+          name: post.owner.creatorProfile?.name,
+          lastName: post.owner.creatorProfile?.lastName,
+        },
+        companyProfile: {
+          companyName: post.owner.companyProfile?.companyName,
+        },
+      },
       chips: post.chips,
       description: post.description,
       typeCooperation: post.typeCooperation,

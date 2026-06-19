@@ -39,6 +39,8 @@ export class CompanyController {
     description: 'Активный профиль не COMPANY',
   })
   getProfile(@CurrentUser() user: AuthUser) {
-    return this.authService.getProfile(user).then((profile) => ({ user: profile }));
+    return this.authService
+      .getProfile(user)
+      .then(profile => ({ user: profile }));
   }
 }

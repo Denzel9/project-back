@@ -29,6 +29,10 @@ import { AuthUser } from '../auth/auth.types';
 import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
 import { ListTaskActivitiesQueryDto } from './dto/list-task-activities-query.dto';
 import { ListTaskCommentsQueryDto } from './dto/list-task-comments-query.dto';
+import { ListTaskCommentAttachmentsQueryDto } from './dto/list-task-comment-attachments-query.dto';
+import { ListTaskCommentAttachmentsResponseDto } from './dto/list-task-comment-attachments-response.dto';
+import { SearchTaskCommentsQueryDto } from './dto/search-task-comments-query.dto';
+import { SearchTaskCommentsResponseDto } from './dto/search-task-comments-response.dto';
 import { ListTasksQueryDto } from './dto/list-tasks-query.dto';
 import {
   TaskCommentResponseDto,
@@ -49,7 +53,7 @@ export class TasksController {
   @ApiOperation({
     summary: 'Список задач',
     description:
-      'Задачи, где пользователь owner или executor. Фильтры: `role`, `status`. ' +
+      'Задачи, где пользователь owner или executor. Фильтры: `role`, `status`, `updatedDate` (YYYY-MM-DD, UTC), `q` (название поста или компании). ' +
       'Создание задачи — автоматически при ACCEPTED отклика.',
   })
   @ApiOkResponse({ description: 'Список задач с пагинацией' })
@@ -58,7 +62,7 @@ export class TasksController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Задача по id', description: 'С комментариями' })
+  @ApiOperation({ summary: 'Задача по id', description: 'С комментариями. `description` — Markdown.' })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiNotFoundResponse({ description: 'Задача не найдена' })
   @ApiForbiddenResponse({ description: 'Нет доступа' })
@@ -73,7 +77,7 @@ export class TasksController {
   @UseGuards(MembershipWriteGuard)
   @ApiOperation({
     summary: 'Обновить задачу',
-    description: 'owner — все поля. executor — только `status`. VIEWER → 403.',
+    description: 'owner — все поля; executor — только `status`. `description` — Markdown. VIEWER → 403.',
   })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiNotFoundResponse({ description: 'Задача не найдена' })
@@ -105,6 +109,46 @@ export class TasksController {
     return this.tasksService.listActivities(user, id, query);
   }
 
+  @Get(':id/comments/search')
+  @ApiOperation({
+    summary: 'Поиск комментариев задачи',
+    description:
+      'Поиск по тексту content (без учёта регистра). Комментарии с media[]. Пагинация page/limit.',
+  })
+  @ApiOkResponse({
+    description: 'Найденные комментарии с пагинацией',
+    type: SearchTaskCommentsResponseDto,
+  })
+  @ApiNotFoundResponse({ description: 'Задача не найдена' })
+  @ApiForbiddenResponse({ description: 'Нет доступа' })
+  searchComments(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: SearchTaskCommentsQueryDto
+  ) {
+    return this.tasksService.searchComments(user, id, query);
+  }
+
+  @Get(':id/comments/attachments')
+  @ApiOperation({
+    summary: 'Вложения в комментариях задачи',
+    description:
+      'Все медиа из комментариев задачи. Фильтр type=image|video|document. Пагинация page/limit.',
+  })
+  @ApiOkResponse({
+    description: 'Вложения с контекстом комментария (commentId, authorId, createdAt)',
+    type: ListTaskCommentAttachmentsResponseDto,
+  })
+  @ApiNotFoundResponse({ description: 'Задача не найдена' })
+  @ApiForbiddenResponse({ description: 'Нет доступа' })
+  listCommentAttachments(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: ListTaskCommentAttachmentsQueryDto
+  ) {
+    return this.tasksService.listCommentAttachments(user, id, query);
+  }
+
   @Get(':id/comments')
   @ApiOperation({ summary: 'Комментарии задачи' })
   @ApiOkResponse({ description: 'Список комментариев с пагинацией' })
@@ -118,7 +162,12 @@ export class TasksController {
 
   @Post(':id/comments')
   @UseGuards(MembershipWriteGuard)
-  @ApiOperation({ summary: 'Добавить комментарий' })
+  @ApiOperation({
+    summary: 'Добавить комментарий',
+    description:
+      'Текст и/или media[] после `POST /media/upload?taskId={id}&forComment=true`. ' +
+      'Нужен content или media.',
+  })
   @ApiCreatedResponse({ type: TaskCommentResponseDto })
   createComment(
     @CurrentUser() user: AuthUser,

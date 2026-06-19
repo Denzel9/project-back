@@ -43,7 +43,10 @@ export function extractAccessTokenFromHandshake(input: {
 
   const authorization = input.headers?.authorization;
 
-  if (typeof authorization === 'string' && authorization.startsWith('Bearer ')) {
+  if (
+    typeof authorization === 'string' &&
+    authorization.startsWith('Bearer ')
+  ) {
     return authorization.slice('Bearer '.length);
   }
 

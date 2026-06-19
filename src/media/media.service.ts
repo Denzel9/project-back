@@ -15,6 +15,7 @@ export type MediaUploadTarget = {
   postId?: string;
   conversationId?: string;
   taskId?: string;
+  forComment?: boolean;
 };
 
 export type MediaDeleteTarget = {
@@ -38,7 +39,7 @@ export class MediaService {
     target: MediaUploadTarget = {}
   ): Promise<UploadResponseDto> {
     const extension = MIME_TO_EXTENSION[file.mimetype];
-    const { postId, conversationId, taskId } = target;
+    const { postId, conversationId, taskId, forComment } = target;
 
     let key: string;
 
@@ -70,7 +71,7 @@ export class MediaService {
         size: String(file.size),
         mimeType: file.mimetype,
       });
-    } else if (taskId) {
+    } else if (taskId && !forComment) {
       await this.tasksService.addMedia(taskId, userId, {
         url,
         key,

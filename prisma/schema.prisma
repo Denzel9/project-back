@@ -47,6 +47,7 @@ enum TaskStatus {
   PREPARING
   PENDING_APPROVAL
   IN_PROGRESS
+  CHECKING
   REVISION
   COMPLETED
   CANCELLED
@@ -310,16 +311,31 @@ model Task {
 }
 
 model TaskComment {
-  id        String   @id @default(uuid())
+  id        String             @id @default(uuid())
   taskId    String
-  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task      Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
   authorId  String
-  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  author    User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
   content   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  media     TaskCommentMedia[]
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
 
   @@index([taskId])
+}
+
+model TaskCommentMedia {
+  id        String      @id @default(uuid())
+  commentId String
+  comment   TaskComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  url       String
+  key       String
+  size      String
+  mimeType  String
+  sortOrder Int         @default(0)
+  createdAt DateTime    @default(now())
+
+  @@index([commentId])
 }
 
 model TaskMedia {

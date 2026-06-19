@@ -5,6 +5,7 @@ import {
   TypeCooperation,
 } from '@prisma/client';
 import { PostMediaDto } from './post-media.dto';
+import { ApplicationOwnerDto } from 'src/applications/dto/application-owner.dto';
 
 export class PostResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -18,9 +19,6 @@ export class PostResponseDto {
 
   @ApiProperty({ example: 'Заголовок поста' })
   title: string;
-
-  @ApiProperty({ format: 'uuid' })
-  ownerId: string;
 
   @ApiProperty({ type: [String], example: ['chip1'] })
   chips: string[];
@@ -70,4 +68,7 @@ export class PostResponseDto {
 
   @ApiProperty({ format: 'date-time' })
   updatedAt: string;
+
+  @ApiProperty({ type: ApplicationOwnerDto })
+  owner?: ApplicationOwnerDto;
 }

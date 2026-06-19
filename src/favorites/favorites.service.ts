@@ -43,7 +43,7 @@ export class FavoritesService {
       orderBy: { name: 'asc' },
     });
 
-    return groups.map((group) => ({
+    return groups.map(group => ({
       id: group.id,
       name: group.name,
       count: group._count.favorites,
@@ -252,7 +252,7 @@ export class FavoritesService {
     ]);
 
     return {
-      items: items.map((item) => this.mapFavorite(item)),
+      items: items.map(item => this.mapFavorite(item)),
       total,
       page,
       limit,

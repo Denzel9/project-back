@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
@@ -8,10 +9,18 @@ import { Prisma, Role, Task, TaskActivityType } from '@prisma/client';
 import { ApplicationApplicantDto } from '../applications/dto/application-applicant.dto';
 import { AuthUser } from '../auth/auth.types';
 import { StorageService } from '../media/storage.service';
+import { ALLOWED_DOCUMENT_MIME_TYPES } from '../media/media.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
+import { TaskCommentMediaInputDto } from './dto/task-comment-media-input.dto';
 import { ListTaskActivitiesQueryDto } from './dto/list-task-activities-query.dto';
 import { ListTaskCommentsQueryDto } from './dto/list-task-comments-query.dto';
+import {
+  ListTaskCommentAttachmentsQueryDto,
+  TaskCommentAttachmentTypeFilter,
+} from './dto/list-task-comment-attachments-query.dto';
+import { SearchTaskCommentsQueryDto } from './dto/search-task-comments-query.dto';
+import { TaskCommentAttachmentResponseDto } from './dto/task-comment-attachment-response.dto';
 import { ListTasksQueryDto, TaskListRole } from './dto/list-tasks-query.dto';
 import { TaskActivityResponseDto } from './dto/task-activity-response.dto';
 import {
@@ -66,10 +75,22 @@ export const taskListInclude = {
   },
 } satisfies Prisma.TaskInclude;
 
+const commentWithMediaInclude = {
+  media: {
+    orderBy: { sortOrder: 'asc' as const },
+  },
+} satisfies Prisma.TaskCommentInclude;
+
 const taskInclude = {
-  ...taskWithMediaInclude,
+  ...taskListInclude,
+  executor: {
+    select: {
+      id: true,
+    },
+  },
   comments: {
     orderBy: { createdAt: 'asc' as const },
+    include: commentWithMediaInclude,
   },
 } satisfies Prisma.TaskInclude;
 
@@ -95,6 +116,13 @@ type TaskWithRelations = TaskWithMedia & {
     content: string;
     createdAt: Date;
     updatedAt: Date;
+    media: {
+      id: string;
+      url: string;
+      key: string;
+      size: string;
+      mimeType: string;
+    }[];
   }>;
 };
 
@@ -141,6 +169,8 @@ export class TasksService {
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
 
+    const updatedAtFilter = this.buildUpdatedDateFilter(query.updatedDate);
+
     const where: Prisma.TaskWhereInput = {
       ...(query.role === TaskListRole.OWNER && { ownerId: user.userId }),
       ...(query.role === TaskListRole.EXECUTOR && {
@@ -150,6 +180,10 @@ export class TasksService {
         OR: [{ ownerId: user.userId }, { executorId: user.userId }],
       }),
       ...(query.status !== undefined && { status: query.status }),
+      ...(updatedAtFilter !== undefined && { updatedAt: updatedAtFilter }),
+      ...(query.q !== undefined && {
+        post: this.buildPostSearchWhere(query.q),
+      }),
     };
 
     const [items, total] = await Promise.all([
@@ -166,6 +200,7 @@ export class TasksService {
     return {
       items: items.map(task =>
         this.toResponse(task, {
+          includeExecutor: true,
           includePost: true,
           includeOwner: true,
         })
@@ -188,7 +223,9 @@ export class TasksService {
 
     this.assertParticipant(task, user.userId);
 
-    return this.toResponse(task, { includeComments: true });
+    return this.toResponse(task, {
+      includeComments: true,
+    });
   }
 
   async update(
@@ -374,12 +411,101 @@ export class TasksService {
         orderBy: { createdAt: 'asc' },
         skip,
         take: limit,
+        include: commentWithMediaInclude,
       }),
       this.prisma.taskComment.count({ where }),
     ]);
 
     return {
       items: items.map(comment => this.toCommentResponse(comment)),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  async searchComments(
+    user: AuthUser,
+    taskId: string,
+    query: SearchTaskCommentsQueryDto
+  ) {
+    const task = await this.getTaskOrThrow(taskId);
+    this.assertParticipant(task, user.userId);
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.TaskCommentWhereInput = {
+      taskId,
+      content: { contains: query.q, mode: 'insensitive' },
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.taskComment.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: commentWithMediaInclude,
+      }),
+      this.prisma.taskComment.count({ where }),
+    ]);
+
+    return {
+      items: items.map(comment => this.toCommentResponse(comment)),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  async listCommentAttachments(
+    user: AuthUser,
+    taskId: string,
+    query: ListTaskCommentAttachmentsQueryDto
+  ) {
+    const task = await this.getTaskOrThrow(taskId);
+    this.assertParticipant(task, user.userId);
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.TaskCommentMediaWhereInput = {
+      comment: { taskId },
+      ...(query.type === TaskCommentAttachmentTypeFilter.IMAGE && {
+        mimeType: { startsWith: 'image/' },
+      }),
+      ...(query.type === TaskCommentAttachmentTypeFilter.VIDEO && {
+        mimeType: { startsWith: 'video/' },
+      }),
+      ...(query.type === TaskCommentAttachmentTypeFilter.DOCUMENT && {
+        mimeType: { in: [...ALLOWED_DOCUMENT_MIME_TYPES] },
+      }),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.taskCommentMedia.findMany({
+        where,
+        orderBy: [{ comment: { createdAt: 'desc' } }, { sortOrder: 'asc' }],
+        skip,
+        take: limit,
+        include: {
+          comment: {
+            select: {
+              id: true,
+              authorId: true,
+              createdAt: true,
+            },
+          },
+        },
+      }),
+      this.prisma.taskCommentMedia.count({ where }),
+    ]);
+
+    return {
+      items: items.map(attachment => this.toCommentAttachmentResponse(attachment)),
       total,
       page,
       limit,
@@ -394,12 +520,33 @@ export class TasksService {
     const task = await this.getTaskOrThrow(taskId);
     this.assertParticipant(task, user.userId);
 
+    const content = (dto.content ?? '').trim();
+    const media = dto.media ?? [];
+
+    if (!content && media.length === 0) {
+      throw new BadRequestException('Комментарий не может быть пустым');
+    }
+
+    this.assertCommentMediaKeys(taskId, media);
+
     const comment = await this.prisma.taskComment.create({
       data: {
         taskId,
         authorId: user.userId,
-        content: dto.content.trim(),
+        content,
+        ...(media.length > 0 && {
+          media: {
+            create: media.map((item, index) => ({
+              url: item.url,
+              key: item.key,
+              size: item.size,
+              mimeType: item.mimeType,
+              sortOrder: index,
+            })),
+          },
+        }),
       },
+      include: commentWithMediaInclude,
     });
 
     await this.prisma.task.update({
@@ -438,8 +585,18 @@ export class TasksService {
     const task = await this.getTaskOrThrow(taskId);
     this.assertParticipant(task, user.userId);
 
-    const comment = await this.getCommentOrThrow(taskId, commentId);
+    const comment = await this.getCommentOrThrow(taskId, commentId, {
+      includeMedia: true,
+    });
     this.assertCanModifyComment(task, comment.authorId, user.userId);
+
+    for (const item of comment.media) {
+      try {
+        await this.storageService.deleteObject(item.key);
+      } catch {
+        throw new InternalServerErrorException('Не удалось удалить файл');
+      }
+    }
 
     await this.prisma.taskComment.delete({
       where: { id: commentId },
@@ -605,9 +762,29 @@ export class TasksService {
     return task;
   }
 
-  private async getCommentOrThrow(taskId: string, commentId: string) {
+  private assertCommentMediaKeys(
+    taskId: string,
+    media: TaskCommentMediaInputDto[]
+  ) {
+    const expectedKeyPrefix = `tasks/${taskId}/`;
+
+    for (const item of media) {
+      if (!item.key.startsWith(expectedKeyPrefix)) {
+        throw new BadRequestException(
+          `Недопустимый ключ медиа для этой задачи. Загрузите файл: POST /media/upload?taskId=${taskId}&forComment=true`
+        );
+      }
+    }
+  }
+
+  private async getCommentOrThrow(
+    taskId: string,
+    commentId: string,
+    options: { includeMedia?: boolean } = {}
+  ) {
     const comment = await this.prisma.taskComment.findUnique({
       where: { id: commentId },
+      ...(options.includeMedia && { include: commentWithMediaInclude }),
     });
 
     if (!comment || comment.taskId !== taskId) {
@@ -615,6 +792,38 @@ export class TasksService {
     }
 
     return comment;
+  }
+
+  private buildPostSearchWhere(q: string): Prisma.PostWhereInput {
+    return {
+      OR: [
+        { title: { contains: q, mode: 'insensitive' } },
+        {
+          owner: {
+            companyProfile: {
+              companyName: { contains: q, mode: 'insensitive' },
+            },
+          },
+        },
+      ],
+    };
+  }
+
+  private buildUpdatedDateFilter(
+    updatedDate?: string
+  ): Prisma.DateTimeFilter | undefined {
+    if (updatedDate === undefined) {
+      return undefined;
+    }
+
+    const start = new Date(`${updatedDate}T00:00:00.000Z`);
+    const end = new Date(`${updatedDate}T23:59:59.999Z`);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      throw new BadRequestException('Некорректная дата');
+    }
+
+    return { gte: start, lte: end };
   }
 
   private assertParticipant(task: Task, userId: string) {
@@ -675,6 +884,7 @@ export class TasksService {
       id: task.id,
       applicationId: task.applicationId,
       ownerId: task.ownerId,
+      executorId: task.executorId,
       status: task.status,
       media: task.media.map(item => ({
         id: item.id,
@@ -711,16 +921,21 @@ export class TasksService {
         executor: this.mapExecutor(task.executor),
       }),
       ...(options.includeOwner &&
-        'post' in task && {
+        'owner' in task && {
         owner: {
           id: task.owner.id,
-          creatorProfile: {
-            name: task.owner.creatorProfile?.name,
-            lastName: task.owner.creatorProfile?.lastName,
-          },
-          companyProfile: {
-            companyName: task.owner.companyProfile?.companyName,
-          },
+          avatar: task.owner.avatar ?? undefined,
+          creatorProfile: task.owner.creatorProfile
+            ? {
+              name: task.owner.creatorProfile.name,
+              lastName: task.owner.creatorProfile.lastName,
+            }
+            : undefined,
+          companyProfile: task.owner.companyProfile
+            ? {
+              companyName: task.owner.companyProfile.companyName,
+            }
+            : undefined,
         },
       }),
     };
@@ -744,6 +959,30 @@ export class TasksService {
     };
   }
 
+  private toCommentAttachmentResponse(attachment: {
+    id: string;
+    url: string;
+    key: string;
+    size: string;
+    mimeType: string;
+    comment: {
+      id: string;
+      authorId: string;
+      createdAt: Date;
+    };
+  }): TaskCommentAttachmentResponseDto {
+    return {
+      id: attachment.id,
+      commentId: attachment.comment.id,
+      authorId: attachment.comment.authorId,
+      url: attachment.url,
+      key: attachment.key,
+      size: attachment.size,
+      mimeType: attachment.mimeType,
+      createdAt: attachment.comment.createdAt.toISOString(),
+    };
+  }
+
   private toCommentResponse(comment: {
     id: string;
     taskId: string;
@@ -751,12 +990,26 @@ export class TasksService {
     content: string;
     createdAt: Date;
     updatedAt: Date;
+    media?: {
+      id: string;
+      url: string;
+      key: string;
+      size: string;
+      mimeType: string;
+    }[];
   }): TaskCommentResponseDto {
     return {
       id: comment.id,
       taskId: comment.taskId,
       authorId: comment.authorId,
       content: comment.content,
+      media: (comment.media ?? []).map(item => ({
+        id: item.id,
+        url: item.url,
+        key: item.key,
+        size: item.size,
+        mimeType: item.mimeType,
+      })),
       createdAt: comment.createdAt.toISOString(),
       updatedAt: comment.updatedAt.toISOString(),
     };

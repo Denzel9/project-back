@@ -127,11 +127,12 @@ export class ChatController {
   @ApiOperation({
     summary: 'Все вложения диалога',
     description:
-      'Список всех медиа-вложений (фото/видео) в диалоге. ' +
-      'Опциональный фильтр type=image|video. Пагинация page/limit. Только для участников.',
+      'Список всех вложений (фото, видео, документы) в диалоге. ' +
+      'Опциональный фильтр type=image|video|document. Пагинация page/limit. Только для участников.',
   })
   @ApiOkResponse({
-    description: 'Вложения с контекстом сообщения (messageId, senderId, createdAt)',
+    description:
+      'Вложения с контекстом сообщения (messageId, senderId, createdAt)',
     type: ListAttachmentsResponse,
   })
   @ApiForbiddenResponse({ description: 'Нет доступа к диалогу' })

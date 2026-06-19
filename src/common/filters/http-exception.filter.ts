@@ -47,8 +47,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
           (status === HttpStatus.UNAUTHORIZED
             ? 'Не авторизован'
             : status === HttpStatus.FORBIDDEN
-              ? 'Доступ запрещён'
-              : 'Произошла ошибка'),
+            ? 'Доступ запрещён'
+            : 'Произошла ошибка'),
         error: errorLabel,
       });
       return;

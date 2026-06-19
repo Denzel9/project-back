@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Role, Prisma } from '@prisma/client';
 import { StorageService } from '../media/storage.service';
+import { ALLOWED_DOCUMENT_MIME_TYPES } from '../media/media.constants';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -170,8 +171,8 @@ export class ChatService {
 
     const cursorMessage = cursor
       ? await this.prisma.message.findUnique({
-        where: { id: cursor },
-      })
+          where: { id: cursor },
+        })
       : null;
 
     if (
@@ -186,14 +187,14 @@ export class ChatService {
         conversationId,
         ...(cursorMessage
           ? {
-            OR: [
-              { createdAt: { lt: cursorMessage.createdAt } },
-              {
-                createdAt: cursorMessage.createdAt,
-                id: { lt: cursorMessage.id },
-              },
-            ],
-          }
+              OR: [
+                { createdAt: { lt: cursorMessage.createdAt } },
+                {
+                  createdAt: cursorMessage.createdAt,
+                  id: { lt: cursorMessage.id },
+                },
+              ],
+            }
           : {}),
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -267,6 +268,9 @@ export class ChatService {
       }),
       ...(query.type === AttachmentTypeFilter.VIDEO && {
         mimeType: { startsWith: 'video/' },
+      }),
+      ...(query.type === AttachmentTypeFilter.DOCUMENT && {
+        mimeType: { in: [...ALLOWED_DOCUMENT_MIME_TYPES] },
       }),
     };
 

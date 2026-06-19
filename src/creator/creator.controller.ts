@@ -41,6 +41,6 @@ export class CreatorController {
   async getProfile(@CurrentUser() user: AuthUser) {
     return this.authService
       .getProfile(user)
-      .then((profile) => ({ user: profile }));
+      .then(profile => ({ user: profile }));
   }
 }

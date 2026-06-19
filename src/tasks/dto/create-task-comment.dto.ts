@@ -1,10 +1,32 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsOptional,
+  IsString,
+  MaxLength,
+  ValidateNested,
+} from 'class-validator';
+import { TaskCommentMediaInputDto } from './task-comment-media-input.dto';
 
 export class CreateTaskCommentDto {
-  @ApiProperty({ minLength: 1, maxLength: 2000 })
+  @ApiPropertyOptional({
+    maxLength: 2000,
+    description: 'Текст комментария. Можно опустить, если передан media[]',
+  })
+  @IsOptional()
   @IsString()
-  @MinLength(1)
   @MaxLength(2000)
-  content: string;
+  content?: string;
+
+  @ApiPropertyOptional({
+    type: [TaskCommentMediaInputDto],
+    description:
+      'Вложения после `POST /media/upload?taskId={id}&forComment=true`. Нужен content или media.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TaskCommentMediaInputDto)
+  media?: TaskCommentMediaInputDto[];
 }

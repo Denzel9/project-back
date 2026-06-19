@@ -1,8 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, ValidateIf } from 'class-validator';
 
-const clearKeyDescription = 'Передайте null, чтобы удалить это поле из person';
-
 export type Person = {
   height?: string;
   weight?: string;

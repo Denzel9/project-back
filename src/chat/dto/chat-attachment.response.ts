@@ -25,6 +25,9 @@ export class ChatAttachmentResponse {
   @ApiProperty({ example: 'image/jpeg' })
   mimeType: string;
 
-  @ApiProperty({ format: 'date-time', description: 'Дата сообщения, к которому относится вложение' })
+  @ApiProperty({
+    format: 'date-time',
+    description: 'Дата сообщения, к которому относится вложение',
+  })
   createdAt: Date;
 }

@@ -1,9 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskStatus } from '@prisma/client';
-import { ApplicationApplicantDto } from '../../applications/dto/application-applicant.dto';
-import { ApplicationPostSummaryDto } from '../../applications/dto/application-post-summary.dto';
 import { TaskMediaDto } from './task-media.dto';
-import { ApplicationOwnerDto } from 'src/applications/dto/application-owner.dto';
 
 export class TaskCommentResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -17,6 +14,9 @@ export class TaskCommentResponseDto {
 
   @ApiProperty()
   content: string;
+
+  @ApiProperty({ type: [TaskMediaDto], default: [] })
+  media: TaskMediaDto[];
 
   @ApiProperty({ format: 'date-time' })
   createdAt: string;
@@ -33,6 +33,9 @@ export class TaskResponseDto {
   applicationId: string;
 
   @ApiProperty({ format: 'uuid' })
+  executorId: string;
+
+  @ApiProperty({ format: 'uuid' })
   ownerId: string;
 
   @ApiProperty({ enum: TaskStatus })
@@ -41,7 +44,11 @@ export class TaskResponseDto {
   @ApiProperty({ type: [TaskMediaDto] })
   media: TaskMediaDto[];
 
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'Описание задачи в формате Markdown. Сервер хранит как есть, рендеринг на клиенте.',
+    example: '## Требования\n\n- 3 фото\n- Дедлайн **завтра**',
+  })
   description: string;
 
   @ApiProperty({ format: 'date-time', nullable: true })
@@ -64,13 +71,4 @@ export class TaskResponseDto {
 
   @ApiPropertyOptional({ type: [TaskCommentResponseDto] })
   comments?: TaskCommentResponseDto[];
-
-  @ApiPropertyOptional({ type: ApplicationPostSummaryDto })
-  post?: ApplicationPostSummaryDto;
-
-  @ApiPropertyOptional({ type: ApplicationApplicantDto })
-  executor?: ApplicationApplicantDto;
-
-  @ApiPropertyOptional({ type: ApplicationOwnerDto })
-  owner?: ApplicationOwnerDto;
 }

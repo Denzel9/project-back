@@ -2,21 +2,21 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
 
-export enum AttachmentTypeFilter {
+export enum TaskCommentAttachmentTypeFilter {
   IMAGE = 'image',
   VIDEO = 'video',
   DOCUMENT = 'document',
 }
 
-export class ListAttachmentsQueryDto {
+export class ListTaskCommentAttachmentsQueryDto {
   @ApiPropertyOptional({
-    enum: AttachmentTypeFilter,
+    enum: TaskCommentAttachmentTypeFilter,
     description:
       'Фильтр по типу: image — image/*, video — video/*, document — PDF, Excel, Word',
   })
   @IsOptional()
-  @IsEnum(AttachmentTypeFilter)
-  type?: AttachmentTypeFilter;
+  @IsEnum(TaskCommentAttachmentTypeFilter)
+  type?: TaskCommentAttachmentTypeFilter;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()
