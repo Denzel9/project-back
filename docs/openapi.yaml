@@ -656,8 +656,9 @@ paths:
     get:
       operationId: ChatController_listAttachments
       summary: Все вложения диалога
-      description: Список всех медиа-вложений (фото/видео) в диалоге. Опциональный
-        фильтр type=image|video. Пагинация page/limit. Только для участников.
+      description: Список всех вложений (фото, видео, документы) в диалоге.
+        Опциональный фильтр type=image|video|document. Пагинация page/limit.
+        Только для участников.
       parameters:
         - name: id
           required: true
@@ -667,11 +668,13 @@ paths:
         - name: type
           required: false
           in: query
-          description: "Фильтр по типу: image — только image/*, video — только video/*"
+          description: "Фильтр по типу: image — image/*, video — video/*, document — PDF,
+            Excel, Word"
           schema:
             enum:
               - image
               - video
+              - document
             type: string
         - name: page
           required: false
@@ -745,11 +748,15 @@ paths:
   /media/upload:
     post:
       operationId: MediaController_upload
-      summary: Загрузить фото или видео
+      summary: Загрузить файл
       description: "Без query — для профиля (`PATCH /users/update`). С `postId` — для
         поста. С `conversationId` — для чата (затем `send_message` с media[]). С
-        `taskId` — для задачи. Фото: JPEG, PNG, WebP, GIF до 10 МБ. Видео: MP4,
-        WebM, MOV до 100 МБ."
+        `taskId` — для задачи (media задачи). `kind=report` — вложение отчёта
+        (не смешивается с основными). `forComment=true` + `taskId` — для
+        вложения в комментарий (без добавления в media задачи). Фото: JPEG, PNG,
+        WebP, GIF до 10 МБ. Видео: MP4, WebM, MOV до 100 МБ. Документы (PDF,
+        XLS, XLSX, DOC, DOCX до 25 МБ) — только с `taskId` или
+        `conversationId`."
       parameters:
         - name: postId
           required: false
@@ -767,9 +774,26 @@ paths:
         - name: taskId
           required: false
           in: query
-          description: UUID задачи — файл сохранится в `tasks/{taskId}/...` и попадёт в
-            media задачи
+          description: UUID задачи — `tasks/{taskId}/...`. С `forComment=true` — только
+            для комментария
           schema:
+            type: string
+        - name: forComment
+          required: false
+          in: query
+          description: "С `taskId`: загрузка для комментария (ключ tasks/{taskId}/..., не
+            попадает в media задачи)"
+          schema:
+            type: boolean
+        - name: kind
+          required: false
+          in: query
+          description: "С `taskId` без forComment: main (по умолчанию) — основные
+            вложения, report — отчёт исполнителя"
+          schema:
+            enum:
+              - main
+              - report
             type: string
       requestBody:
         required: true
@@ -783,7 +807,8 @@ paths:
                 file:
                   type: string
                   format: binary
-                  description: Файл изображения или видео
+                  description: "Файл: изображение, видео или документ (документ — только
+                    задача/чат)"
       responses:
         "201":
           description: Файл загружен
@@ -932,8 +957,8 @@ paths:
     get:
       operationId: PostsController_listApplications
       summary: Отклики на пост
-      description: Только владелец поста. Список откликов с данными соискателя
-        (applicant). Фильтр по status, пагинация page/limit.
+      description: Владелец поста — все отклики с данными соискателя (applicant).
+        Соискатель — только свой отклик. Фильтр по status, пагинация page/limit.
       parameters:
         - name: id
           required: true
@@ -1001,7 +1026,7 @@ paths:
         "200":
           description: Список откликов на пост
         "403":
-          description: Не владелец поста
+          description: Нет доступа к откликам на этот пост
         "404":
           description: Пост не найден
       tags: *a8
@@ -1311,7 +1336,8 @@ paths:
       operationId: TasksController_list
       summary: Список задач
       description: "Задачи, где пользователь owner или executor. Фильтры: `role`,
-        `status`. Создание задачи — автоматически при ACCEPTED отклика."
+        `status`, `updatedDate` (YYYY-MM-DD, UTC), `q` (название поста или
+        компании). Создание задачи — автоматически при ACCEPTED отклика."
       parameters:
         - name: role
           required: false
@@ -1330,9 +1356,25 @@ paths:
               - PREPARING
               - PENDING_APPROVAL
               - IN_PROGRESS
+              - CHECKING
               - REVISION
               - COMPLETED
               - CANCELLED
+            type: string
+        - name: updatedDate
+          required: false
+          in: query
+          description: Фильтр по дате обновления задачи (календарный день, UTC)
+          schema:
+            format: date
+            example: 2026-06-14
+            type: string
+        - name: q
+          required: false
+          in: query
+          description: Поиск по названию поста или названию компании-автора
+          schema:
+            example: реклама
             type: string
         - name: page
           required: false
@@ -1360,7 +1402,7 @@ paths:
     get:
       operationId: TasksController_findById
       summary: Задача по id
-      description: С комментариями
+      description: С комментариями. `description` — Markdown.
       parameters:
         - name: id
           required: true
@@ -1383,7 +1425,8 @@ paths:
     patch:
       operationId: TasksController_update
       summary: Обновить задачу
-      description: owner — все поля. executor — только `status`. VIEWER → 403.
+      description: owner — все поля; executor — только `status`. `description` —
+        Markdown. VIEWER → 403.
       parameters:
         - name: id
           required: true
@@ -1456,6 +1499,164 @@ paths:
           description: Задача не найдена
       tags: *a12
       security: *a13
+  /tasks/{id}/attachments:
+    get:
+      operationId: TasksController_listAttachments
+      summary: Вложения задачи
+      description: "Медиа задачи (TaskMedia). Фильтры: kind=main|report,
+        type=image|video|document. Пагинация page/limit."
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: kind
+          required: false
+          in: query
+          description: "Фильтр по назначению: main — основные вложения, report — отчёт"
+          schema:
+            enum:
+              - main
+              - report
+            type: string
+        - name: type
+          required: false
+          in: query
+          description: "Фильтр по типу: image — image/*, video — video/*, document — PDF,
+            Excel, Word"
+          schema:
+            enum:
+              - image
+              - video
+              - document
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Вложения задачи с kind и createdAt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListTaskAttachmentsResponseDto"
+        "403":
+          description: Нет доступа
+        "404":
+          description: Задача не найдена
+      tags: *a12
+      security: *a13
+  /tasks/{id}/comments/search:
+    get:
+      operationId: TasksController_searchComments
+      summary: Поиск комментариев задачи
+      description: Поиск по тексту content (без учёта регистра). Комментарии с
+        media[]. Пагинация page/limit.
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: q
+          required: true
+          in: query
+          description: Строка поиска по тексту комментария
+          schema:
+            example: договор
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Найденные комментарии с пагинацией
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchTaskCommentsResponseDto"
+        "403":
+          description: Нет доступа
+        "404":
+          description: Задача не найдена
+      tags: *a12
+      security: *a13
+  /tasks/{id}/comments/attachments:
+    get:
+      operationId: TasksController_listCommentAttachments
+      summary: Вложения в комментариях задачи
+      description: Все медиа из комментариев задачи. Фильтр type=image|video|document.
+        Пагинация page/limit.
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: type
+          required: false
+          in: query
+          description: "Фильтр по типу: image — image/*, video — video/*, document — PDF,
+            Excel, Word"
+          schema:
+            enum:
+              - image
+              - video
+              - document
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Вложения с контекстом комментария (commentId, authorId, createdAt)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListTaskCommentAttachmentsResponseDto"
+        "403":
+          description: Нет доступа
+        "404":
+          description: Задача не найдена
+      tags: *a12
+      security: *a13
   /tasks/{id}/comments:
     get:
       operationId: TasksController_listComments
@@ -1489,6 +1690,8 @@ paths:
     post:
       operationId: TasksController_createComment
       summary: Добавить комментарий
+      description: Текст и/или media[] после `POST
+        /media/upload?taskId={id}&forComment=true`. Нужен content или media.
       parameters:
         - name: id
           required: true
@@ -1837,8 +2040,10 @@ info:
 
     ### Загрузка медиа
 
-    1. `POST /media/upload` — multipart, поле `file` (фото или видео). Ответ:
-    публичный `url`.
+    1. `POST /media/upload` — multipart, поле `file`. Фото/видео — профиль,
+    пост, чат, задача. Документы (PDF, XLS, XLSX, DOC, DOCX) — только чат
+    (`?conversationId=`) и задача (`?taskId=`). Для задачи: `?kind=main` (по
+    умолчанию) или `?kind=report` — отчёт исполнителя. Ответ: публичный `url`.
 
     2. `PATCH /users/update` — сохранить URL в `avatar`, `banner` и т.д.
 
@@ -1887,14 +2092,22 @@ info:
 
     1. Создаются автоматически при `PATCH /applications/:id/status` → ACCEPTED.
 
-    2. `GET /tasks` — список (`?role=owner|executor`, `?status=`).
+    2. `GET /tasks` — список (`?role=owner|executor`, `?status=`,
+    `?updatedDate=YYYY-MM-DD`, `?q=` по title или companyName).
 
-    3. `GET /tasks/:id` — задача с комментариями.
+    3. `GET /tasks/:id` — задача с `media[]` (основные) и `reportMedia[]`
+    (отчёт).
 
     4. `PATCH /tasks/:id` — owner: все поля; executor: только status.
+    `description` — Markdown (хранится как строка).
 
-    5. Комментарии: `GET/POST /tasks/:id/comments`, `PATCH/DELETE
-    .../comments/:commentId`.
+    5. Медиа задачи: `POST /media/upload?taskId=` (main), `?taskId=&kind=report`
+    (отчёт), `GET /tasks/:id/attachments` (фильтры kind, type).
+
+    6. Комментарии: `GET/POST /tasks/:id/comments`, `GET
+    .../comments/search?q=`, `GET .../comments/attachments`, `PATCH/DELETE
+    .../comments/:commentId`. Вложения в комментарий: `POST
+    /media/upload?taskId=&forComment=true`.
 
 
     ### Чат
@@ -1903,7 +2116,8 @@ info:
 
     - WebSocket `/chat`: realtime-сообщения (Socket.IO).
 
-    - Медиа: `POST /media/upload?conversationId=` → `send_message` с media[].
+    - Медиа: `POST /media/upload?conversationId=` → `send_message` с media[]
+    (фото, видео, документы).
 
     - 1:1 диалог между любыми пользователями.
 
@@ -1942,7 +2156,8 @@ tags:
   - name: chat
     description: Личные сообщения creator ↔ company (REST). Realtime — WebSocket /chat
   - name: media
-    description: Загрузка фото и видео в S3. Профиль — PATCH /users/update; пост — ?postId=
+    description: "Загрузка в S3: фото/видео (профиль, пост, чат, задача); документы
+      PDF/Office — чат и задача"
   - name: posts
     description: "Посты creator/company: CRUD, media[] с публичными URL для фронта"
   - name: favorites
@@ -2601,6 +2816,41 @@ components:
         - key
         - size
         - mimeType
+    ApplicationCreatorProfileDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: John
+        lastName:
+          type: string
+          example: Doe
+      required:
+        - name
+        - lastName
+    ApplicationCompanyProfileDto:
+      type: object
+      properties:
+        companyName:
+          type: string
+          example: Acme Inc.
+      required:
+        - companyName
+    ApplicationOwnerDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        avatar:
+          type: string
+          example: https://example.com/avatar.jpg
+        creatorProfile:
+          $ref: "#/components/schemas/ApplicationCreatorProfileDto"
+        companyProfile:
+          $ref: "#/components/schemas/ApplicationCompanyProfileDto"
+      required:
+        - id
     PostResponseDto:
       type: object
       properties:
@@ -2619,9 +2869,6 @@ components:
         title:
           type: string
           example: Заголовок поста
-        ownerId:
-          type: string
-          format: uuid
         chips:
           example:
             - chip1
@@ -2693,12 +2940,13 @@ components:
         updatedAt:
           type: string
           format: date-time
+        owner:
+          $ref: "#/components/schemas/ApplicationOwnerDto"
       required:
         - id
         - permissions
         - media
         - title
-        - ownerId
         - chips
         - description
         - typeCooperation
@@ -2714,6 +2962,7 @@ components:
         - type
         - createdAt
         - updatedAt
+        - owner
     UpdatePostDto:
       type: object
       properties:
@@ -2806,6 +3055,12 @@ components:
         ownerId:
           type: string
           format: uuid
+        owner:
+          $ref: "#/components/schemas/ApplicationOwnerDto"
+        media:
+          type: array
+          items:
+            $ref: "#/components/schemas/PostMediaDto"
       required:
         - id
         - title
@@ -2846,9 +3101,6 @@ components:
         id:
           type: string
           format: uuid
-        postId:
-          type: string
-          format: uuid
         message:
           type: string
           example: Готов обсудить сотрудничество
@@ -2873,7 +3125,6 @@ components:
           $ref: "#/components/schemas/ApplicationApplicantDto"
       required:
         - id
-        - postId
         - message
         - status
         - createdAt
@@ -2892,6 +3143,37 @@ components:
       required:
         - status
     TaskMediaDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          example: https://s3.ru-7.storage.selcloud.ru/project-media/tasks/uuid/file.jpg
+        key:
+          type: string
+          example: tasks/uuid/file.jpg
+        size:
+          type: string
+          example: "12345"
+        mimeType:
+          type: string
+          example: image/jpeg
+        kind:
+          type: string
+          enum:
+            - MAIN
+            - REPORT
+          description: MAIN — основные вложения задачи, REPORT — отчёт исполнителя
+      required:
+        - id
+        - url
+        - key
+        - size
+        - mimeType
+        - kind
+    TaskCommentMediaDto:
       type: object
       properties:
         id:
@@ -2929,6 +3211,11 @@ components:
           format: uuid
         content:
           type: string
+        media:
+          default: []
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskCommentMediaDto"
         createdAt:
           type: string
           format: date-time
@@ -2940,6 +3227,7 @@ components:
         - taskId
         - authorId
         - content
+        - media
         - createdAt
         - updatedAt
     TaskResponseDto:
@@ -2951,13 +3239,10 @@ components:
         applicationId:
           type: string
           format: uuid
-        postId:
+        executorId:
           type: string
           format: uuid
         ownerId:
-          type: string
-          format: uuid
-        executorId:
           type: string
           format: uuid
         status:
@@ -2966,15 +3251,29 @@ components:
             - PREPARING
             - PENDING_APPROVAL
             - IN_PROGRESS
+            - CHECKING
             - REVISION
             - COMPLETED
             - CANCELLED
         media:
+          description: Основные вложения (kind=MAIN)
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskMediaDto"
+        reportMedia:
+          description: Вложения отчёта исполнителя (kind=REPORT)
           type: array
           items:
             $ref: "#/components/schemas/TaskMediaDto"
         description:
           type: string
+          description: Описание задачи в формате Markdown. Сервер хранит как есть,
+            рендеринг на клиенте.
+          example: |-
+            ## Требования
+
+            - 3 фото
+            - Дедлайн **завтра**
         finalDate:
           type: string
           format: date-time
@@ -2998,11 +3297,11 @@ components:
       required:
         - id
         - applicationId
-        - postId
-        - ownerId
         - executorId
+        - ownerId
         - status
         - media
+        - reportMedia
         - description
         - finalDate
         - photoCount
@@ -3019,12 +3318,20 @@ components:
             - PREPARING
             - PENDING_APPROVAL
             - IN_PROGRESS
+            - CHECKING
             - REVISION
             - COMPLETED
             - CANCELLED
         description:
           type: string
           maxLength: 5000
+          description: Описание задачи в формате Markdown. Сервер хранит как есть,
+            рендеринг на клиенте.
+          example: |-
+            ## Требования
+
+            - 3 фото
+            - Дедлайн **завтра**
         finalDate:
           type: string
           format: date-time
@@ -3035,15 +3342,176 @@ components:
           type: string
         urgent:
           type: boolean
+    TaskAttachmentResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Id записи TaskMedia
+        kind:
+          type: string
+          enum:
+            - MAIN
+            - REPORT
+          description: MAIN — основные вложения, REPORT — отчёт
+        url:
+          type: string
+          example: https://8e99a641-b75a-4250-a2a3-d3ec2dbeb156.selstorage.ru/tasks/uuid/file.jpg
+        key:
+          type: string
+          example: tasks/uuid/file.jpg
+        size:
+          type: string
+          example: "12345"
+        mimeType:
+          type: string
+          example: image/jpeg
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - kind
+        - url
+        - key
+        - size
+        - mimeType
+        - createdAt
+    ListTaskAttachmentsResponseDto:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskAttachmentResponseDto"
+        total:
+          type: number
+          example: 15
+        page:
+          type: number
+          example: 1
+        limit:
+          type: number
+          example: 20
+      required:
+        - items
+        - total
+        - page
+        - limit
+    SearchTaskCommentsResponseDto:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskCommentResponseDto"
+        total:
+          type: number
+          example: 42
+        page:
+          type: number
+          example: 1
+        limit:
+          type: number
+          example: 20
+      required:
+        - items
+        - total
+        - page
+        - limit
+    TaskCommentAttachmentResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Id записи TaskCommentMedia
+        commentId:
+          type: string
+          format: uuid
+        authorId:
+          type: string
+          format: uuid
+        url:
+          type: string
+          example: https://8e99a641-b75a-4250-a2a3-d3ec2dbeb156.selstorage.ru/tasks/uuid/file.jpg
+        key:
+          type: string
+          example: tasks/uuid/file.jpg
+        size:
+          type: string
+          example: "12345"
+        mimeType:
+          type: string
+          example: image/jpeg
+        createdAt:
+          type: string
+          format: date-time
+          description: Дата комментария, к которому относится вложение
+      required:
+        - id
+        - commentId
+        - authorId
+        - url
+        - key
+        - size
+        - mimeType
+        - createdAt
+    ListTaskCommentAttachmentsResponseDto:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskCommentAttachmentResponseDto"
+        total:
+          type: number
+          example: 15
+        page:
+          type: number
+          example: 1
+        limit:
+          type: number
+          example: 20
+      required:
+        - items
+        - total
+        - page
+        - limit
+    TaskCommentMediaInputDto:
+      type: object
+      properties:
+        url:
+          type: string
+          example: https://8e99a641-b75a-4250-a2a3-d3ec2dbeb156.selstorage.ru/tasks/uuid/file.jpg
+        key:
+          type: string
+          example: tasks/uuid/file.jpg
+        size:
+          type: string
+          example: "12345"
+        mimeType:
+          type: string
+          example: image/jpeg
+      required:
+        - url
+        - key
+        - size
+        - mimeType
     CreateTaskCommentDto:
       type: object
       properties:
         content:
           type: string
-          minLength: 1
           maxLength: 2000
-      required:
-        - content
+          description: Текст комментария. Можно опустить, если передан media[]
+        media:
+          description: Вложения после `POST /media/upload?taskId={id}&forComment=true`.
+            Нужен content или media.
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskCommentMediaInputDto"
     UpdateTaskCommentDto:
       type: object
       properties:

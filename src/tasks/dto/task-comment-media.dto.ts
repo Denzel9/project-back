@@ -1,7 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { TaskMediaKind } from '@prisma/client';
 
-export class TaskMediaDto {
+export class TaskCommentMediaDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
@@ -19,10 +18,4 @@ export class TaskMediaDto {
 
   @ApiProperty({ example: 'image/jpeg' })
   mimeType: string;
-
-  @ApiProperty({
-    enum: TaskMediaKind,
-    description: 'MAIN — основные вложения задачи, REPORT — отчёт исполнителя',
-  })
-  kind: TaskMediaKind;
 }

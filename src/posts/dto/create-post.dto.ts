@@ -1,7 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PostContentType, TypeCooperation } from '@prisma/client';
 import {
-  ArrayNotEmpty,
   IsArray,
   IsBoolean,
   IsEnum,
@@ -31,24 +30,29 @@ export class CreatePostDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     enum: TypeCooperation,
     isArray: true,
     example: [TypeCooperation.ONE_TIME],
+    default: [],
   })
+  @IsOptional()
   @IsArray()
-  @ArrayNotEmpty()
   @IsEnum(TypeCooperation, { each: true })
-  typeCooperation: TypeCooperation[];
+  typeCooperation?: TypeCooperation[];
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()
   @IsBoolean()
   urgent?: boolean;
 
-  @ApiProperty({ enum: PostContentType, example: PostContentType.PHOTO })
+  @ApiPropertyOptional({
+    enum: PostContentType,
+    example: PostContentType.PHOTO,
+  })
+  @IsOptional()
   @IsEnum(PostContentType)
-  contentType: PostContentType;
+  contentType?: PostContentType;
 
   @ApiPropertyOptional({ example: '0', default: '0' })
   @IsOptional()

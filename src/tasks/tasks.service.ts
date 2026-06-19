@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role, Task, TaskActivityType } from '@prisma/client';
+import { Prisma, Role, Task, TaskActivityType, TaskMediaKind } from '@prisma/client';
 import { ApplicationApplicantDto } from '../applications/dto/application-applicant.dto';
 import { AuthUser } from '../auth/auth.types';
 import { StorageService } from '../media/storage.service';
@@ -19,6 +19,12 @@ import {
   ListTaskCommentAttachmentsQueryDto,
   TaskCommentAttachmentTypeFilter,
 } from './dto/list-task-comment-attachments-query.dto';
+import {
+  ListTaskAttachmentsQueryDto,
+  TaskAttachmentKindFilter,
+  TaskAttachmentTypeFilter,
+} from './dto/list-task-attachments-query.dto';
+import { TaskAttachmentResponseDto } from './dto/task-attachment-response.dto';
 import { SearchTaskCommentsQueryDto } from './dto/search-task-comments-query.dto';
 import { TaskCommentAttachmentResponseDto } from './dto/task-comment-attachment-response.dto';
 import { ListTasksQueryDto, TaskListRole } from './dto/list-tasks-query.dto';
@@ -105,6 +111,7 @@ export type TaskWithMedia = Task & {
     key: string;
     size: string;
     mimeType: string;
+    kind: TaskMediaKind;
   }[];
 };
 
@@ -285,15 +292,17 @@ export class TasksService {
   async addMedia(
     taskId: string,
     actorId: string,
-    data: { url: string; key: string; size: string; mimeType: string }
+    data: { url: string; key: string; size: string; mimeType: string },
+    kind: TaskMediaKind = TaskMediaKind.MAIN
   ) {
     const count = await this.prisma.taskMedia.count({
-      where: { taskId },
+      where: { taskId, kind },
     });
 
     const media = await this.prisma.taskMedia.create({
       data: {
         taskId,
+        kind,
         url: data.url,
         key: data.key,
         size: data.size,
@@ -304,6 +313,7 @@ export class TasksService {
 
     await this.logActivity(taskId, actorId, TaskActivityType.MEDIA_ADDED, {
       mediaId: media.id,
+      kind: media.kind,
       url: media.url,
       key: media.key,
       mimeType: media.mimeType,
@@ -346,6 +356,7 @@ export class TasksService {
         TaskActivityType.MEDIA_REMOVED,
         {
           mediaId: media.id,
+          kind: media.kind,
           url: media.url,
           key: media.key,
           mimeType: media.mimeType,
@@ -505,7 +516,58 @@ export class TasksService {
     ]);
 
     return {
-      items: items.map(attachment => this.toCommentAttachmentResponse(attachment)),
+      items: items.map(attachment =>
+        this.toCommentAttachmentResponse(attachment)
+      ),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  async listAttachments(
+    user: AuthUser,
+    taskId: string,
+    query: ListTaskAttachmentsQueryDto
+  ) {
+    const task = await this.getTaskOrThrow(taskId);
+    this.assertParticipant(task, user.userId);
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.TaskMediaWhereInput = {
+      taskId,
+      ...(query.kind === TaskAttachmentKindFilter.MAIN && {
+        kind: TaskMediaKind.MAIN,
+      }),
+      ...(query.kind === TaskAttachmentKindFilter.REPORT && {
+        kind: TaskMediaKind.REPORT,
+      }),
+      ...(query.type === TaskAttachmentTypeFilter.IMAGE && {
+        mimeType: { startsWith: 'image/' },
+      }),
+      ...(query.type === TaskAttachmentTypeFilter.VIDEO && {
+        mimeType: { startsWith: 'video/' },
+      }),
+      ...(query.type === TaskAttachmentTypeFilter.DOCUMENT && {
+        mimeType: { in: [...ALLOWED_DOCUMENT_MIME_TYPES] },
+      }),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.taskMedia.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { sortOrder: 'asc' }],
+        skip,
+        take: limit,
+      }),
+      this.prisma.taskMedia.count({ where }),
+    ]);
+
+    return {
+      items: items.map(attachment => this.toTaskAttachmentResponse(attachment)),
       total,
       page,
       limit,
@@ -871,6 +933,24 @@ export class TasksService {
     return base;
   }
 
+  private mapTaskMedia(item: {
+    id: string;
+    url: string;
+    key: string;
+    size: string;
+    mimeType: string;
+    kind: TaskMediaKind;
+  }) {
+    return {
+      id: item.id,
+      url: item.url,
+      key: item.key,
+      size: item.size,
+      mimeType: item.mimeType,
+      kind: item.kind,
+    };
+  }
+
   private toResponse(
     task: TaskWithRelations | TaskListItem,
     options: {
@@ -886,13 +966,12 @@ export class TasksService {
       ownerId: task.ownerId,
       executorId: task.executorId,
       status: task.status,
-      media: task.media.map(item => ({
-        id: item.id,
-        url: item.url,
-        key: item.key,
-        size: item.size,
-        mimeType: item.mimeType,
-      })),
+      media: task.media
+        .filter(item => item.kind === TaskMediaKind.MAIN)
+        .map(item => this.mapTaskMedia(item)),
+      reportMedia: task.media
+        .filter(item => item.kind === TaskMediaKind.REPORT)
+        .map(item => this.mapTaskMedia(item)),
       description: task.description,
       finalDate: task.finalDate?.toISOString() ?? null,
       photoCount: task.photoCount,
@@ -956,6 +1035,26 @@ export class TasksService {
       type: activity.type,
       payload: activity.payload as Record<string, unknown>,
       createdAt: activity.createdAt.toISOString(),
+    };
+  }
+
+  private toTaskAttachmentResponse(attachment: {
+    id: string;
+    kind: TaskMediaKind;
+    url: string;
+    key: string;
+    size: string;
+    mimeType: string;
+    createdAt: Date;
+  }): TaskAttachmentResponseDto {
+    return {
+      id: attachment.id,
+      kind: attachment.kind,
+      url: attachment.url,
+      key: attachment.key,
+      size: attachment.size,
+      mimeType: attachment.mimeType,
+      createdAt: attachment.createdAt.toISOString(),
     };
   }
 

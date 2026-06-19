@@ -8,6 +8,10 @@ import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { buildPasswordResetEmail } from './templates/password-reset';
 import { buildAccountInviteEmail } from './templates/account-invite';
+import {
+  ApplicationReceivedEmailParams,
+  buildApplicationReceivedEmail,
+} from './templates/application-received';
 
 @Injectable()
 export class MailService {
@@ -46,6 +50,15 @@ export class MailService {
       token
     )}`;
     const { subject, text, html } = buildAccountInviteEmail(inviteUrl);
+
+    await this.sendMail({ to, subject, text, html });
+  }
+
+  async sendApplicationReceivedEmail(
+    to: string,
+    params: ApplicationReceivedEmailParams
+  ): Promise<void> {
+    const { subject, text, html } = buildApplicationReceivedEmail(params);
 
     await this.sendMail({ to, subject, text, html });
   }

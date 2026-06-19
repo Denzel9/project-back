@@ -30,6 +30,7 @@ import { RegisterCompanyDto } from './dto/register-company.dto';
 import { RegisterCreatorDto } from './dto/register-creator.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyPasswordDto } from './dto/verify-password.dto';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { SwitchProfileDto } from './dto/switch-profile.dto';
@@ -204,6 +205,22 @@ export class AuthService {
     await this.accountsService.updatePassword(accountId, passwordHash);
 
     return { message: 'Пароль успешно изменён' };
+  }
+
+  async verifyPassword(authUser: AuthUser, dto: VerifyPasswordDto) {
+    const account = await this.accountsService.findById(authUser.accountId);
+
+    if (!account) {
+      throw new UnauthorizedException('Сессия недействительна');
+    }
+
+    const passwordMatches = await bcrypt.compare(dto.password, account.password);
+
+    if (!passwordMatches) {
+      throw new ForbiddenException('Неверный пароль');
+    }
+
+    return { valid: true };
   }
 
   async refresh(refreshToken: string) {

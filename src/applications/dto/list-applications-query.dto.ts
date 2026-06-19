@@ -28,7 +28,9 @@ export class ListApplicationsQueryDto {
   status?: ApplicationStatus;
 
   @ApiPropertyOptional({
-    description: 'Поиск по названию поста или названию компании-автора',
+    description:
+      'Поиск: для /applications/mine — по названию поста или компании-автора; ' +
+      'для /applications/incoming — по названию поста',
     example: 'реклама',
   })
   @IsOptional()

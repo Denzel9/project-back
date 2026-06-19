@@ -19,6 +19,7 @@ import { FavoriteResponseDto } from './dto/favorite-response.dto';
 import { ListFavoritesQueryDto } from './dto/list-favorites-query.dto';
 import { MoveFavoriteDto } from './dto/move-favorite.dto';
 import { UpdateFavoriteGroupDto } from './dto/update-favorite-group.dto';
+import { assertCanViewPost, visiblePostTypeForRole } from '../posts/post-visibility.util';
 
 const favoriteInclude = {
   post: { include: postWithMediaInclude },
@@ -128,7 +129,7 @@ export class FavoritesService {
     user: AuthUser,
     dto: AddFavoriteDto
   ): Promise<FavoriteResponseDto> {
-    await this.assertPostExists(dto.postId);
+    await this.assertPostVisible(user, dto.postId);
 
     if (dto.groupId !== undefined) {
       await this.assertGroupOwner(user.userId, dto.groupId);
@@ -222,6 +223,7 @@ export class FavoritesService {
 
     const where: Prisma.FavoritePostWhereInput = {
       userId: user.userId,
+      post: { type: visiblePostTypeForRole(user.role) },
       ...(query.groupId !== undefined && { groupId: query.groupId }),
       ...(query.ungrouped === true && { groupId: null }),
       ...(query.q !== undefined && {
@@ -259,15 +261,17 @@ export class FavoritesService {
     };
   }
 
-  private async assertPostExists(postId: string) {
+  private async assertPostVisible(user: AuthUser, postId: string) {
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
-      select: { id: true },
+      select: { id: true, ownerId: true, type: true },
     });
 
     if (!post) {
       throw new NotFoundException('Пост не найден');
     }
+
+    assertCanViewPost(user.role, user.userId, post);
   }
 
   private async assertGroupOwner(userId: string, groupId: string) {

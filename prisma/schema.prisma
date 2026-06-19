@@ -60,6 +60,11 @@ enum TaskActivityType {
   MEDIA_REMOVED
 }
 
+enum TaskMediaKind {
+  MAIN
+  REPORT
+}
+
 model Account {
   id          String              @id @default(uuid())
   email       String              @unique
@@ -339,17 +344,19 @@ model TaskCommentMedia {
 }
 
 model TaskMedia {
-  id        String   @id @default(uuid())
+  id        String        @id @default(uuid())
   taskId    String
-  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task      Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  kind      TaskMediaKind @default(MAIN)
   url       String
   key       String
   size      String
   mimeType  String
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
+  sortOrder Int           @default(0)
+  createdAt DateTime      @default(now())
 
   @@index([taskId])
+  @@index([taskId, kind])
 }
 
 model TaskActivity {

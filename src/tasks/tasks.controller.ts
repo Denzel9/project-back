@@ -31,6 +31,8 @@ import { ListTaskActivitiesQueryDto } from './dto/list-task-activities-query.dto
 import { ListTaskCommentsQueryDto } from './dto/list-task-comments-query.dto';
 import { ListTaskCommentAttachmentsQueryDto } from './dto/list-task-comment-attachments-query.dto';
 import { ListTaskCommentAttachmentsResponseDto } from './dto/list-task-comment-attachments-response.dto';
+import { ListTaskAttachmentsQueryDto } from './dto/list-task-attachments-query.dto';
+import { ListTaskAttachmentsResponseDto } from './dto/list-task-attachments-response.dto';
 import { SearchTaskCommentsQueryDto } from './dto/search-task-comments-query.dto';
 import { SearchTaskCommentsResponseDto } from './dto/search-task-comments-response.dto';
 import { ListTasksQueryDto } from './dto/list-tasks-query.dto';
@@ -62,7 +64,10 @@ export class TasksController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Задача по id', description: 'С комментариями. `description` — Markdown.' })
+  @ApiOperation({
+    summary: 'Задача по id',
+    description: 'С комментариями. `description` — Markdown.',
+  })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiNotFoundResponse({ description: 'Задача не найдена' })
   @ApiForbiddenResponse({ description: 'Нет доступа' })
@@ -77,7 +82,8 @@ export class TasksController {
   @UseGuards(MembershipWriteGuard)
   @ApiOperation({
     summary: 'Обновить задачу',
-    description: 'owner — все поля; executor — только `status`. `description` — Markdown. VIEWER → 403.',
+    description:
+      'owner — все поля; executor — только `status`. `description` — Markdown. VIEWER → 403.',
   })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiNotFoundResponse({ description: 'Задача не найдена' })
@@ -109,6 +115,26 @@ export class TasksController {
     return this.tasksService.listActivities(user, id, query);
   }
 
+  @Get(':id/attachments')
+  @ApiOperation({
+    summary: 'Вложения задачи',
+    description:
+      'Медиа задачи (TaskMedia). Фильтры: kind=main|report, type=image|video|document. Пагинация page/limit.',
+  })
+  @ApiOkResponse({
+    description: 'Вложения задачи с kind и createdAt',
+    type: ListTaskAttachmentsResponseDto,
+  })
+  @ApiNotFoundResponse({ description: 'Задача не найдена' })
+  @ApiForbiddenResponse({ description: 'Нет доступа' })
+  listAttachments(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: ListTaskAttachmentsQueryDto
+  ) {
+    return this.tasksService.listAttachments(user, id, query);
+  }
+
   @Get(':id/comments/search')
   @ApiOperation({
     summary: 'Поиск комментариев задачи',
@@ -136,7 +162,8 @@ export class TasksController {
       'Все медиа из комментариев задачи. Фильтр type=image|video|document. Пагинация page/limit.',
   })
   @ApiOkResponse({
-    description: 'Вложения с контекстом комментария (commentId, authorId, createdAt)',
+    description:
+      'Вложения с контекстом комментария (commentId, authorId, createdAt)',
     type: ListTaskCommentAttachmentsResponseDto,
   })
   @ApiNotFoundResponse({ description: 'Задача не найдена' })

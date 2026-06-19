@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   PostAuthorType,
   PostContentType,
@@ -36,7 +36,10 @@ export class PostResponseDto {
   @ApiProperty({ example: false })
   urgent: boolean;
 
-  @ApiProperty({ enum: PostContentType, example: PostContentType.PHOTO })
+  @ApiPropertyOptional({
+    enum: PostContentType,
+    example: PostContentType.PHOTO,
+  })
   contentType: PostContentType;
 
   @ApiProperty({ example: '3' })

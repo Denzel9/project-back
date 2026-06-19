@@ -39,6 +39,8 @@ import { RegisterCompanyDto } from './dto/register-company.dto';
 import { RegisterCreatorDto } from './dto/register-creator.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyPasswordDto } from './dto/verify-password.dto';
+import { VerifyPasswordResponseDto } from './dto/verify-password-response.dto';
 import { SwitchProfileDto } from './dto/switch-profile.dto';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
@@ -268,6 +270,28 @@ export class AuthController {
   })
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
+  }
+
+  @Post('verify-password')
+  @UseGuards(JwtAuthGuard)
+  @ApiCookieAuth('access-token')
+  @ApiOperation({
+    summary: 'Проверить текущий пароль',
+    description:
+      'Проверяет пароль залогиненного Account. Используйте перед сменой пароля в настройках. ' +
+      'Требует авторизацию (cookie access-token).',
+  })
+  @ApiOkResponse({
+    type: VerifyPasswordResponseDto,
+    description: 'Пароль верный',
+  })
+  @ApiForbiddenResponse({ description: 'Неверный пароль' })
+  @ApiUnauthorizedResponse({ description: 'Не авторизован' })
+  verifyPassword(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: VerifyPasswordDto
+  ) {
+    return this.authService.verifyPassword(user, dto);
   }
 
   @Post('refresh')

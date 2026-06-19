@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { Post, PostAuthorType, Prisma, Role } from '@prisma/client';
+import { Post, PostAuthorType, PostContentType, Prisma, Role } from '@prisma/client';
 import { AuthUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../media/storage.service';
@@ -13,6 +13,10 @@ import { CreatePostDto } from './dto/create-post.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
 import { PostResponseDto } from './dto/post-response.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
+import {
+  assertCanViewPost,
+  visiblePostTypeForRole,
+} from './post-visibility.util';
 
 export const postWithMediaInclude = {
   media: {
@@ -77,9 +81,9 @@ export class PostsService {
         permissions: dto.permissions ?? [],
         chips: dto.chips ?? [],
         description: dto.description ?? '',
-        typeCooperation: dto.typeCooperation,
+        typeCooperation: dto.typeCooperation ?? [],
         urgent: dto.urgent ?? false,
-        contentType: dto.contentType,
+        contentType: dto.contentType ?? PostContentType.PHOTO,
         photoCount: dto.photoCount ?? '0',
         videoCount: dto.videoCount ?? '0',
         finalPrice: dto.finalPrice ?? '',
@@ -93,7 +97,7 @@ export class PostsService {
     return this.toResponse(post);
   }
 
-  async findById(id: string): Promise<PostResponseDto> {
+  async findById(user: AuthUser, id: string): Promise<PostResponseDto> {
     const post = await this.prisma.post.findUnique({
       where: { id },
       include: postWithMediaInclude,
@@ -103,6 +107,8 @@ export class PostsService {
       throw new NotFoundException('Пост не найден');
     }
 
+    assertCanViewPost(user.role, user.userId, post);
+
     return this.toResponse(post);
   }
 
@@ -110,12 +116,26 @@ export class PostsService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
+    const viewingOwnPosts = query.ownerId === user.userId;
+    const visibleType = visiblePostTypeForRole(user.role);
+
+    if (
+      !viewingOwnPosts &&
+      query.type !== undefined &&
+      query.type !== visibleType
+    ) {
+      throw new BadRequestException(
+        'Фильтр type не соответствует постам, доступным для вашей роли'
+      );
+    }
 
     const where: Prisma.PostWhereInput = {
       ...(query.ownerId !== undefined
         ? { ownerId: query.ownerId }
         : { ownerId: { not: user.userId } }),
-      ...(query.type !== undefined && { type: query.type }),
+      ...(!viewingOwnPosts && { type: visibleType }),
+      ...(viewingOwnPosts &&
+        query.type !== undefined && { type: query.type }),
       ...(query.isArchived !== undefined && { isArchived: query.isArchived }),
       ...(query.q !== undefined && {
         OR: [

@@ -24,7 +24,8 @@ export class ListPostsQueryDto {
 
   @ApiPropertyOptional({
     enum: PostAuthorType,
-    description: 'Фильтр по типу поста (CREATOR / COMPANY)',
+    description:
+      'Фильтр по типу поста. Для чужих постов тип задаётся автоматически по роли (CREATOR видит COMPANY и наоборот)',
   })
   @IsOptional()
   @IsEnum(PostAuthorType)

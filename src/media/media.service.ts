@@ -4,6 +4,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { TaskMediaKind } from '@prisma/client';
 import { ChatService } from '../chat/chat.service';
 import { PostsService } from '../posts/posts.service';
 import { TasksService } from '../tasks/tasks.service';
@@ -16,6 +17,7 @@ export type MediaUploadTarget = {
   conversationId?: string;
   taskId?: string;
   forComment?: boolean;
+  taskMediaKind?: TaskMediaKind;
 };
 
 export type MediaDeleteTarget = {
@@ -39,7 +41,8 @@ export class MediaService {
     target: MediaUploadTarget = {}
   ): Promise<UploadResponseDto> {
     const extension = MIME_TO_EXTENSION[file.mimetype];
-    const { postId, conversationId, taskId, forComment } = target;
+    const { postId, conversationId, taskId, forComment, taskMediaKind } =
+      target;
 
     let key: string;
 
@@ -51,7 +54,13 @@ export class MediaService {
       key = `chats/${conversationId}/${randomUUID()}.${extension}`;
     } else if (taskId) {
       await this.tasksService.assertParticipantForMedia(userId, taskId);
-      key = `tasks/${taskId}/${randomUUID()}.${extension}`;
+      if (forComment) {
+        key = `tasks/${taskId}/${randomUUID()}.${extension}`;
+      } else {
+        const subPath =
+          taskMediaKind === TaskMediaKind.REPORT ? 'reports' : 'main';
+        key = `tasks/${taskId}/${subPath}/${randomUUID()}.${extension}`;
+      }
     } else {
       key = `${userId}/${randomUUID()}.${extension}`;
     }
@@ -72,12 +81,17 @@ export class MediaService {
         mimeType: file.mimetype,
       });
     } else if (taskId && !forComment) {
-      await this.tasksService.addMedia(taskId, userId, {
-        url,
-        key,
-        size: String(file.size),
-        mimeType: file.mimetype,
-      });
+      await this.tasksService.addMedia(
+        taskId,
+        userId,
+        {
+          url,
+          key,
+          size: String(file.size),
+          mimeType: file.mimetype,
+        },
+        taskMediaKind ?? TaskMediaKind.MAIN
+      );
     }
 
     return {

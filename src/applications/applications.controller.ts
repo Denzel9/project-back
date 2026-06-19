@@ -41,7 +41,8 @@ export class ApplicationsController {
     summary: 'Откликнуться на пост',
     description:
       'Один отклик на пост. Нельзя откликнуться на свой или архивный пост. ' +
-      'ACCEPTED создаёт задачу. Создаёт сообщение «Новый отклик» в диалоге с владельцем поста.',
+      'ACCEPTED создаёт задачу. Создаёт сообщение «Новый отклик» в диалоге с владельцем поста. ' +
+      'Владельцу поста отправляется email на Account OWNER.',
   })
   @ApiCreatedResponse({ type: ApplicationResponseDto })
   @ApiNotFoundResponse({ description: 'Пост не найден' })
@@ -71,8 +72,9 @@ export class ApplicationsController {
   @ApiOperation({
     summary: 'Входящие отклики на мои посты',
     description:
-      'Все отклики на посты владельца. Фильтры: postId, status. ' +
-      'Содержит данные соискателя (applicant).',
+      'Все отклики на посты активного профиля (владелец). ' +
+      'Фильтры: `postId`, `status`, `updatedDate` (YYYY-MM-DD, UTC), `type` (CREATOR / COMPANY). ' +
+      'Поиск: `q` — по названию поста. Содержит данные поста и соискателя (applicant).',
   })
   @ApiOkResponse({ description: 'Список входящих откликов с пагинацией' })
   listIncoming(

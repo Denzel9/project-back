@@ -30,6 +30,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { MembershipWriteGuard } from '../auth/guards/membership-write.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
+import { TaskMediaKind } from '@prisma/client';
 import { UploadResponseDto } from './dto/upload-response.dto';
 import {
   isAllowedDocumentMime,
@@ -40,6 +41,16 @@ import {
   MAX_VIDEO_SIZE_BYTES,
 } from './media.constants';
 import { MediaService } from './media.service';
+
+export enum TaskMediaKindParam {
+  MAIN = 'main',
+  REPORT = 'report',
+}
+
+const TASK_MEDIA_KIND_MAP: Record<TaskMediaKindParam, TaskMediaKind> = {
+  [TaskMediaKindParam.MAIN]: TaskMediaKind.MAIN,
+  [TaskMediaKindParam.REPORT]: TaskMediaKind.REPORT,
+};
 
 @ApiTags('media')
 @ApiCookieAuth('access-token')
@@ -56,7 +67,7 @@ export class MediaController {
     description:
       'Без query — для профиля (`PATCH /users/update`). ' +
       'С `postId` — для поста. С `conversationId` — для чата (затем `send_message` с media[]). ' +
-      'С `taskId` — для задачи (media задачи). `forComment=true` + `taskId` — для вложения в комментарий (без добавления в media задачи). ' +
+      'С `taskId` — для задачи (media задачи). `kind=report` — вложение отчёта (не смешивается с основными). `forComment=true` + `taskId` — для вложения в комментарий (без добавления в media задачи). ' +
       'Фото: JPEG, PNG, WebP, GIF до 10 МБ. Видео: MP4, WebM, MOV до 100 МБ. ' +
       'Документы (PDF, XLS, XLSX, DOC, DOCX до 25 МБ) — только с `taskId` или `conversationId`.',
   })
@@ -87,6 +98,13 @@ export class MediaController {
     type: Boolean,
     description:
       'С `taskId`: загрузка для комментария (ключ tasks/{taskId}/..., не попадает в media задачи)',
+  })
+  @ApiQuery({
+    name: 'kind',
+    required: false,
+    enum: TaskMediaKindParam,
+    description:
+      'С `taskId` без forComment: main (по умолчанию) — основные вложения, report — отчёт исполнителя',
   })
   @ApiBody({
     schema: {
@@ -120,6 +138,7 @@ export class MediaController {
     @Query('conversationId') conversationId: string | undefined,
     @Query('taskId') taskId: string | undefined,
     @Query('forComment') forCommentRaw: string | undefined,
+    @Query('kind') kindRaw: string | undefined,
     @UploadedFile() file?: Express.Multer.File
   ): Promise<UploadResponseDto> {
     if (!file) {
@@ -132,6 +151,31 @@ export class MediaController {
       throw new BadRequestException(
         'forComment можно использовать только вместе с taskId'
       );
+    }
+
+    let taskMediaKind: TaskMediaKind | undefined;
+
+    if (kindRaw !== undefined) {
+      if (!taskId) {
+        throw new BadRequestException('kind можно использовать только с taskId');
+      }
+
+      if (forComment) {
+        throw new BadRequestException(
+          'kind несовместим с forComment=true'
+        );
+      }
+
+      if (
+        kindRaw !== TaskMediaKindParam.MAIN &&
+        kindRaw !== TaskMediaKindParam.REPORT
+      ) {
+        throw new BadRequestException(
+          'kind должен быть main или report'
+        );
+      }
+
+      taskMediaKind = TASK_MEDIA_KIND_MAP[kindRaw as TaskMediaKindParam];
     }
 
     const targetCount = [postId, conversationId, taskId].filter(Boolean).length;
@@ -175,6 +219,7 @@ export class MediaController {
       ...(conversationId && { conversationId }),
       ...(taskId && { taskId }),
       ...(forComment && { forComment: true }),
+      ...(taskMediaKind && { taskMediaKind }),
     });
   }
 

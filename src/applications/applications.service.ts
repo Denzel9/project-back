@@ -3,10 +3,13 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   ApplicationStatus,
+  MembershipRole,
   PostAuthorType,
   Prisma,
   Role,
@@ -14,8 +17,12 @@ import {
 import { AuthUser } from '../auth/auth.types';
 import { ChatGateway } from '../chat/chat.gateway';
 import { ChatService } from '../chat/chat.service';
+import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TasksService } from '../tasks/tasks.service';
+import {
+  canViewPost,
+} from '../posts/post-visibility.util';
 import { ApplicationApplicantDto } from './dto/application-applicant.dto';
 import { ApplicationResponseDto } from './dto/application-response.dto';
 import { CreateApplicationDto } from './dto/create-application.dto';
@@ -93,11 +100,15 @@ const OWNER_TRANSITIONS: Record<ApplicationStatus, ApplicationStatus[]> = {
 
 @Injectable()
 export class ApplicationsService {
+  private readonly logger = new Logger(ApplicationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly chatService: ChatService,
     private readonly chatGateway: ChatGateway,
-    private readonly tasksService: TasksService
+    private readonly tasksService: TasksService,
+    private readonly mailService: MailService,
+    private readonly configService: ConfigService
   ) {}
 
   async create(
@@ -146,6 +157,8 @@ export class ApplicationsService {
 
       this.chatGateway.broadcastMessage(conversationId, message);
 
+      await this.notifyPostOwnerAboutApplication(application);
+
       return this.mapApplication(application, { includePost: true });
     } catch (error) {
       if (
@@ -176,16 +189,17 @@ export class ApplicationsService {
   }
 
   async listIncoming(user: AuthUser, query: ListApplicationsQueryDto) {
+    const postFilter = this.buildIncomingPostFilter(user.userId, query);
+    const updatedAtFilter = this.buildUpdatedDateFilter(query.updatedDate);
+
     return this.listApplications(
       {
-        post: {
-          ownerId: user.userId,
-          ...(query.postId !== undefined && { id: query.postId }),
-        },
+        post: postFilter,
         ...(query.status !== undefined && { status: query.status }),
+        ...(updatedAtFilter !== undefined && { updatedAt: updatedAtFilter }),
       },
       query,
-      { includeApplicant: true }
+      { includeApplicant: true, includePost: true }
     );
   }
 
@@ -340,6 +354,33 @@ export class ApplicationsService {
     return { AND: parts };
   }
 
+  private buildIncomingPostFilter(
+    ownerId: string,
+    query: Pick<ListApplicationsQueryDto, 'postId' | 'q' | 'type'>
+  ): Prisma.PostWhereInput {
+    const parts: Prisma.PostWhereInput[] = [{ ownerId }];
+
+    if (query.postId !== undefined) {
+      parts.push({ id: query.postId });
+    }
+
+    if (query.q !== undefined) {
+      parts.push({
+        title: { contains: query.q, mode: 'insensitive' },
+      });
+    }
+
+    if (query.type !== undefined) {
+      parts.push({ type: query.type });
+    }
+
+    if (parts.length === 1) {
+      return parts[0];
+    }
+
+    return { AND: parts };
+  }
+
   private buildPostSearchWhere(q: string): Prisma.PostWhereInput {
     return {
       OR: [
@@ -418,6 +459,69 @@ export class ApplicationsService {
     if (post.isArchived) {
       throw new BadRequestException('Нельзя откликнуться на архивный пост');
     }
+
+    if (!canViewPost(user.role, user.userId, post)) {
+      throw new ForbiddenException('Нельзя откликнуться на пост этого типа');
+    }
+  }
+
+  private async notifyPostOwnerAboutApplication(
+    application: ApplicationWithRelations
+  ) {
+    try {
+      const ownerMembership = await this.prisma.accountMembership.findFirst({
+        where: {
+          userId: application.post.ownerId,
+          role: MembershipRole.OWNER,
+        },
+        include: {
+          account: {
+            select: { email: true },
+          },
+        },
+      });
+
+      if (!ownerMembership?.account.email) {
+        this.logger.warn(
+          `Email OWNER не найден для владельца поста ${application.post.ownerId}`
+        );
+        return;
+      }
+
+      const frontendUrl = this.configService
+        .getOrThrow<string>('FRONTEND_URL')
+        .replace(/\/$/, '');
+      const applicationsUrl = `${frontendUrl}/applications/incoming`;
+
+      await this.mailService.sendApplicationReceivedEmail(
+        ownerMembership.account.email,
+        {
+          postTitle: application.post.title,
+          applicantName: this.getApplicantDisplayName(application.applicant),
+          message: application.message,
+          applicationsUrl,
+        }
+      );
+    } catch (error) {
+      this.logger.error(
+        'Не удалось отправить письмо о новом отклике',
+        error
+      );
+    }
+  }
+
+  private getApplicantDisplayName(
+    applicant: ApplicationWithRelations['applicant']
+  ): string {
+    if (applicant.role === Role.CREATOR && applicant.creatorProfile) {
+      return `${applicant.creatorProfile.name} ${applicant.creatorProfile.lastName}`.trim();
+    }
+
+    if (applicant.role === Role.COMPANY && applicant.companyProfile) {
+      return applicant.companyProfile.companyName;
+    }
+
+    return applicant.role;
   }
 
   private mapApplicant(

@@ -62,9 +62,11 @@ export class PostsController {
   @ApiOperation({
     summary: 'Список постов',
     description:
-      'Без `ownerId` — все посты кроме своих. С `ownerId` — посты указанного владельца. ' +
+      'Без `ownerId` — посты других пользователей, доступные для вашей роли ' +
+      '(креаторы — только COMPANY, компании — только CREATOR). ' +
+      'С `ownerId` = свой id — все свои посты. ' +
       'Поиск: `q` — по названию поста или названию компании. ' +
-      'Опциональные фильтры: `type`, `isArchived`. Пагинация: `page`, `limit`.',
+      'Опциональные фильтры: `type` (только для своих постов), `isArchived`. Пагинация: `page`, `limit`.',
   })
   @ApiOkResponse({ description: 'Список постов с пагинацией' })
   list(@CurrentUser() user: AuthUser, @Query() query: ListPostsQueryDto) {
@@ -93,12 +95,17 @@ export class PostsController {
   @ApiOperation({
     summary: 'Получить пост по id',
     description:
-      'Возвращает пост с `media[]` — массив URL для отображения на фронте.',
+      'Возвращает пост с `media[]`. Креаторы видят только посты компаний, компании — только посты креаторов. ' +
+      'Владелец всегда видит свой пост.',
   })
   @ApiOkResponse({ type: PostResponseDto, description: 'Пост' })
   @ApiNotFoundResponse({ description: 'Пост не найден' })
-  findById(@Param('id', ParseUUIDPipe) id: string) {
-    return this.postsService.findById(id);
+  @ApiForbiddenResponse({ description: 'Пост недоступен для вашей роли' })
+  findById(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string
+  ) {
+    return this.postsService.findById(user, id);
   }
 
   @Patch(':id')

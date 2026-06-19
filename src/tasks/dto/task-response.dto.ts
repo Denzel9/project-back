@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskStatus } from '@prisma/client';
+import { TaskCommentMediaDto } from './task-comment-media.dto';
 import { TaskMediaDto } from './task-media.dto';
 
 export class TaskCommentResponseDto {
@@ -15,8 +16,8 @@ export class TaskCommentResponseDto {
   @ApiProperty()
   content: string;
 
-  @ApiProperty({ type: [TaskMediaDto], default: [] })
-  media: TaskMediaDto[];
+  @ApiProperty({ type: [TaskCommentMediaDto], default: [] })
+  media: TaskCommentMediaDto[];
 
   @ApiProperty({ format: 'date-time' })
   createdAt: string;
@@ -41,8 +42,14 @@ export class TaskResponseDto {
   @ApiProperty({ enum: TaskStatus })
   status: TaskStatus;
 
-  @ApiProperty({ type: [TaskMediaDto] })
+  @ApiProperty({ type: [TaskMediaDto], description: 'Основные вложения (kind=MAIN)' })
   media: TaskMediaDto[];
+
+  @ApiProperty({
+    type: [TaskMediaDto],
+    description: 'Вложения отчёта исполнителя (kind=REPORT)',
+  })
+  reportMedia: TaskMediaDto[];
 
   @ApiProperty({
     description:
