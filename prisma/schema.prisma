@@ -51,6 +51,7 @@ enum TaskStatus {
   REVISION
   COMPLETED
   CANCELLED
+  CANCELLED_EXECUTOR
 }
 
 enum TaskActivityType {
@@ -130,9 +131,9 @@ model User {
   posts                    Post[]
   favoriteGroups           FavoriteGroup[]
   favoritePosts            FavoritePost[]
-  applications             PostApplication[] @relation("PostApplications")
-  ownedTasks               Task[]            @relation("OwnedTasks")
-  executedTasks            Task[]            @relation("ExecutedTasks")
+  applications             PostApplication[]         @relation("PostApplications")
+  ownedTasks               Task[]                    @relation("OwnedTasks")
+  executedTasks            Task[]                    @relation("ExecutedTasks")
   taskComments             TaskComment[]
   taskActivities           TaskActivity[]
 }
@@ -214,6 +215,7 @@ model Post {
   finalPrice      String            @default("")
   rangePrice      String[]          @default([])
   isArchived      Boolean           @default(false)
+  isPrivate       Boolean           @default(false)
   keyWords        String[]          @default([])
   categories      String[]          @default([])
   type            PostAuthorType
@@ -226,6 +228,7 @@ model Post {
 
   @@index([ownerId])
   @@index([isArchived])
+  @@index([isPrivate])
 }
 
 model PostMedia {
@@ -289,30 +292,33 @@ model PostApplication {
 }
 
 model Task {
-  id            String          @id @default(uuid())
-  applicationId String          @unique
-  application   PostApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  postId        String
-  post          Post            @relation(fields: [postId], references: [id], onDelete: Cascade)
-  ownerId       String
-  owner         User            @relation("OwnedTasks", fields: [ownerId], references: [id], onDelete: Cascade)
-  executorId    String
-  executor      User            @relation("ExecutedTasks", fields: [executorId], references: [id], onDelete: Cascade)
-  status        TaskStatus      @default(PREPARING)
-  description   String          @default("")
-  finalDate     DateTime?
-  photoCount    String          @default("0")
-  videoCount    String          @default("0")
-  urgent        Boolean         @default(false)
-  media         TaskMedia[]
-  comments      TaskComment[]
-  activities    TaskActivity[]
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id                String           @id @default(uuid())
+  applicationId     String?          @unique
+  application       PostApplication? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  postId            String
+  post              Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  ownerId           String
+  owner             User             @relation("OwnedTasks", fields: [ownerId], references: [id], onDelete: Cascade)
+  executorId        String?
+  executor          User?            @relation("ExecutedTasks", fields: [executorId], references: [id], onDelete: Cascade)
+  status            TaskStatus       @default(PREPARING)
+  title             String?
+  description       String           @default("")
+  finalDate         DateTime?
+  photoCount        String           @default("0")
+  videoCount        String           @default("0")
+  urgent            Boolean          @default(false)
+  isExecutorApprove Boolean?
+  media             TaskMedia[]
+  comments          TaskComment[]
+  activities        TaskActivity[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   @@index([ownerId])
   @@index([executorId])
   @@index([status])
+  @@index([postId])
 }
 
 model TaskComment {

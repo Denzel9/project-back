@@ -43,10 +43,10 @@ Backend для marketplace creator ↔ company. Документация для 
 2. \`PATCH /users/update\` — сохранить URL в \`avatar\`, \`banner\` и т.д.
 
 ### Посты с медиа
-1. \`POST /posts\` — создать пост (без медиа).
+1. \`POST /posts\` — создать пост (без медиа). Для прямого назначения исполнителя без публикации: \`isPrivate: true\`.
 2. \`POST /media/upload?postId={id}\` — загрузить файлы; они попадут в \`media[]\` поста.
-3. \`GET /posts\` — посты других пользователей, доступные по роли (креатор → COMPANY, компания → CREATOR); \`?ownerId={свой id}\` — все свои посты; \`?q=\`, \`?isArchived=\`.
-4. \`GET /posts/:id\` — пост по id; владелец видит всегда, остальные — только «чужого» типа.
+3. \`GET /posts\` — посты других пользователей, доступные по роли (креатор → COMPANY, компания → CREATOR); приватные посты в общей ленте не показываются; \`?ownerId={свой id}\` — все свои посты (включая приватные); \`?isPrivate=\` — фильтр для своих; \`?q=\`, \`?isArchived=\`.
+4. \`GET /posts/:id\` — пост по id; владелец видит всегда; приватный пост — только владелец (403 для остальных); публичный — по правилам типа поста.
 
 ### Избранное
 1. \`POST /favorites/groups\` — создать группу (например, «спорт»).
@@ -55,19 +55,26 @@ Backend для marketplace creator ↔ company. Документация для 
 4. \`PATCH /favorites/:postId\` — переместить в группу или groupId: null.
 
 ### Отклики на посты
-1. \`POST /applications\` — отклик (postId + message); создаёт сообщение в чате с владельцем поста; владельцу уходит email.
+1. \`POST /applications\` — отклик (postId + message); на приватный пост откликнуться нельзя; создаёт сообщение в чате с владельцем поста; владельцу уходит email.
 2. \`GET /applications/mine\` — мои отклики; \`?type=\`, \`?q=\`, \`?status=\`.
 3. \`GET /applications/incoming\` — входящие на мои посты; \`?status=\`, \`?updatedDate=YYYY-MM-DD\`, \`?q=\` (название поста), \`?postId=\`, \`?type=\`.
 4. \`GET /posts/:id/applications\` — отклики на конкретный пост (владелец).
 5. \`PATCH /applications/:id/status\` — ACCEPTED создаёт задачу; REJECTED / VIEWED (владелец).
 
 ### Задачи
-1. Создаются автоматически при \`PATCH /applications/:id/status\` → ACCEPTED.
-2. \`GET /tasks\` — список (\`?role=owner|executor\`, \`?status=\`, \`?updatedDate=YYYY-MM-DD\`, \`?q=\` по title или companyName).
-3. \`GET /tasks/:id\` — задача с \`media[]\` (основные) и \`reportMedia[]\` (отчёт).
-4. \`PATCH /tasks/:id\` — owner: все поля; executor: только status. \`description\` — Markdown (хранится как строка).
-5. Медиа задачи: \`POST /media/upload?taskId=\` (main), \`?taskId=&kind=report\` (отчёт), \`GET /tasks/:id/attachments\` (фильтры kind, type).
-6. Комментарии: \`GET/POST /tasks/:id/comments\`, \`GET .../comments/search?q=\`, \`GET .../comments/attachments\`, \`PATCH/DELETE .../comments/:commentId\`. Вложения в комментарий: \`POST /media/upload?taskId=&forComment=true\`.
+1. Создаются автоматически при \`PATCH /applications/:id/status\` → ACCEPTED (\`applicationId\` заполнен).
+2. \`GET /tasks\` — список (\`?postId=\`, \`?role=owner|executor\`, \`?status=\`, \`?updatedDate=YYYY-MM-DD\`, \`?q=\` по title или companyName). У исполнителя в ответе нет блока \`post\`.
+2a. \`GET /tasks/pending-approval\` — задачи исполнителя с \`isExecutorApprove: null\` (те же фильтры, кроме \`role\`).
+3. \`POST /tasks\` — создать задачу вручную (владелец поста: \`postId\`, опционально \`executorId\`). Без отклика; \`applicationId\` = null. Исполнителя можно назначить позже через \`PATCH /tasks/:id\`.
+4. \`GET /tasks/:id\` — задача с \`media[]\` (основные) и \`reportMedia[]\` (отчёт). Исполнитель не видит \`post\`.
+5. \`PATCH /tasks/:id\` — owner: все поля (включая \`executorId\`); executor: только status. \`description\` — Markdown (хранится как строка).
+6. \`DELETE /tasks/:id\` — удалить задачу (только owner поста).
+7. Медиа задачи: \`POST /media/upload?taskId=\` (main), \`?taskId=&kind=report\` (отчёт), \`GET /tasks/:id/attachments\` (фильтры kind, type).
+8. Комментарии: \`GET/POST /tasks/:id/comments\`, \`GET .../comments/search?q=\`, \`GET .../comments/attachments\`, \`PATCH/DELETE .../comments/:commentId\`. Вложения в комментарий: \`POST /media/upload?taskId=&forComment=true\`.
+
+### Приватный пост + прямое назначение
+1. Компания: \`POST /posts\` с \`isPrivate: true\` → медиа → \`POST /tasks\` с \`postId\` (и опционально \`executorId\`, либо назначить через \`PATCH /tasks/:id\`).
+2. Креатор видит задачу в \`GET /tasks\`, но \`GET /posts/:id\` для приватного поста недоступен (403).
 
 ### Чат
 - REST: список диалогов и история (сообщения с media[]).

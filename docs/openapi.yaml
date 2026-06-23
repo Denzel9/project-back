@@ -492,6 +492,33 @@ paths:
         "400":
           description: Недействительный или просроченный token
       tags: *a3
+  /auth/verify-password:
+    post:
+      operationId: AuthController_verifyPassword
+      summary: Проверить текущий пароль
+      description: Проверяет пароль залогиненного Account. Используйте перед сменой
+        пароля в настройках. Требует авторизацию (cookie access-token).
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyPasswordDto"
+      responses:
+        "200":
+          description: Пароль верный
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifyPasswordResponseDto"
+        "401":
+          description: Не авторизован
+        "403":
+          description: Неверный пароль
+      tags: *a3
+      security:
+        - access-token: []
   /auth/refresh:
     post:
       operationId: AuthController_refresh
@@ -874,7 +901,8 @@ paths:
       operationId: PostsController_create
       summary: Создать пост
       description: "Создаёт пост от имени активного профиля. `ownerId` и `type`
-        выставляются из JWT. Медиа загружаются отдельно: `POST
+        выставляются из JWT. Для прямого назначения исполнителя без публикации в
+        ленте: `isPrivate: true`. Медиа загружаются отдельно: `POST
         /media/upload?postId={id}`."
       parameters: []
       requestBody:
@@ -899,10 +927,12 @@ paths:
     get:
       operationId: PostsController_list
       summary: Список постов
-      description: "Без `ownerId` — все посты кроме своих. С `ownerId` — посты
-        указанного владельца. Поиск: `q` — по названию поста или названию
-        компании. Опциональные фильтры: `type`, `isArchived`. Пагинация: `page`,
-        `limit`."
+      description: "Без `ownerId` — посты других пользователей, доступные для вашей
+        роли (креаторы — только COMPANY, компании — только CREATOR); приватные
+        посты скрыты. С `ownerId` = свой id — все свои посты (включая
+        приватные). Поиск: `q` — по названию поста или названию компании.
+        Опциональные фильтры: `type` (только для своих постов), `isArchived`,
+        `isPrivate` (только для своих). Пагинация: `page`, `limit`."
       parameters:
         - name: ownerId
           required: false
@@ -914,7 +944,8 @@ paths:
         - name: type
           required: false
           in: query
-          description: Фильтр по типу поста (CREATOR / COMPANY)
+          description: Фильтр по типу поста. Для чужих постов тип задаётся автоматически
+            по роли (CREATOR видит COMPANY и наоборот)
           schema:
             enum:
               - CREATOR
@@ -924,6 +955,12 @@ paths:
           required: false
           in: query
           description: Фильтр по архивным постам
+          schema:
+            type: boolean
+        - name: isPrivate
+          required: false
+          in: query
+          description: Фильтр по приватным постам (только для своих постов через ownerId)
           schema:
             type: boolean
         - name: q
@@ -986,7 +1023,8 @@ paths:
         - name: q
           required: false
           in: query
-          description: Поиск по названию поста или названию компании-автора
+          description: "Поиск: для /applications/mine — по названию поста или
+            компании-автора; для /applications/incoming — по названию поста"
           schema:
             example: реклама
             type: string
@@ -1035,7 +1073,9 @@ paths:
     get:
       operationId: PostsController_findById
       summary: Получить пост по id
-      description: Возвращает пост с `media[]` — массив URL для отображения на фронте.
+      description: "Возвращает пост с `media[]`. Приватный пост — только владелец (403
+        для остальных). Публичный: креаторы видят только посты компаний,
+        компании — только посты креаторов. Владелец всегда видит свой пост."
       parameters:
         - name: id
           required: true
@@ -1049,6 +1089,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PostResponseDto"
+        "403":
+          description: Пост недоступен для вашей роли
         "404":
           description: Пост не найден
       tags: *a8
@@ -1108,7 +1150,7 @@ paths:
       summary: Откликнуться на пост
       description: Один отклик на пост. Нельзя откликнуться на свой или архивный пост.
         ACCEPTED создаёт задачу. Создаёт сообщение «Новый отклик» в диалоге с
-        владельцем поста.
+        владельцем поста. Владельцу поста отправляется email на Account OWNER.
       parameters: []
       requestBody:
         required: true
@@ -1162,7 +1204,8 @@ paths:
         - name: q
           required: false
           in: query
-          description: Поиск по названию поста или названию компании-автора
+          description: "Поиск: для /applications/mine — по названию поста или
+            компании-автора; для /applications/incoming — по названию поста"
           schema:
             example: реклама
             type: string
@@ -1207,8 +1250,10 @@ paths:
     get:
       operationId: ApplicationsController_listIncoming
       summary: Входящие отклики на мои посты
-      description: "Все отклики на посты владельца. Фильтры: postId, status. Содержит
-        данные соискателя (applicant)."
+      description: "Все отклики на посты активного профиля (владелец). Фильтры:
+        `postId`, `status`, `updatedDate` (YYYY-MM-DD, UTC), `type` (CREATOR /
+        COMPANY). Поиск: `q` — по названию поста. Содержит данные поста и
+        соискателя (applicant)."
       parameters:
         - name: postId
           required: false
@@ -1231,7 +1276,8 @@ paths:
         - name: q
           required: false
           in: query
-          description: Поиск по названию поста или названию компании-автора
+          description: "Поиск: для /applications/mine — по названию поста или
+            компании-автора; для /applications/incoming — по названию поста"
           schema:
             example: реклама
             type: string
@@ -1335,10 +1381,18 @@ paths:
     get:
       operationId: TasksController_list
       summary: Список задач
-      description: "Задачи, где пользователь owner или executor. Фильтры: `role`,
-        `status`, `updatedDate` (YYYY-MM-DD, UTC), `q` (название поста или
-        компании). Создание задачи — автоматически при ACCEPTED отклика."
+      description: "Задачи, где пользователь owner или executor. Фильтры: `postId`,
+        `role`, `status`, `updatedDate` (YYYY-MM-DD, UTC), `q` (название поста
+        или компании). Создание — автоматически при ACCEPTED отклика или `POST
+        /tasks` вручную (владелец поста). У исполнителя нет блока `post`."
       parameters:
+        - name: postId
+          required: false
+          in: query
+          description: Фильтр по посту — задачи, связанные с этим postId
+          schema:
+            format: uuid
+            type: string
         - name: role
           required: false
           in: query
@@ -1398,11 +1452,41 @@ paths:
         - tasks
       security: &a13
         - access-token: []
+    post:
+      operationId: TasksController_create
+      summary: Создать задачу вручную
+      description: Только владелец поста. Создаёт задачу без отклика (`applicationId`
+        = null). Один исполнитель — одна задача на пост. Поля задачи
+        опциональны.
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskDto"
+      responses:
+        "201":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponseDto"
+        "400":
+          description: Недопустимые данные
+        "403":
+          description: Не владелец поста или VIEWER
+        "404":
+          description: Пост или исполнитель не найдены
+        "409":
+          description: Задача для этого исполнителя на этом посте уже существует
+      tags: *a12
+      security: *a13
   /tasks/{id}:
     get:
       operationId: TasksController_findById
       summary: Задача по id
-      description: С комментариями. `description` — Markdown.
+      description: С комментариями. `description` — Markdown. Исполнитель не видит `post`.
       parameters:
         - name: id
           required: true
@@ -1448,6 +1532,26 @@ paths:
                 $ref: "#/components/schemas/TaskResponseDto"
         "403":
           description: Нет доступа или недопустимые поля
+        "404":
+          description: Задача не найдена
+      tags: *a12
+      security: *a13
+    delete:
+      operationId: TasksController_remove
+      summary: Удалить задачу
+      description: Только владелец поста. Удаляет задачу, комментарии, активности и
+        медиа в БД; файлы задачи — в S3.
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Задача удалена
+        "403":
+          description: Не владелец поста или VIEWER
         "404":
           description: Задача не найдена
       tags: *a12
@@ -2050,15 +2154,19 @@ info:
 
     ### Посты с медиа
 
-    1. `POST /posts` — создать пост (без медиа).
+    1. `POST /posts` — создать пост (без медиа). Для прямого назначения
+    исполнителя без публикации: `isPrivate: true`.
 
     2. `POST /media/upload?postId={id}` — загрузить файлы; они попадут в
     `media[]` поста.
 
-    3. `GET /posts` — все посты кроме своих; `?q=` — поиск по title или
-    companyName; `?ownerId=`, `?type=`, `?isArchived=`.
+    3. `GET /posts` — посты других пользователей, доступные по роли (креатор →
+    COMPANY, компания → CREATOR); приватные посты в общей ленте не показываются;
+    `?ownerId={свой id}` — все свои посты (включая приватные); `?isPrivate=` —
+    фильтр для своих; `?q=`, `?isArchived=`.
 
-    4. `GET /posts/:id` — получить пост с `media[].url` для `<img src>`.
+    4. `GET /posts/:id` — пост по id; владелец видит всегда; приватный пост —
+    только владелец (403 для остальных); публичный — по правилам типа поста.
 
 
     ### Избранное
@@ -2075,12 +2183,14 @@ info:
 
     ### Отклики на посты
 
-    1. `POST /applications` — отклик (postId + message); создаёт сообщение в
-    чате с владельцем поста.
+    1. `POST /applications` — отклик (postId + message); на приватный пост
+    откликнуться нельзя; создаёт сообщение в чате с владельцем поста; владельцу
+    уходит email.
 
     2. `GET /applications/mine` — мои отклики; `?type=`, `?q=`, `?status=`.
 
-    3. `GET /applications/incoming` — входящие на мои посты.
+    3. `GET /applications/incoming` — входящие на мои посты; `?status=`,
+    `?updatedDate=YYYY-MM-DD`, `?q=` (название поста), `?postId=`, `?type=`.
 
     4. `GET /posts/:id/applications` — отклики на конкретный пост (владелец).
 
@@ -2090,24 +2200,41 @@ info:
 
     ### Задачи
 
-    1. Создаются автоматически при `PATCH /applications/:id/status` → ACCEPTED.
+    1. Создаются автоматически при `PATCH /applications/:id/status` → ACCEPTED
+    (`applicationId` заполнен).
 
-    2. `GET /tasks` — список (`?role=owner|executor`, `?status=`,
-    `?updatedDate=YYYY-MM-DD`, `?q=` по title или companyName).
+    2. `GET /tasks` — список (`?postId=`, `?role=owner|executor`, `?status=`,
+    `?updatedDate=YYYY-MM-DD`, `?q=` по title или companyName). У исполнителя в
+    ответе нет блока `post`.
 
-    3. `GET /tasks/:id` — задача с `media[]` (основные) и `reportMedia[]`
-    (отчёт).
+    3. `POST /tasks` — создать задачу вручную (владелец поста: postId +
+    executorId). Без отклика; `applicationId` = null. Один исполнитель — одна
+    задача на пост.
 
-    4. `PATCH /tasks/:id` — owner: все поля; executor: только status.
+    4. `GET /tasks/:id` — задача с `media[]` (основные) и `reportMedia[]`
+    (отчёт). Исполнитель не видит `post`.
+
+    5. `PATCH /tasks/:id` — owner: все поля; executor: только status.
     `description` — Markdown (хранится как строка).
 
-    5. Медиа задачи: `POST /media/upload?taskId=` (main), `?taskId=&kind=report`
+    6. `DELETE /tasks/:id` — удалить задачу (только owner поста).
+
+    7. Медиа задачи: `POST /media/upload?taskId=` (main), `?taskId=&kind=report`
     (отчёт), `GET /tasks/:id/attachments` (фильтры kind, type).
 
-    6. Комментарии: `GET/POST /tasks/:id/comments`, `GET
+    8. Комментарии: `GET/POST /tasks/:id/comments`, `GET
     .../comments/search?q=`, `GET .../comments/attachments`, `PATCH/DELETE
     .../comments/:commentId`. Вложения в комментарий: `POST
     /media/upload?taskId=&forComment=true`.
+
+
+    ### Приватный пост + прямое назначение
+
+    1. Компания: `POST /posts` с `isPrivate: true` → медиа → `POST /tasks` с
+    `postId` и `executorId`.
+
+    2. Креатор видит задачу в `GET /tasks`, но `GET /posts/:id` для приватного
+    поста недоступен (403).
 
 
     ### Чат
@@ -2122,13 +2249,16 @@ info:
     - 1:1 диалог между любыми пользователями.
 
 
-    ### Сброс пароля
+    ### Сброс и проверка пароля
 
     1. `POST /auth/recovery-password` — письмо на email Account.
 
     2. Ссылка: `{FRONTEND_URL}/reset-password?token=...`
 
     3. `POST /auth/reset-password` — новый пароль Account.
+
+    4. `POST /auth/verify-password` — проверка текущего пароля (авторизованный
+    пользователь, перед сменой в настройках).
 
 
     ## WebSocket /chat
@@ -2146,7 +2276,7 @@ info:
 tags:
   - name: auth
     description: Регистрация, вход, профили Account, переключение, приглашения
-      (invite), сброс пароля
+      (invite), сброс и проверка пароля
   - name: users
     description: "Публичный профиль User: просмотр по id, редактирование активного профиля"
   - name: creator
@@ -2527,6 +2657,23 @@ components:
       required:
         - token
         - newPassword
+    VerifyPasswordDto:
+      type: object
+      properties:
+        password:
+          type: string
+          example: currentPassword123
+          description: Текущий пароль Account для проверки перед сменой
+      required:
+        - password
+    VerifyPasswordResponseDto:
+      type: object
+      properties:
+        valid:
+          type: boolean
+          example: true
+      required:
+        - valid
     ChatPeerResponse:
       type: object
       properties:
@@ -2746,7 +2893,8 @@ components:
           type: array
           example: &a18
             - ONE_TIME
-          items: &a19
+          default: &a19 []
+          items: &a20
             type: string
             enum:
               - ONE_TIME
@@ -2756,7 +2904,7 @@ components:
           default: false
         contentType:
           type: string
-          enum: &a20
+          enum: &a21
             - PHOTO
             - VIDEO
             - PHOTO_VIDEO
@@ -2774,24 +2922,25 @@ components:
           example: "5000"
           default: ""
         rangePrice:
-          default: &a21 []
-          type: array
-          items:
-            type: string
-        keyWords:
           default: &a22 []
           type: array
           items:
             type: string
-        categories:
+        keyWords:
           default: &a23 []
+          type: array
+          items:
+            type: string
+        isPrivate:
+          type: boolean
+          default: false
+        categories:
+          default: &a24 []
           type: array
           items:
             type: string
       required:
         - title
-        - typeCooperation
-        - contentType
     PostMediaDto:
       type: object
       properties:
@@ -2916,6 +3065,11 @@ components:
         isArchived:
           type: boolean
           example: false
+        isPrivate:
+          type: boolean
+          example: false
+          description: Приватный пост виден только владельцу; исполнитель работает через
+            задачу без доступа к посту
         keyWords:
           example:
             - keyword
@@ -2951,12 +3105,12 @@ components:
         - description
         - typeCooperation
         - urgent
-        - contentType
         - photoCount
         - videoCount
         - finalPrice
         - rangePrice
         - isArchived
+        - isPrivate
         - keyWords
         - categories
         - type
@@ -2986,13 +3140,14 @@ components:
         typeCooperation:
           type: array
           example: *a18
-          items: *a19
+          default: *a19
+          items: *a20
         urgent:
           type: boolean
           default: false
         contentType:
           type: string
-          enum: *a20
+          enum: *a21
           example: PHOTO
         photoCount:
           type: string
@@ -3007,17 +3162,20 @@ components:
           example: "5000"
           default: ""
         rangePrice:
-          default: *a21
-          type: array
-          items:
-            type: string
-        keyWords:
           default: *a22
           type: array
           items:
             type: string
-        categories:
+        keyWords:
           default: *a23
+          type: array
+          items:
+            type: string
+        isPrivate:
+          type: boolean
+          default: false
+        categories:
+          default: *a24
           type: array
           items:
             type: string
@@ -3142,6 +3300,45 @@ components:
           description: VIEWED, ACCEPTED или REJECTED
       required:
         - status
+    CreateTaskDto:
+      type: object
+      properties:
+        postId:
+          type: string
+          format: uuid
+          description: UUID поста (только владелец поста)
+        executorId:
+          type: string
+          format: uuid
+          description: UUID исполнителя задачи
+        description:
+          type: string
+          maxLength: 5000
+          description: Описание задачи в формате Markdown
+        status:
+          type: string
+          enum:
+            - PREPARING
+            - PENDING_APPROVAL
+            - IN_PROGRESS
+            - CHECKING
+            - REVISION
+            - COMPLETED
+            - CANCELLED
+          default: PREPARING
+        finalDate:
+          type: string
+          format: date-time
+          nullable: true
+        photoCount:
+          type: string
+        videoCount:
+          type: string
+        urgent:
+          type: boolean
+      required:
+        - postId
+        - executorId
     TaskMediaDto:
       type: object
       properties:
@@ -3239,6 +3436,7 @@ components:
         applicationId:
           type: string
           format: uuid
+          nullable: true
         executorId:
           type: string
           format: uuid

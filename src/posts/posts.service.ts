@@ -90,6 +90,7 @@ export class PostsService {
         rangePrice: dto.rangePrice ?? [],
         keyWords: dto.keyWords ?? [],
         categories: dto.categories ?? [],
+        isPrivate: dto.isPrivate ?? false,
       },
       include: postWithMediaInclude,
     });
@@ -137,6 +138,9 @@ export class PostsService {
       ...(viewingOwnPosts &&
         query.type !== undefined && { type: query.type }),
       ...(query.isArchived !== undefined && { isArchived: query.isArchived }),
+      ...(!viewingOwnPosts && { isPrivate: false }),
+      ...(viewingOwnPosts &&
+        query.isPrivate !== undefined && { isPrivate: query.isPrivate }),
       ...(query.q !== undefined && {
         OR: [
           { title: { contains: query.q, mode: 'insensitive' } },
@@ -303,6 +307,7 @@ export class PostsService {
     if (dto.finalPrice !== undefined) data.finalPrice = dto.finalPrice;
     if (dto.rangePrice !== undefined) data.rangePrice = dto.rangePrice;
     if (dto.isArchived !== undefined) data.isArchived = dto.isArchived;
+    if (dto.isPrivate !== undefined) data.isPrivate = dto.isPrivate;
     if (dto.keyWords !== undefined) data.keyWords = dto.keyWords;
     if (dto.categories !== undefined) data.categories = dto.categories;
 
@@ -342,6 +347,7 @@ export class PostsService {
       finalPrice: post.finalPrice,
       rangePrice: post.rangePrice,
       isArchived: post.isArchived,
+      isPrivate: post.isPrivate,
       keyWords: post.keyWords,
       categories: post.categories,
       type: post.type,

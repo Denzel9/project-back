@@ -6,6 +6,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   Max,
   Min,
@@ -18,6 +19,14 @@ export enum TaskListRole {
 }
 
 export class ListTasksQueryDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Фильтр по посту — задачи, связанные с этим postId',
+  })
+  @IsOptional()
+  @IsUUID()
+  postId?: string;
+
   @ApiPropertyOptional({
     enum: TaskListRole,
     description:

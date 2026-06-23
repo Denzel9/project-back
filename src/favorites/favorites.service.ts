@@ -264,7 +264,7 @@ export class FavoritesService {
   private async assertPostVisible(user: AuthUser, postId: string) {
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
-      select: { id: true, ownerId: true, type: true },
+      select: { id: true, ownerId: true, type: true, isPrivate: true },
     });
 
     if (!post) {

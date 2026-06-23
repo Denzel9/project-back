@@ -57,6 +57,13 @@ export class PostResponseDto {
   @ApiProperty({ example: false })
   isArchived: boolean;
 
+  @ApiProperty({
+    example: false,
+    description:
+      'Приватный пост виден только владельцу; исполнитель работает через задачу без доступа к посту',
+  })
+  isPrivate: boolean;
+
   @ApiProperty({ type: [String], example: ['keyword'] })
   keyWords: string[];
 

@@ -20,9 +20,7 @@ import { ChatService } from '../chat/chat.service';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TasksService } from '../tasks/tasks.service';
-import {
-  canViewPost,
-} from '../posts/post-visibility.util';
+import { canViewPost } from '../posts/post-visibility.util';
 import { ApplicationApplicantDto } from './dto/application-applicant.dto';
 import { ApplicationResponseDto } from './dto/application-response.dto';
 import { CreateApplicationDto } from './dto/create-application.dto';
@@ -117,7 +115,13 @@ export class ApplicationsService {
   ): Promise<ApplicationResponseDto> {
     const post = await this.prisma.post.findUnique({
       where: { id: dto.postId },
-      select: { id: true, ownerId: true, type: true, isArchived: true },
+      select: {
+        id: true,
+        ownerId: true,
+        type: true,
+        isArchived: true,
+        isPrivate: true,
+      },
     });
 
     if (!post) {
@@ -450,6 +454,7 @@ export class ApplicationsService {
       ownerId: string;
       type: PostAuthorType;
       isArchived: boolean;
+      isPrivate: boolean;
     }
   ) {
     if (post.ownerId === user.userId) {
@@ -458,6 +463,10 @@ export class ApplicationsService {
 
     if (post.isArchived) {
       throw new BadRequestException('Нельзя откликнуться на архивный пост');
+    }
+
+    if (post.isPrivate) {
+      throw new BadRequestException('Нельзя откликнуться на приватный пост');
     }
 
     if (!canViewPost(user.role, user.userId, post)) {
@@ -503,10 +512,7 @@ export class ApplicationsService {
         }
       );
     } catch (error) {
-      this.logger.error(
-        'Не удалось отправить письмо о новом отклике',
-        error
-      );
+      this.logger.error('Не удалось отправить письмо о новом отклике', error);
     }
   }
 

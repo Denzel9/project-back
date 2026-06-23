@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
@@ -27,6 +28,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { MembershipWriteGuard } from '../auth/guards/membership-write.guard';
 import { AuthUser } from '../auth/auth.types';
 import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
+import { CreateTaskDto } from './dto/create-task.dto';
 import { ListTaskActivitiesQueryDto } from './dto/list-task-activities-query.dto';
 import { ListTaskCommentsQueryDto } from './dto/list-task-comments-query.dto';
 import { ListTaskCommentAttachmentsQueryDto } from './dto/list-task-comment-attachments-query.dto';
@@ -55,18 +57,51 @@ export class TasksController {
   @ApiOperation({
     summary: 'Список задач',
     description:
-      'Задачи, где пользователь owner или executor. Фильтры: `role`, `status`, `updatedDate` (YYYY-MM-DD, UTC), `q` (название поста или компании). ' +
-      'Создание задачи — автоматически при ACCEPTED отклика.',
+      'Задачи, где пользователь owner или executor. Фильтры: `postId`, `role`, `status`, `updatedDate` (YYYY-MM-DD, UTC), `q` (название поста или компании). ' +
+      'Задачи без ответа исполнителя (`isExecutorApprove: null`) — в `GET /tasks/pending-approval`. ' +
+      'Создание — автоматически при ACCEPTED отклика или `POST /tasks` вручную (владелец поста). У исполнителя нет блока `post`.',
   })
   @ApiOkResponse({ description: 'Список задач с пагинацией' })
   list(@CurrentUser() user: AuthUser, @Query() query: ListTasksQueryDto) {
     return this.tasksService.list(user, query);
   }
 
+  @Get('pending-approval')
+  @ApiOperation({
+    summary: 'Задачи исполнителя без одобрения',
+    description:
+      'Только задачи, где текущий пользователь — исполнитель и `isExecutorApprove === null`. ' +
+      'Те же фильтры, что у `GET /tasks`, кроме `role` (всегда executor).',
+  })
+  @ApiOkResponse({ description: 'Список задач с пагинацией' })
+  listPendingApproval(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListTasksQueryDto
+  ) {
+    return this.tasksService.listPendingApproval(user, query);
+  }
+
+  @Post()
+  @UseGuards(MembershipWriteGuard)
+  @ApiOperation({
+    summary: 'Создать задачу вручную',
+    description:
+      'Только владелец поста. Создаёт задачу без отклика (`applicationId` = null). ' +
+      '`executorId` опционален — можно назначить позже через PATCH.',
+  })
+  @ApiCreatedResponse({ type: TaskResponseDto })
+  @ApiNotFoundResponse({ description: 'Пост или исполнитель не найдены' })
+  @ApiForbiddenResponse({ description: 'Не владелец поста или VIEWER' })
+  @ApiBadRequestResponse({ description: 'Недопустимые данные' })
+  create(@CurrentUser() user: AuthUser, @Body() dto: CreateTaskDto) {
+    return this.tasksService.create(user, dto);
+  }
+
   @Get(':id')
   @ApiOperation({
     summary: 'Задача по id',
-    description: 'С комментариями. `description` — Markdown.',
+    description:
+      'С комментариями. `description` — Markdown. Исполнитель не видит `post`.',
   })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiNotFoundResponse({ description: 'Задача не найдена' })
@@ -83,7 +118,7 @@ export class TasksController {
   @ApiOperation({
     summary: 'Обновить задачу',
     description:
-      'owner — все поля; executor — только `status`. `description` — Markdown. VIEWER → 403.',
+      'owner — все поля (включая `executorId`, `isExecutorApprove`); executor — `status` и `isExecutorApprove`. `description` — Markdown. VIEWER → 403.',
   })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiNotFoundResponse({ description: 'Задача не найдена' })
@@ -94,6 +129,24 @@ export class TasksController {
     @Body() dto: UpdateTaskDto
   ) {
     return this.tasksService.update(user, id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(MembershipWriteGuard)
+  @ApiOperation({
+    summary: 'Удалить задачу',
+    description:
+      'Только владелец поста. Удаляет задачу, комментарии, активности и медиа в БД; файлы задачи — в S3.',
+  })
+  @ApiNoContentResponse({ description: 'Задача удалена' })
+  @ApiNotFoundResponse({ description: 'Задача не найдена' })
+  @ApiForbiddenResponse({ description: 'Не владелец поста или VIEWER' })
+  remove(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string
+  ) {
+    return this.tasksService.remove(user, id);
   }
 
   @Get(':id/activities')

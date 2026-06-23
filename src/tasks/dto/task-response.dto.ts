@@ -30,11 +30,11 @@ export class TaskResponseDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
-  @ApiProperty({ format: 'uuid' })
-  applicationId: string;
+  @ApiProperty({ format: 'uuid', nullable: true })
+  applicationId: string | null;
 
-  @ApiProperty({ format: 'uuid' })
-  executorId: string;
+  @ApiProperty({ format: 'uuid', nullable: true })
+  executorId: string | null;
 
   @ApiProperty({ format: 'uuid' })
   ownerId: string;
@@ -42,7 +42,13 @@ export class TaskResponseDto {
   @ApiProperty({ enum: TaskStatus })
   status: TaskStatus;
 
-  @ApiProperty({ type: [TaskMediaDto], description: 'Основные вложения (kind=MAIN)' })
+  @ApiProperty({ nullable: true })
+  title: string | null;
+
+  @ApiProperty({
+    type: [TaskMediaDto],
+    description: 'Основные вложения (kind=MAIN)',
+  })
   media: TaskMediaDto[];
 
   @ApiProperty({
@@ -69,6 +75,9 @@ export class TaskResponseDto {
 
   @ApiProperty()
   urgent: boolean;
+
+  @ApiProperty({ nullable: true })
+  isExecutorApprove: boolean | null;
 
   @ApiProperty({ format: 'date-time' })
   createdAt: string;

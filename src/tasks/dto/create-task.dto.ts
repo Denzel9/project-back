@@ -1,4 +1,4 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
@@ -12,15 +12,14 @@ import {
   ValidateIf,
 } from 'class-validator';
 
-export class UpdateTaskDto {
-  @ApiPropertyOptional({ enum: TaskStatus })
-  @IsOptional()
-  @IsEnum(TaskStatus)
-  status?: TaskStatus;
+export class CreateTaskDto {
+  @ApiProperty({ format: 'uuid', description: 'UUID поста (только владелец поста)' })
+  @IsUUID()
+  postId: string;
 
   @ApiPropertyOptional({
     format: 'uuid',
-    description: 'UUID исполнителя задачи (только владелец поста)',
+    description: 'UUID исполнителя задачи. Можно назначить позже через PATCH /tasks/:id',
   })
   @IsOptional()
   @IsUUID()
@@ -35,14 +34,17 @@ export class UpdateTaskDto {
 
   @ApiPropertyOptional({
     maxLength: 5000,
-    description:
-      'Описание задачи в формате Markdown. Сервер хранит как есть, рендеринг на клиенте.',
-    example: '## Требования\n\n- 3 фото\n- Дедлайн **завтра**',
+    description: 'Описание задачи в формате Markdown',
   })
   @IsOptional()
   @IsString()
   @MaxLength(5000)
   description?: string;
+
+  @ApiPropertyOptional({ enum: TaskStatus, default: TaskStatus.PREPARING })
+  @IsOptional()
+  @IsEnum(TaskStatus)
+  status?: TaskStatus;
 
   @ApiPropertyOptional({ format: 'date-time', nullable: true })
   @IsOptional()

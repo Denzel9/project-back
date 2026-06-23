@@ -81,6 +81,11 @@ export class CreatePostDto {
   @IsString({ each: true })
   keyWords?: string[];
 
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  isPrivate?: boolean;
+
   @ApiPropertyOptional({ type: [String], default: [] })
   @IsOptional()
   @IsArray()

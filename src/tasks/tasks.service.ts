@@ -1,11 +1,19 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role, Task, TaskActivityType, TaskMediaKind } from '@prisma/client';
+import {
+  Prisma,
+  Role,
+  Task,
+  TaskActivityType,
+  TaskMediaKind,
+  TaskStatus,
+} from '@prisma/client';
 import { ApplicationApplicantDto } from '../applications/dto/application-applicant.dto';
 import { AuthUser } from '../auth/auth.types';
 import { StorageService } from '../media/storage.service';
@@ -28,6 +36,7 @@ import { TaskAttachmentResponseDto } from './dto/task-attachment-response.dto';
 import { SearchTaskCommentsQueryDto } from './dto/search-task-comments-query.dto';
 import { TaskCommentAttachmentResponseDto } from './dto/task-comment-attachment-response.dto';
 import { ListTasksQueryDto, TaskListRole } from './dto/list-tasks-query.dto';
+import { CreateTaskDto } from './dto/create-task.dto';
 import { TaskActivityResponseDto } from './dto/task-activity-response.dto';
 import {
   TaskCommentResponseDto,
@@ -57,6 +66,7 @@ export const taskListInclude = {
       title: true,
       type: true,
       ownerId: true,
+      isPrivate: true,
     },
   },
   owner: {
@@ -158,6 +168,14 @@ export class TasksService {
       throw new NotFoundException('Отклик не найден');
     }
 
+    const existingByApplication = await tx.task.findUnique({
+      where: { applicationId },
+    });
+
+    if (existingByApplication) {
+      throw new ConflictException('Задача для этого отклика уже существует');
+    }
+
     return tx.task.create({
       data: {
         applicationId,
@@ -171,27 +189,137 @@ export class TasksService {
     });
   }
 
+  async create(user: AuthUser, dto: CreateTaskDto): Promise<TaskResponseDto> {
+    const post = await this.prisma.post.findUnique({
+      where: { id: dto.postId },
+      select: {
+        id: true,
+        ownerId: true,
+        photoCount: true,
+        videoCount: true,
+        urgent: true,
+        isArchived: true,
+      },
+    });
+
+    if (!post) {
+      throw new NotFoundException('Пост не найден');
+    }
+
+    if (post.ownerId !== user.userId) {
+      throw new ForbiddenException(
+        'Создавать задачу может только владелец поста'
+      );
+    }
+
+    if (post.isArchived) {
+      throw new BadRequestException(
+        'Нельзя создать задачу для архивного поста'
+      );
+    }
+
+    if (dto.executorId !== undefined) {
+      await this.validateExecutor(dto.executorId, post.ownerId);
+    }
+
+    const task = await this.prisma.task.create({
+      data: {
+        postId: dto.postId,
+        ownerId: post.ownerId,
+        executorId: dto.executorId ?? null,
+        description: dto.description ?? '',
+        ...(dto.title !== undefined && { title: dto.title }),
+        status: dto.status ?? TaskStatus.PREPARING,
+        finalDate:
+          dto.finalDate === undefined
+            ? undefined
+            : dto.finalDate === null
+              ? null
+              : new Date(dto.finalDate),
+        photoCount: dto.photoCount ?? post.photoCount,
+        videoCount: dto.videoCount ?? post.videoCount,
+        urgent: dto.urgent ?? post.urgent,
+        ...(dto.isExecutorApprove !== undefined && {
+          isExecutorApprove: dto.isExecutorApprove,
+        }),
+      },
+      include: taskListInclude,
+    });
+
+    return this.toResponse(task, {
+      includePost: true,
+      includeExecutor: true,
+      includeOwner: true,
+    });
+  }
+
+  async remove(user: AuthUser, id: string): Promise<void> {
+    const task = await this.prisma.task.findUnique({
+      where: { id },
+      include: {
+        media: { select: { key: true } },
+        comments: {
+          include: {
+            media: { select: { key: true } },
+          },
+        },
+      },
+    });
+
+    if (!task) {
+      throw new NotFoundException('Задача не найдена');
+    }
+
+    if (task.ownerId !== user.userId) {
+      throw new ForbiddenException(
+        'Удалять задачу может только владелец поста'
+      );
+    }
+
+    const mediaKeys = [
+      ...task.media.map(item => item.key),
+      ...task.comments.flatMap(comment => comment.media.map(item => item.key)),
+    ];
+
+    for (const key of mediaKeys) {
+      try {
+        await this.storageService.deleteObject(key);
+      } catch {
+        throw new InternalServerErrorException(
+          'Не удалось удалить файлы задачи'
+        );
+      }
+    }
+
+    await this.prisma.task.delete({
+      where: { id },
+    });
+  }
+
   async list(user: AuthUser, query: ListTasksQueryDto) {
+    return this.queryTasks(user, query);
+  }
+
+  async listPendingApproval(user: AuthUser, query: ListTasksQueryDto) {
+    return this.queryTasks(user, query, {
+      executorApprovalFilter: 'unapproved',
+      forceExecutorRole: true,
+    });
+  }
+
+  private async queryTasks(
+    user: AuthUser,
+    query: ListTasksQueryDto,
+    options: {
+      executorApprovalFilter?: 'unapproved';
+      forceExecutorRole?: boolean;
+    } = {}
+  ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
 
-    const updatedAtFilter = this.buildUpdatedDateFilter(query.updatedDate);
-
-    const where: Prisma.TaskWhereInput = {
-      ...(query.role === TaskListRole.OWNER && { ownerId: user.userId }),
-      ...(query.role === TaskListRole.EXECUTOR && {
-        executorId: user.userId,
-      }),
-      ...(query.role === undefined && {
-        OR: [{ ownerId: user.userId }, { executorId: user.userId }],
-      }),
-      ...(query.status !== undefined && { status: query.status }),
-      ...(updatedAtFilter !== undefined && { updatedAt: updatedAtFilter }),
-      ...(query.q !== undefined && {
-        post: this.buildPostSearchWhere(query.q),
-      }),
-    };
+    const where = this.buildListWhere(user.userId, query, options);
 
     const [items, total] = await Promise.all([
       this.prisma.task.findMany({
@@ -206,16 +334,53 @@ export class TasksService {
 
     return {
       items: items.map(task =>
-        this.toResponse(task, {
-          includeExecutor: true,
-          includePost: true,
-          includeOwner: true,
-        })
+        this.toResponse(
+          task,
+          this.participantResponseOptions(user.userId, task)
+        )
       ),
       total,
       page,
       limit,
     };
+  }
+
+  private buildListWhere(
+    userId: string,
+    query: ListTasksQueryDto,
+    options: {
+      executorApprovalFilter?: 'unapproved';
+      forceExecutorRole?: boolean;
+    } = {}
+  ): Prisma.TaskWhereInput {
+    const updatedAtFilter = this.buildUpdatedDateFilter(query.updatedDate);
+    const role = options.forceExecutorRole ? TaskListRole.EXECUTOR : query.role;
+    const executorApprovalWhere =
+      options.executorApprovalFilter === 'unapproved'
+        ? { isExecutorApprove: null }
+        : {};
+
+    const where: Prisma.TaskWhereInput = {
+      ...(role === TaskListRole.OWNER && { ownerId: userId }),
+      ...(role === TaskListRole.EXECUTOR && {
+        executorId: userId,
+        ...executorApprovalWhere,
+      }),
+      ...(role === undefined && {
+        OR: [
+          { ownerId: userId },
+          { executorId: userId, ...executorApprovalWhere },
+        ],
+      }),
+      ...(query.status !== undefined && { status: query.status }),
+      ...(query.postId !== undefined && { postId: query.postId }),
+      ...(updatedAtFilter !== undefined && { updatedAt: updatedAtFilter }),
+      ...(query.q !== undefined && {
+        post: this.buildPostSearchWhere(query.q),
+      }),
+    };
+
+    return where;
   }
 
   async findById(user: AuthUser, id: string): Promise<TaskResponseDto> {
@@ -232,6 +397,7 @@ export class TasksService {
 
     return this.toResponse(task, {
       includeComments: true,
+      ...this.participantResponseOptions(user.userId, task),
     });
   }
 
@@ -246,6 +412,10 @@ export class TasksService {
     const isOwner = task.ownerId === user.userId;
     const data = this.buildUpdateData(dto, isOwner);
     const changes = this.collectTaskChanges(task, dto, isOwner);
+
+    if (isOwner && dto.executorId !== undefined) {
+      await this.validateExecutor(dto.executorId, task.ownerId);
+    }
 
     const updated = await this.prisma.$transaction(async tx => {
       const updatedTask = await tx.task.update({
@@ -703,6 +873,20 @@ export class TasksService {
     }
 
     if (!isOwner) {
+      if (
+        dto.isExecutorApprove !== undefined &&
+        dto.isExecutorApprove !== task.isExecutorApprove
+      ) {
+        changes.push({
+          type: TaskActivityType.FIELD_UPDATED,
+          payload: {
+            field: 'isExecutorApprove',
+            from: task.isExecutorApprove,
+            to: dto.isExecutorApprove,
+          },
+        });
+      }
+
       return changes;
     }
 
@@ -713,6 +897,17 @@ export class TasksService {
           field: 'description',
           from: task.description,
           to: dto.description,
+        },
+      });
+    }
+
+    if (dto.title !== undefined && dto.title !== task.title) {
+      changes.push({
+        type: TaskActivityType.FIELD_UPDATED,
+        payload: {
+          field: 'title',
+          from: task.title,
+          to: dto.title,
         },
       });
     }
@@ -767,6 +962,31 @@ export class TasksService {
       });
     }
 
+    if (dto.executorId !== undefined && dto.executorId !== task.executorId) {
+      changes.push({
+        type: TaskActivityType.FIELD_UPDATED,
+        payload: {
+          field: 'executorId',
+          from: task.executorId,
+          to: dto.executorId,
+        },
+      });
+    }
+
+    if (
+      dto.isExecutorApprove !== undefined &&
+      dto.isExecutorApprove !== task.isExecutorApprove
+    ) {
+      changes.push({
+        type: TaskActivityType.FIELD_UPDATED,
+        payload: {
+          field: 'isExecutorApprove',
+          from: task.isExecutorApprove,
+          to: dto.isExecutorApprove,
+        },
+      });
+    }
+
     return changes;
   }
 
@@ -775,34 +995,44 @@ export class TasksService {
     isOwner: boolean
   ): Prisma.TaskUpdateInput {
     if (!isOwner) {
-      if (dto.status === undefined) {
+      if (dto.status === undefined && dto.isExecutorApprove === undefined) {
         throw new ForbiddenException(
-          'Исполнитель может изменять только статус задачи'
+          'Исполнитель может изменять только статус задачи и одобрение'
         );
       }
 
       const ownerOnlyFields: (keyof UpdateTaskDto)[] = [
+        'title',
         'description',
         'finalDate',
         'photoCount',
         'videoCount',
         'urgent',
+        'executorId',
       ];
 
       for (const field of ownerOnlyFields) {
         if (dto[field] !== undefined) {
           throw new ForbiddenException(
-            'Исполнитель может изменять только статус задачи'
+            'Исполнитель может изменять только статус задачи и одобрение'
           );
         }
       }
 
-      return { status: dto.status };
+      const data: Prisma.TaskUpdateInput = {};
+
+      if (dto.status !== undefined) data.status = dto.status;
+      if (dto.isExecutorApprove !== undefined) {
+        data.isExecutorApprove = dto.isExecutorApprove;
+      }
+
+      return data;
     }
 
     const data: Prisma.TaskUpdateInput = {};
 
     if (dto.status !== undefined) data.status = dto.status;
+    if (dto.title !== undefined) data.title = dto.title;
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.finalDate !== undefined) {
       data.finalDate = dto.finalDate === null ? null : new Date(dto.finalDate);
@@ -810,6 +1040,12 @@ export class TasksService {
     if (dto.photoCount !== undefined) data.photoCount = dto.photoCount;
     if (dto.videoCount !== undefined) data.videoCount = dto.videoCount;
     if (dto.urgent !== undefined) data.urgent = dto.urgent;
+    if (dto.isExecutorApprove !== undefined) {
+      data.isExecutorApprove = dto.isExecutorApprove;
+    }
+    if (dto.executorId !== undefined) {
+      data.executor = { connect: { id: dto.executorId } };
+    }
 
     return data;
   }
@@ -888,8 +1124,31 @@ export class TasksService {
     return { gte: start, lte: end };
   }
 
+  private async validateExecutor(
+    executorId: string,
+    ownerId: string
+  ): Promise<void> {
+    if (executorId === ownerId) {
+      throw new BadRequestException(
+        'Исполнитель не может совпадать с владельцем поста'
+      );
+    }
+
+    const executor = await this.prisma.user.findUnique({
+      where: { id: executorId },
+      select: { id: true },
+    });
+
+    if (!executor) {
+      throw new NotFoundException('Исполнитель не найден');
+    }
+  }
+
   private assertParticipant(task: Task, userId: string) {
-    if (task.ownerId !== userId && task.executorId !== userId) {
+    if (
+      task.ownerId !== userId &&
+      (task.executorId === null || task.executorId !== userId)
+    ) {
       throw new ForbiddenException('Нет доступа к этой задаче');
     }
   }
@@ -951,6 +1210,19 @@ export class TasksService {
     };
   }
 
+  private participantResponseOptions(
+    userId: string,
+    task: { ownerId: string; executorId: string | null }
+  ) {
+    const isOwner = task.ownerId === userId;
+
+    return {
+      includePost: true,
+      includeExecutor: true,
+      includeOwner: !isOwner,
+    };
+  }
+
   private toResponse(
     task: TaskWithRelations | TaskListItem,
     options: {
@@ -962,10 +1234,11 @@ export class TasksService {
   ): TaskResponseDto {
     return {
       id: task.id,
-      applicationId: task.applicationId,
+      applicationId: task.applicationId ?? null,
       ownerId: task.ownerId,
-      executorId: task.executorId,
+      executorId: task.executorId ?? null,
       status: task.status,
+      title: task.title ?? null,
       media: task.media
         .filter(item => item.kind === TaskMediaKind.MAIN)
         .map(item => this.mapTaskMedia(item)),
@@ -977,6 +1250,7 @@ export class TasksService {
       photoCount: task.photoCount,
       videoCount: task.videoCount,
       urgent: task.urgent,
+      isExecutorApprove: task.isExecutorApprove ?? null,
       createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString(),
       ...(options.includeComments &&
@@ -993,10 +1267,12 @@ export class TasksService {
           title: task.post.title,
           type: task.post.type,
           ownerId: task.post.ownerId,
+          isPrivate: task.post.isPrivate,
         },
       }),
       ...(options.includeExecutor &&
-        'executor' in task && {
+        'executor' in task &&
+        task.executor && {
         executor: this.mapExecutor(task.executor),
       }),
       ...(options.includeOwner &&

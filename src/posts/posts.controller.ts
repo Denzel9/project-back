@@ -50,6 +50,7 @@ export class PostsController {
     summary: 'Создать пост',
     description:
       'Создаёт пост от имени активного профиля. `ownerId` и `type` выставляются из JWT. ' +
+      'Для прямого назначения исполнителя без публикации в ленте: `isPrivate: true`. ' +
       'Медиа загружаются отдельно: `POST /media/upload?postId={id}`.',
   })
   @ApiCreatedResponse({ type: PostResponseDto, description: 'Созданный пост' })
@@ -63,10 +64,10 @@ export class PostsController {
     summary: 'Список постов',
     description:
       'Без `ownerId` — посты других пользователей, доступные для вашей роли ' +
-      '(креаторы — только COMPANY, компании — только CREATOR). ' +
-      'С `ownerId` = свой id — все свои посты. ' +
+      '(креаторы — только COMPANY, компании — только CREATOR); приватные посты скрыты. ' +
+      'С `ownerId` = свой id — все свои посты (включая приватные). ' +
       'Поиск: `q` — по названию поста или названию компании. ' +
-      'Опциональные фильтры: `type` (только для своих постов), `isArchived`. Пагинация: `page`, `limit`.',
+      'Опциональные фильтры: `type` (только для своих постов), `isArchived`, `isPrivate` (только для своих). Пагинация: `page`, `limit`.',
   })
   @ApiOkResponse({ description: 'Список постов с пагинацией' })
   list(@CurrentUser() user: AuthUser, @Query() query: ListPostsQueryDto) {
@@ -95,7 +96,8 @@ export class PostsController {
   @ApiOperation({
     summary: 'Получить пост по id',
     description:
-      'Возвращает пост с `media[]`. Креаторы видят только посты компаний, компании — только посты креаторов. ' +
+      'Возвращает пост с `media[]`. Приватный пост — только владелец (403 для остальных). ' +
+      'Публичный: креаторы видят только посты компаний, компании — только посты креаторов. ' +
       'Владелец всегда видит свой пост.',
   })
   @ApiOkResponse({ type: PostResponseDto, description: 'Пост' })

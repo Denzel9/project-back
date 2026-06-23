@@ -42,6 +42,18 @@ export class ListPostsQueryDto {
   isArchived?: boolean;
 
   @ApiPropertyOptional({
+    description: 'Фильтр по приватным постам (только для своих постов через ownerId)',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  isPrivate?: boolean;
+
+  @ApiPropertyOptional({
     description: 'Поиск по названию поста или названию компании-автора',
     example: 'реклама',
   })
