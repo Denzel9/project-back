@@ -118,7 +118,7 @@ export class TasksController {
   @ApiOperation({
     summary: 'Обновить задачу',
     description:
-      'owner — все поля (включая `executorId`, `isExecutorApprove`); executor — `status` и `isExecutorApprove`. `description` — Markdown. VIEWER → 403.',
+      'owner — все поля (включая `executorId`, `isExecutorApprove`); executor — `status`, `isExecutorApprove` и `isCompanyAction`. `description` — Markdown. VIEWER → 403.',
   })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiNotFoundResponse({ description: 'Задача не найдена' })

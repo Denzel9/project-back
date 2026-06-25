@@ -109,8 +109,6 @@ async function seedApplications(
     select: {
       id: true,
       ownerId: true,
-      photoCount: true,
-      videoCount: true,
       urgent: true,
     },
     take: COUNT * 2,
@@ -218,8 +216,6 @@ async function seedTasks(prisma: PrismaClient): Promise<number> {
         postId: application.postId,
         ownerId: application.post.ownerId,
         executorId: application.applicantId,
-        photoCount: application.post.photoCount,
-        videoCount: application.post.videoCount,
         urgent: application.post.urgent,
       },
     });

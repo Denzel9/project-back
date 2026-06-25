@@ -24,15 +24,73 @@ enum PostAuthorType {
   COMPANY
 }
 
-enum TypeCooperation {
-  ONE_TIME
-  LONG_TIME
+enum Platform {
+  INSTAGRAM
+  TIKTOK
+  YOUTUBE
+  TELEGRAM
+  VK
+  OTHER
 }
 
-enum PostContentType {
-  PHOTO
-  VIDEO
-  PHOTO_VIDEO
+enum PlacementFormat {
+  POST
+  STORIES
+  REELS
+  SHORTS
+  INTEGRATION
+  LIVE
+}
+
+enum WorkFormat {
+  REMOTE
+  ON_SITE
+  HYBRID
+}
+
+enum BudgetType {
+  FIXED
+  RANGE
+  NEGOTIABLE
+  BARTER
+}
+
+enum PostCurrency {
+  RUB
+  USD
+}
+
+enum PaymentTerms {
+  PREPAY
+  POSTPAY
+  FIFTY_FIFTY @map("50_50")
+  SAFE_DEAL
+}
+
+enum ContentStyle {
+  LIFESTYLE
+  REVIEW
+  HUMOR
+  EXPERT
+  UGC
+  UNBOXING
+  TUTORIAL
+  VLOG
+  STORYTELLING
+  BEFORE_AFTER
+  CHALLENGE
+  BUYING
+  PODCAST
+  INTERVIEW
+  ASMR
+  EDUCATIONAL
+  SPORTS
+}
+
+enum UsageRights {
+  ORGANIC_ONLY
+  PAID_ADS
+  FULL_LICENSE
 }
 
 enum ApplicationStatus {
@@ -200,31 +258,37 @@ model CompanyProfile {
 }
 
 model Post {
-  id              String            @id @default(uuid())
-  permissions     String[]          @default([])
-  title           String
-  ownerId         String
-  owner           User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  chips           String[]          @default([])
-  description     String            @default("")
-  typeCooperation TypeCooperation[]
-  urgent          Boolean           @default(false)
-  contentType     PostContentType
-  photoCount      String            @default("0")
-  videoCount      String            @default("0")
-  finalPrice      String            @default("")
-  rangePrice      String[]          @default([])
-  isArchived      Boolean           @default(false)
-  isPrivate       Boolean           @default(false)
-  keyWords        String[]          @default([])
-  categories      String[]          @default([])
-  type            PostAuthorType
-  media           PostMedia[]
-  favorites       FavoritePost[]
-  applications    PostApplication[]
-  tasks           Task[]
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  id                  String            @id @default(uuid())
+  permissions         String[]          @default([])
+  title               String
+  ownerId             String
+  owner               User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  chips               String[]          @default([])
+  description         String            @default("")
+  urgent              Boolean           @default(false)
+  isArchived          Boolean           @default(false)
+  isPrivate           Boolean           @default(false)
+  keyWords            String[]          @default([])
+  categories          String[]          @default([])
+  platforms           Platform[]        @default([])
+  placementFormats    PlacementFormat[] @default([])
+  niche               String[]          @default([])
+  tags                String[]          @default([])
+  budget              Json?
+  deadline            DateTime?
+  workFormat          WorkFormat?
+  location            Json?
+  bloggerRequirements Json?
+  cooperationDetails  Json?
+  brief               Json?
+  deliverables        Json?
+  type                PostAuthorType
+  media               PostMedia[]
+  favorites           FavoritePost[]
+  applications        PostApplication[]
+  tasks               Task[]
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
 
   @@index([ownerId])
   @@index([isArchived])
@@ -309,6 +373,7 @@ model Task {
   videoCount        String           @default("0")
   urgent            Boolean          @default(false)
   isExecutorApprove Boolean?
+  isCompanyAction   Boolean          @default(true)
   media             TaskMedia[]
   comments          TaskComment[]
   activities        TaskActivity[]

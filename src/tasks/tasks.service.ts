@@ -182,8 +182,6 @@ export class TasksService {
         postId: application.postId,
         ownerId: application.post.ownerId,
         executorId: application.applicantId,
-        photoCount: application.post.photoCount,
-        videoCount: application.post.videoCount,
         urgent: application.post.urgent,
       },
     });
@@ -195,8 +193,6 @@ export class TasksService {
       select: {
         id: true,
         ownerId: true,
-        photoCount: true,
-        videoCount: true,
         urgent: true,
         isArchived: true,
       },
@@ -236,11 +232,14 @@ export class TasksService {
             : dto.finalDate === null
               ? null
               : new Date(dto.finalDate),
-        photoCount: dto.photoCount ?? post.photoCount,
-        videoCount: dto.videoCount ?? post.videoCount,
+        photoCount: dto.photoCount ?? '0',
+        videoCount: dto.videoCount ?? '0',
         urgent: dto.urgent ?? post.urgent,
         ...(dto.isExecutorApprove !== undefined && {
           isExecutorApprove: dto.isExecutorApprove,
+        }),
+        ...(dto.isCompanyAction !== undefined && {
+          isCompanyAction: dto.isCompanyAction,
         }),
       },
       include: taskListInclude,
@@ -887,6 +886,20 @@ export class TasksService {
         });
       }
 
+      if (
+        dto.isCompanyAction !== undefined &&
+        dto.isCompanyAction !== task.isCompanyAction
+      ) {
+        changes.push({
+          type: TaskActivityType.FIELD_UPDATED,
+          payload: {
+            field: 'isCompanyAction',
+            from: task.isCompanyAction,
+            to: dto.isCompanyAction,
+          },
+        });
+      }
+
       return changes;
     }
 
@@ -987,6 +1000,20 @@ export class TasksService {
       });
     }
 
+    if (
+      dto.isCompanyAction !== undefined &&
+      dto.isCompanyAction !== task.isCompanyAction
+    ) {
+      changes.push({
+        type: TaskActivityType.FIELD_UPDATED,
+        payload: {
+          field: 'isCompanyAction',
+          from: task.isCompanyAction,
+          to: dto.isCompanyAction,
+        },
+      });
+    }
+
     return changes;
   }
 
@@ -995,9 +1022,13 @@ export class TasksService {
     isOwner: boolean
   ): Prisma.TaskUpdateInput {
     if (!isOwner) {
-      if (dto.status === undefined && dto.isExecutorApprove === undefined) {
+      if (
+        dto.status === undefined &&
+        dto.isExecutorApprove === undefined &&
+        dto.isCompanyAction === undefined
+      ) {
         throw new ForbiddenException(
-          'Исполнитель может изменять только статус задачи и одобрение'
+          'Исполнитель может изменять только статус задачи, одобрение и isCompanyAction'
         );
       }
 
@@ -1014,7 +1045,7 @@ export class TasksService {
       for (const field of ownerOnlyFields) {
         if (dto[field] !== undefined) {
           throw new ForbiddenException(
-            'Исполнитель может изменять только статус задачи и одобрение'
+            'Исполнитель может изменять только статус задачи, одобрение и isCompanyAction'
           );
         }
       }
@@ -1024,6 +1055,9 @@ export class TasksService {
       if (dto.status !== undefined) data.status = dto.status;
       if (dto.isExecutorApprove !== undefined) {
         data.isExecutorApprove = dto.isExecutorApprove;
+      }
+      if (dto.isCompanyAction !== undefined) {
+        data.isCompanyAction = dto.isCompanyAction;
       }
 
       return data;
@@ -1042,6 +1076,9 @@ export class TasksService {
     if (dto.urgent !== undefined) data.urgent = dto.urgent;
     if (dto.isExecutorApprove !== undefined) {
       data.isExecutorApprove = dto.isExecutorApprove;
+    }
+    if (dto.isCompanyAction !== undefined) {
+      data.isCompanyAction = dto.isCompanyAction;
     }
     if (dto.executorId !== undefined) {
       data.executor = { connect: { id: dto.executorId } };
@@ -1251,6 +1288,7 @@ export class TasksService {
       videoCount: task.videoCount,
       urgent: task.urgent,
       isExecutorApprove: task.isExecutorApprove ?? null,
+      isCompanyAction: task.isCompanyAction,
       createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString(),
       ...(options.includeComments &&

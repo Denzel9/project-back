@@ -79,6 +79,9 @@ export class TaskResponseDto {
   @ApiProperty({ nullable: true })
   isExecutorApprove: boolean | null;
 
+  @ApiProperty()
+  isCompanyAction: boolean;
+
   @ApiProperty({ format: 'date-time' })
   createdAt: string;
 

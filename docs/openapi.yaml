@@ -1383,8 +1383,10 @@ paths:
       summary: Список задач
       description: "Задачи, где пользователь owner или executor. Фильтры: `postId`,
         `role`, `status`, `updatedDate` (YYYY-MM-DD, UTC), `q` (название поста
-        или компании). Создание — автоматически при ACCEPTED отклика или `POST
-        /tasks` вручную (владелец поста). У исполнителя нет блока `post`."
+        или компании). Задачи без ответа исполнителя (`isExecutorApprove: null`)
+        — в `GET /tasks/pending-approval`. Создание — автоматически при ACCEPTED
+        отклика или `POST /tasks` вручную (владелец поста). У исполнителя нет
+        блока `post`."
       parameters:
         - name: postId
           required: false
@@ -1414,6 +1416,7 @@ paths:
               - REVISION
               - COMPLETED
               - CANCELLED
+              - CANCELLED_EXECUTOR
             type: string
         - name: updatedDate
           required: false
@@ -1456,8 +1459,7 @@ paths:
       operationId: TasksController_create
       summary: Создать задачу вручную
       description: Только владелец поста. Создаёт задачу без отклика (`applicationId`
-        = null). Один исполнитель — одна задача на пост. Поля задачи
-        опциональны.
+        = null). `executorId` опционален — можно назначить позже через PATCH.
       parameters: []
       requestBody:
         required: true
@@ -1478,8 +1480,79 @@ paths:
           description: Не владелец поста или VIEWER
         "404":
           description: Пост или исполнитель не найдены
-        "409":
-          description: Задача для этого исполнителя на этом посте уже существует
+      tags: *a12
+      security: *a13
+  /tasks/pending-approval:
+    get:
+      operationId: TasksController_listPendingApproval
+      summary: Задачи исполнителя без одобрения
+      description: Только задачи, где текущий пользователь — исполнитель и
+        `isExecutorApprove === null`. Те же фильтры, что у `GET /tasks`, кроме
+        `role` (всегда executor).
+      parameters:
+        - name: postId
+          required: false
+          in: query
+          description: Фильтр по посту — задачи, связанные с этим postId
+          schema:
+            format: uuid
+            type: string
+        - name: role
+          required: false
+          in: query
+          description: owner — задачи на мои посты; executor — задачи где я исполнитель
+          schema:
+            enum:
+              - owner
+              - executor
+            type: string
+        - name: status
+          required: false
+          in: query
+          schema:
+            enum:
+              - PREPARING
+              - PENDING_APPROVAL
+              - IN_PROGRESS
+              - CHECKING
+              - REVISION
+              - COMPLETED
+              - CANCELLED
+              - CANCELLED_EXECUTOR
+            type: string
+        - name: updatedDate
+          required: false
+          in: query
+          description: Фильтр по дате обновления задачи (календарный день, UTC)
+          schema:
+            format: date
+            example: 2026-06-14
+            type: string
+        - name: q
+          required: false
+          in: query
+          description: Поиск по названию поста или названию компании-автора
+          schema:
+            example: реклама
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Список задач с пагинацией
       tags: *a12
       security: *a13
   /tasks/{id}:
@@ -1509,8 +1582,9 @@ paths:
     patch:
       operationId: TasksController_update
       summary: Обновить задачу
-      description: owner — все поля; executor — только `status`. `description` —
-        Markdown. VIEWER → 403.
+      description: owner — все поля (включая `executorId`, `isExecutorApprove`);
+        executor — `status`, `isExecutorApprove` и `isCompanyAction`.
+        `description` — Markdown. VIEWER → 403.
       parameters:
         - name: id
           required: true
@@ -2207,15 +2281,18 @@ info:
     `?updatedDate=YYYY-MM-DD`, `?q=` по title или companyName). У исполнителя в
     ответе нет блока `post`.
 
-    3. `POST /tasks` — создать задачу вручную (владелец поста: postId +
-    executorId). Без отклика; `applicationId` = null. Один исполнитель — одна
-    задача на пост.
+    2a. `GET /tasks/pending-approval` — задачи исполнителя с `isExecutorApprove:
+    null` (те же фильтры, кроме `role`).
+
+    3. `POST /tasks` — создать задачу вручную (владелец поста: `postId`,
+    опционально `executorId`). Без отклика; `applicationId` = null. Исполнителя
+    можно назначить позже через `PATCH /tasks/:id`.
 
     4. `GET /tasks/:id` — задача с `media[]` (основные) и `reportMedia[]`
     (отчёт). Исполнитель не видит `post`.
 
-    5. `PATCH /tasks/:id` — owner: все поля; executor: только status.
-    `description` — Markdown (хранится как строка).
+    5. `PATCH /tasks/:id` — owner: все поля (включая `executorId`); executor:
+    только status. `description` — Markdown (хранится как строка).
 
     6. `DELETE /tasks/:id` — удалить задачу (только owner поста).
 
@@ -2231,7 +2308,8 @@ info:
     ### Приватный пост + прямое назначение
 
     1. Компания: `POST /posts` с `isPrivate: true` → медиа → `POST /tasks` с
-    `postId` и `executorId`.
+    `postId` (и опционально `executorId`, либо назначить через `PATCH
+    /tasks/:id`).
 
     2. Креатор видит задачу в `GET /tasks`, но `GET /posts/:id` для приватного
     поста недоступен (403).
@@ -2869,6 +2947,161 @@ components:
         - key
         - mimeType
         - size
+    PostBudgetDto:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - FIXED
+            - RANGE
+            - NEGOTIABLE
+            - BARTER
+        amount:
+          type: number
+        currency:
+          type: string
+          enum:
+            - RUB
+            - USD
+        minAmount:
+          type: number
+        maxAmount:
+          type: number
+        paymentTerms:
+          type: string
+          enum:
+            - PREPAY
+            - POSTPAY
+            - 50_50
+            - SAFE_DEAL
+        barterDescription:
+          type: string
+    PostLocationDto:
+      type: object
+      properties:
+        city:
+          type: string
+        country:
+          type: string
+        address:
+          type: string
+        shootingRequired:
+          type: boolean
+    BloggerRequirementsDto:
+      type: object
+      properties:
+        minFollowers:
+          type: number
+        maxFollowers:
+          type: number
+        minEngagementRate:
+          type: number
+        verifiedAccount:
+          type: boolean
+        experienceWithAds:
+          type: boolean
+        languages:
+          type: array
+          items:
+            type: string
+        contentStyle:
+          type: array
+          items:
+            type: string
+            enum:
+              - LIFESTYLE
+              - REVIEW
+              - HUMOR
+              - EXPERT
+              - UGC
+              - UNBOXING
+              - TUTORIAL
+              - VLOG
+              - STORYTELLING
+              - BEFORE_AFTER
+              - CHALLENGE
+              - BUYING
+              - PODCAST
+              - INTERVIEW
+              - ASMR
+              - EDUCATIONAL
+              - SPORTS
+    CooperationDetailsDto:
+      type: object
+      properties:
+        exclusivity:
+          type: boolean
+        exclusivityDays:
+          type: number
+        usageRights:
+          type: string
+          enum:
+            - ORGANIC_ONLY
+            - PAID_ADS
+            - FULL_LICENSE
+        usageDurationDays:
+          type: number
+        requiresMarking:
+          type: boolean
+        requiresContract:
+          type: boolean
+        ndaRequired:
+          type: boolean
+    PostBriefDto:
+      type: object
+      properties:
+        taskDescription:
+          type: string
+        references:
+          type: array
+          items:
+            type: string
+        brandGuidelinesUrl:
+          type: string
+        hashtags:
+          type: array
+          items:
+            type: string
+        mentions:
+          type: array
+          items:
+            type: string
+        cta:
+          type: string
+        dosAndDonts:
+          type: string
+    PostDeliverableDto:
+      type: object
+      properties:
+        platform:
+          type: string
+          enum:
+            - INSTAGRAM
+            - TIKTOK
+            - YOUTUBE
+            - TELEGRAM
+            - VK
+            - OTHER
+        format:
+          type: string
+          enum:
+            - POST
+            - STORIES
+            - REELS
+            - SHORTS
+            - INTEGRATION
+            - LIVE
+        count:
+          type: number
+          minimum: 1
+        durationSec:
+          type: number
+          minimum: 1
+      required:
+        - platform
+        - format
+        - count
     CreatePostDto:
       type: object
       properties:
@@ -2889,45 +3122,11 @@ components:
           type: string
           example: ""
           default: ""
-        typeCooperation:
-          type: array
-          example: &a18
-            - ONE_TIME
-          default: &a19 []
-          items: &a20
-            type: string
-            enum:
-              - ONE_TIME
-              - LONG_TIME
         urgent:
           type: boolean
           default: false
-        contentType:
-          type: string
-          enum: &a21
-            - PHOTO
-            - VIDEO
-            - PHOTO_VIDEO
-          example: PHOTO
-        photoCount:
-          type: string
-          example: "0"
-          default: "0"
-        videoCount:
-          type: string
-          example: "0"
-          default: "0"
-        finalPrice:
-          type: string
-          example: "5000"
-          default: ""
-        rangePrice:
-          default: &a22 []
-          type: array
-          items:
-            type: string
         keyWords:
-          default: &a23 []
+          default: &a18 []
           type: array
           items:
             type: string
@@ -2935,36 +3134,69 @@ components:
           type: boolean
           default: false
         categories:
+          default: &a19 []
+          type: array
+          items:
+            type: string
+        platforms:
+          type: array
+          default: &a20 []
+          items: &a21
+            type: string
+            enum:
+              - INSTAGRAM
+              - TIKTOK
+              - YOUTUBE
+              - TELEGRAM
+              - VK
+              - OTHER
+        placementFormats:
+          type: array
+          default: &a22 []
+          items: &a23
+            type: string
+            enum:
+              - POST
+              - STORIES
+              - REELS
+              - SHORTS
+              - INTEGRATION
+              - LIVE
+        niche:
           default: &a24 []
           type: array
           items:
             type: string
+        budget:
+          $ref: "#/components/schemas/PostBudgetDto"
+        deadline:
+          type: string
+          format: date-time
+        workFormat:
+          type: string
+          enum: &a25
+            - REMOTE
+            - ON_SITE
+            - HYBRID
+        location:
+          $ref: "#/components/schemas/PostLocationDto"
+        bloggerRequirements:
+          $ref: "#/components/schemas/BloggerRequirementsDto"
+        cooperationDetails:
+          $ref: "#/components/schemas/CooperationDetailsDto"
+        brief:
+          $ref: "#/components/schemas/PostBriefDto"
+        tags:
+          default: &a26 []
+          type: array
+          items:
+            type: string
+        deliverables:
+          type: array
+          items:
+            $ref: "#/components/schemas/PostDeliverableDto"
       required:
         - title
-    PostMediaDto:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        url:
-          type: string
-          example: https://s3.ru-7.storage.selcloud.ru/project-media/posts/uuid/file.jpg
-        key:
-          type: string
-          example: posts/uuid/file.jpg
-        size:
-          type: string
-          example: "12345"
-        mimeType:
-          type: string
-          example: image/jpeg
-      required:
-        - id
-        - url
-        - key
-        - size
-        - mimeType
     ApplicationCreatorProfileDto:
       type: object
       properties:
@@ -3000,123 +3232,159 @@ components:
           $ref: "#/components/schemas/ApplicationCompanyProfileDto"
       required:
         - id
+    PostMediaDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          example: https://s3.ru-7.storage.selcloud.ru/project-media/posts/uuid/file.jpg
+        key:
+          type: string
+          example: posts/uuid/file.jpg
+        size:
+          type: string
+          example: "12345"
+        mimeType:
+          type: string
+          example: image/jpeg
+      required:
+        - id
+        - url
+        - key
+        - size
+        - mimeType
     PostResponseDto:
       type: object
       properties:
         id:
           type: string
           format: uuid
-        permissions:
-          example: []
-          type: array
-          items:
-            type: string
-        media:
-          type: array
-          items:
-            $ref: "#/components/schemas/PostMediaDto"
         title:
           type: string
           example: Заголовок поста
-        chips:
-          example:
-            - chip1
-          type: array
-          items:
-            type: string
-        description:
-          type: string
-          example: Описание поста
-        typeCooperation:
-          type: array
-          example:
-            - ONE_TIME
-          items:
-            type: string
-            enum:
-              - ONE_TIME
-              - LONG_TIME
-        urgent:
-          type: boolean
-          example: false
-        contentType:
-          type: string
-          enum:
-            - PHOTO
-            - VIDEO
-            - PHOTO_VIDEO
-          example: PHOTO
-        photoCount:
-          type: string
-          example: "3"
-        videoCount:
-          type: string
-          example: "0"
-        finalPrice:
-          type: string
-          example: "5000"
-        rangePrice:
-          example:
-            - "1000"
-            - "5000"
-          type: array
-          items:
-            type: string
-        isArchived:
-          type: boolean
-          example: false
-        isPrivate:
-          type: boolean
-          example: false
-          description: Приватный пост виден только владельцу; исполнитель работает через
-            задачу без доступа к посту
-        keyWords:
-          example:
-            - keyword
-          type: array
-          items:
-            type: string
-        categories:
-          example:
-            - category
-          type: array
-          items:
-            type: string
         type:
           type: string
           enum:
             - CREATOR
             - COMPANY
           example: CREATOR
+        chips:
+          example:
+            - chip1
+          type: array
+          items:
+            type: string
+        urgent:
+          type: boolean
+          example: false
+        owner:
+          $ref: "#/components/schemas/ApplicationOwnerDto"
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-        owner:
-          $ref: "#/components/schemas/ApplicationOwnerDto"
+        media:
+          type: array
+          items:
+            $ref: "#/components/schemas/PostMediaDto"
+        description:
+          type: string
+          example: Описание поста
+        isPrivate:
+          type: boolean
+          example: false
+        isArchived:
+          type: boolean
+          example: false
+        categories:
+          example:
+            - category
+          type: array
+          items:
+            type: string
+        permissions:
+          example: []
+          type: array
+          items:
+            type: string
+        keyWords:
+          example:
+            - keyword
+          type: array
+          items:
+            type: string
+        platforms:
+          type: array
+          items:
+            type: string
+            enum:
+              - INSTAGRAM
+              - TIKTOK
+              - YOUTUBE
+              - TELEGRAM
+              - VK
+              - OTHER
+        placementFormats:
+          type: array
+          items:
+            type: string
+            enum:
+              - POST
+              - STORIES
+              - REELS
+              - SHORTS
+              - INTEGRATION
+              - LIVE
+        niche:
+          type: array
+          items:
+            type: string
+        budget:
+          $ref: "#/components/schemas/PostBudgetDto"
+        deadline:
+          type: string
+          format: date-time
+        workFormat:
+          type: string
+          enum:
+            - REMOTE
+            - ON_SITE
+            - HYBRID
+        location:
+          $ref: "#/components/schemas/PostLocationDto"
+        bloggerRequirements:
+          $ref: "#/components/schemas/BloggerRequirementsDto"
+        cooperationDetails:
+          $ref: "#/components/schemas/CooperationDetailsDto"
+        brief:
+          $ref: "#/components/schemas/PostBriefDto"
+        tags:
+          type: array
+          items:
+            type: string
+        deliverables:
+          type: array
+          items:
+            $ref: "#/components/schemas/PostDeliverableDto"
       required:
         - id
-        - permissions
-        - media
         - title
-        - chips
-        - description
-        - typeCooperation
-        - urgent
-        - photoCount
-        - videoCount
-        - finalPrice
-        - rangePrice
-        - isArchived
-        - isPrivate
-        - keyWords
-        - categories
         - type
+        - chips
+        - urgent
+        - owner
         - createdAt
         - updatedAt
-        - owner
+        - media
+        - description
+        - isArchived
+        - categories
+        - permissions
     UpdatePostDto:
       type: object
       properties:
@@ -3137,37 +3405,11 @@ components:
           type: string
           example: ""
           default: ""
-        typeCooperation:
-          type: array
-          example: *a18
-          default: *a19
-          items: *a20
         urgent:
           type: boolean
           default: false
-        contentType:
-          type: string
-          enum: *a21
-          example: PHOTO
-        photoCount:
-          type: string
-          example: "0"
-          default: "0"
-        videoCount:
-          type: string
-          example: "0"
-          default: "0"
-        finalPrice:
-          type: string
-          example: "5000"
-          default: ""
-        rangePrice:
-          default: *a22
-          type: array
-          items:
-            type: string
         keyWords:
-          default: *a23
+          default: *a18
           type: array
           items:
             type: string
@@ -3175,10 +3417,48 @@ components:
           type: boolean
           default: false
         categories:
+          default: *a19
+          type: array
+          items:
+            type: string
+        platforms:
+          type: array
+          default: *a20
+          items: *a21
+        placementFormats:
+          type: array
+          default: *a22
+          items: *a23
+        niche:
           default: *a24
           type: array
           items:
             type: string
+        budget:
+          $ref: "#/components/schemas/PostBudgetDto"
+        deadline:
+          type: string
+          format: date-time
+        workFormat:
+          type: string
+          enum: *a25
+        location:
+          $ref: "#/components/schemas/PostLocationDto"
+        bloggerRequirements:
+          $ref: "#/components/schemas/BloggerRequirementsDto"
+        cooperationDetails:
+          $ref: "#/components/schemas/CooperationDetailsDto"
+        brief:
+          $ref: "#/components/schemas/PostBriefDto"
+        tags:
+          default: *a26
+          type: array
+          items:
+            type: string
+        deliverables:
+          type: array
+          items:
+            $ref: "#/components/schemas/PostDeliverableDto"
         isArchived:
           type: boolean
           description: Архивировать или вернуть пост из архива
@@ -3310,7 +3590,11 @@ components:
         executorId:
           type: string
           format: uuid
-          description: UUID исполнителя задачи
+          description: UUID исполнителя задачи. Можно назначить позже через PATCH /tasks/:id
+        title:
+          type: string
+          description: Название задачи
+          nullable: true
         description:
           type: string
           maxLength: 5000
@@ -3325,6 +3609,7 @@ components:
             - REVISION
             - COMPLETED
             - CANCELLED
+            - CANCELLED_EXECUTOR
           default: PREPARING
         finalDate:
           type: string
@@ -3336,9 +3621,15 @@ components:
           type: string
         urgent:
           type: boolean
+        isExecutorApprove:
+          type: boolean
+          nullable: true
+          description: Одобрение задачи исполнителем
+        isCompanyAction:
+          type: boolean
+          default: true
       required:
         - postId
-        - executorId
     TaskMediaDto:
       type: object
       properties:
@@ -3440,6 +3731,7 @@ components:
         executorId:
           type: string
           format: uuid
+          nullable: true
         ownerId:
           type: string
           format: uuid
@@ -3453,6 +3745,10 @@ components:
             - REVISION
             - COMPLETED
             - CANCELLED
+            - CANCELLED_EXECUTOR
+        title:
+          type: string
+          nullable: true
         media:
           description: Основные вложения (kind=MAIN)
           type: array
@@ -3482,6 +3778,11 @@ components:
           type: string
         urgent:
           type: boolean
+        isExecutorApprove:
+          type: boolean
+          nullable: true
+        isCompanyAction:
+          type: boolean
         createdAt:
           type: string
           format: date-time
@@ -3498,6 +3799,7 @@ components:
         - executorId
         - ownerId
         - status
+        - title
         - media
         - reportMedia
         - description
@@ -3505,6 +3807,8 @@ components:
         - photoCount
         - videoCount
         - urgent
+        - isExecutorApprove
+        - isCompanyAction
         - createdAt
         - updatedAt
     UpdateTaskDto:
@@ -3520,6 +3824,15 @@ components:
             - REVISION
             - COMPLETED
             - CANCELLED
+            - CANCELLED_EXECUTOR
+        executorId:
+          type: string
+          format: uuid
+          description: UUID исполнителя задачи (только владелец поста)
+        title:
+          type: string
+          description: Название задачи
+          nullable: true
         description:
           type: string
           maxLength: 5000
@@ -3539,6 +3852,12 @@ components:
         videoCount:
           type: string
         urgent:
+          type: boolean
+        isExecutorApprove:
+          type: boolean
+          nullable: true
+          description: Одобрение задачи исполнителем
+        isCompanyAction:
           type: boolean
     TaskAttachmentResponseDto:
       type: object

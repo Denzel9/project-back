@@ -76,4 +76,10 @@ export class CreateTaskDto {
   @Type(() => Boolean)
   @IsBoolean()
   isExecutorApprove?: boolean | null;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isCompanyAction?: boolean;
 }

@@ -1,10 +1,5 @@
-import {
-  PostAuthorType,
-  PostContentType,
-  PrismaClient,
-  Role,
-  TypeCooperation,
-} from '@prisma/client';
+import { PostAuthorType, PrismaClient, Role } from '@prisma/client';
+import { buildRandomPostFields } from './post-random-fields';
 
 const COUNT = 100;
 
@@ -40,14 +35,11 @@ async function seedPosts() {
         title: `Тестовый пост #${i + 1}`,
         ownerId: owner.id,
         type: roleToPostAuthorType(owner.role),
-        typeCooperation: [TypeCooperation.ONE_TIME],
-        contentType:
-          i % 3 === 0 ? PostContentType.VIDEO : PostContentType.PHOTO,
         description: `Описание тестового поста ${i + 1}`,
-        finalPrice: String(1000 + i * 100),
         categories: ['тест', 'seed'],
         keyWords: ['seed', `post-${i + 1}`],
         urgent: i % 10 === 0,
+        ...buildRandomPostFields(),
       };
     });
 

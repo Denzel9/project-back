@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { Post, PostAuthorType, PostContentType, Prisma, Role } from '@prisma/client';
+import { Post, PostAuthorType, Prisma, Role } from '@prisma/client';
 import { AuthUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../media/storage.service';
@@ -13,6 +13,12 @@ import { CreatePostDto } from './dto/create-post.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
 import { PostResponseDto } from './dto/post-response.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
+import {
+  jsonToArray,
+  jsonToRecord,
+  mapBudgetFromApi,
+  mapBudgetToApi,
+} from './post-json.util';
 import {
   assertCanViewPost,
   visiblePostTypeForRole,
@@ -81,16 +87,40 @@ export class PostsService {
         permissions: dto.permissions ?? [],
         chips: dto.chips ?? [],
         description: dto.description ?? '',
-        typeCooperation: dto.typeCooperation ?? [],
         urgent: dto.urgent ?? false,
-        contentType: dto.contentType ?? PostContentType.PHOTO,
-        photoCount: dto.photoCount ?? '0',
-        videoCount: dto.videoCount ?? '0',
-        finalPrice: dto.finalPrice ?? '',
-        rangePrice: dto.rangePrice ?? [],
         keyWords: dto.keyWords ?? [],
         categories: dto.categories ?? [],
         isPrivate: dto.isPrivate ?? false,
+        platforms: dto.platforms ?? [],
+        placementFormats: dto.placementFormats ?? [],
+        niche: dto.niche ?? [],
+        tags: dto.tags ?? [],
+        ...(dto.budget !== undefined && {
+          budget: mapBudgetFromApi(
+            dto.budget as unknown as Record<string, unknown>
+          ) as Prisma.InputJsonValue,
+        }),
+        ...(dto.deadline !== undefined && {
+          deadline: new Date(dto.deadline),
+        }),
+        ...(dto.workFormat !== undefined && { workFormat: dto.workFormat }),
+        ...(dto.location !== undefined && {
+          location: dto.location as unknown as Prisma.InputJsonValue,
+        }),
+        ...(dto.bloggerRequirements !== undefined && {
+          bloggerRequirements:
+            dto.bloggerRequirements as unknown as Prisma.InputJsonValue,
+        }),
+        ...(dto.cooperationDetails !== undefined && {
+          cooperationDetails:
+            dto.cooperationDetails as unknown as Prisma.InputJsonValue,
+        }),
+        ...(dto.brief !== undefined && {
+          brief: dto.brief as unknown as Prisma.InputJsonValue,
+        }),
+        ...(dto.deliverables !== undefined && {
+          deliverables: dto.deliverables as unknown as Prisma.InputJsonValue,
+        }),
       },
       include: postWithMediaInclude,
     });
@@ -297,35 +327,61 @@ export class PostsService {
     if (dto.permissions !== undefined) data.permissions = dto.permissions;
     if (dto.chips !== undefined) data.chips = dto.chips;
     if (dto.description !== undefined) data.description = dto.description;
-    if (dto.typeCooperation !== undefined) {
-      data.typeCooperation = dto.typeCooperation;
-    }
     if (dto.urgent !== undefined) data.urgent = dto.urgent;
-    if (dto.contentType !== undefined) data.contentType = dto.contentType;
-    if (dto.photoCount !== undefined) data.photoCount = dto.photoCount;
-    if (dto.videoCount !== undefined) data.videoCount = dto.videoCount;
-    if (dto.finalPrice !== undefined) data.finalPrice = dto.finalPrice;
-    if (dto.rangePrice !== undefined) data.rangePrice = dto.rangePrice;
     if (dto.isArchived !== undefined) data.isArchived = dto.isArchived;
     if (dto.isPrivate !== undefined) data.isPrivate = dto.isPrivate;
     if (dto.keyWords !== undefined) data.keyWords = dto.keyWords;
     if (dto.categories !== undefined) data.categories = dto.categories;
+    if (dto.platforms !== undefined) data.platforms = dto.platforms;
+    if (dto.placementFormats !== undefined) {
+      data.placementFormats = dto.placementFormats;
+    }
+    if (dto.niche !== undefined) data.niche = dto.niche;
+    if (dto.tags !== undefined) data.tags = dto.tags;
+    if (dto.budget !== undefined) {
+      data.budget = mapBudgetFromApi(
+        dto.budget as unknown as Record<string, unknown>
+      ) as Prisma.InputJsonValue;
+    }
+    if (dto.deadline !== undefined) {
+      data.deadline = new Date(dto.deadline);
+    }
+    if (dto.workFormat !== undefined) data.workFormat = dto.workFormat;
+    if (dto.location !== undefined) {
+      data.location = dto.location as unknown as Prisma.InputJsonValue;
+    }
+    if (dto.bloggerRequirements !== undefined) {
+      data.bloggerRequirements =
+        dto.bloggerRequirements as unknown as Prisma.InputJsonValue;
+    }
+    if (dto.cooperationDetails !== undefined) {
+      data.cooperationDetails =
+        dto.cooperationDetails as unknown as Prisma.InputJsonValue;
+    }
+    if (dto.brief !== undefined) {
+      data.brief = dto.brief as unknown as Prisma.InputJsonValue;
+    }
+    if (dto.deliverables !== undefined) {
+      data.deliverables = dto.deliverables as unknown as Prisma.InputJsonValue;
+    }
 
     return data;
   }
 
   toResponse(post: PostWithMedia): PostResponseDto {
+    const budget = mapBudgetToApi(jsonToRecord(post.budget));
+    const location = jsonToRecord(post.location);
+    const bloggerRequirements = jsonToRecord(post.bloggerRequirements);
+    const cooperationDetails = jsonToRecord(post.cooperationDetails);
+    const brief = jsonToRecord(post.brief);
+    const deliverables = jsonToArray(post.deliverables);
+
     return {
       id: post.id,
-      permissions: post.permissions,
-      media: post.media.map(item => ({
-        id: item.id,
-        url: item.url,
-        key: item.key,
-        size: item.size,
-        mimeType: item.mimeType,
-      })),
       title: post.title,
+      type: post.type,
+      chips: post.chips,
+      urgent: post.urgent,
       owner: {
         id: post.owner.id,
         avatar: post.owner.avatar,
@@ -337,22 +393,45 @@ export class PostsService {
           companyName: post.owner.companyProfile?.companyName,
         },
       },
-      chips: post.chips,
-      description: post.description,
-      typeCooperation: post.typeCooperation,
-      urgent: post.urgent,
-      contentType: post.contentType,
-      photoCount: post.photoCount,
-      videoCount: post.videoCount,
-      finalPrice: post.finalPrice,
-      rangePrice: post.rangePrice,
-      isArchived: post.isArchived,
-      isPrivate: post.isPrivate,
-      keyWords: post.keyWords,
-      categories: post.categories,
-      type: post.type,
       createdAt: post.createdAt.toISOString(),
       updatedAt: post.updatedAt.toISOString(),
+      media: post.media.map(item => ({
+        id: item.id,
+        url: item.url,
+        key: item.key,
+        size: item.size,
+        mimeType: item.mimeType,
+      })),
+      description: post.description,
+      isPrivate: post.isPrivate,
+      isArchived: post.isArchived,
+      categories: post.categories,
+      permissions: post.permissions,
+      ...(post.keyWords.length > 0 && { keyWords: post.keyWords }),
+      ...(post.platforms.length > 0 && { platforms: post.platforms }),
+      ...(post.placementFormats.length > 0 && {
+        placementFormats: post.placementFormats,
+      }),
+      ...(post.niche.length > 0 && { niche: post.niche }),
+      ...(post.tags.length > 0 && { tags: post.tags }),
+      ...(budget && { budget: budget as PostResponseDto['budget'] }),
+      ...(post.deadline && { deadline: post.deadline.toISOString() }),
+      ...(post.workFormat && { workFormat: post.workFormat }),
+      ...(location && { location: location as PostResponseDto['location'] }),
+      ...(bloggerRequirements && {
+        bloggerRequirements:
+          bloggerRequirements as PostResponseDto['bloggerRequirements'],
+      }),
+      ...(cooperationDetails && {
+        cooperationDetails:
+          cooperationDetails as PostResponseDto['cooperationDetails'],
+      }),
+      ...(brief && { brief: brief as PostResponseDto['brief'] }),
+      ...(deliverables &&
+        deliverables.length > 0 && {
+          deliverables:
+            deliverables as unknown as PostResponseDto['deliverables'],
+        }),
     };
   }
 }

@@ -74,4 +74,10 @@ export class UpdateTaskDto {
   @Type(() => Boolean)
   @IsBoolean()
   isExecutorApprove?: boolean | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isCompanyAction?: boolean;
 }

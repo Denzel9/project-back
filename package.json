@@ -25,7 +25,8 @@
     "prisma:studio": "prisma studio",
     "openapi:generate": "ts-node -r tsconfig-paths/register scripts/generate-openapi.ts",
     "seed:posts": "ts-node -r tsconfig-paths/register scripts/seed-posts.ts",
-    "seed:demo": "ts-node -r tsconfig-paths/register scripts/seed-demo-data.ts"
+    "seed:demo": "ts-node -r tsconfig-paths/register scripts/seed-demo-data.ts",
+    "backfill:posts": "ts-node -r tsconfig-paths/register scripts/backfill-post-fields.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1064.0",
