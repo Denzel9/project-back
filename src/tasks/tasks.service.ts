@@ -16,12 +16,16 @@ import {
 } from '@prisma/client';
 import { ApplicationApplicantDto } from '../applications/dto/application-applicant.dto';
 import { AuthUser } from '../auth/auth.types';
+import { buildCalendarDayFilter } from '../common/date/calendar-day-filter';
 import { StorageService } from '../media/storage.service';
 import { ALLOWED_DOCUMENT_MIME_TYPES } from '../media/media.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
 import { TaskCommentMediaInputDto } from './dto/task-comment-media-input.dto';
 import { ListTaskActivitiesQueryDto } from './dto/list-task-activities-query.dto';
+import { ListAllTaskActivitiesQueryDto } from './dto/list-all-task-activities-query.dto';
+import { ListAllTaskCommentsQueryDto } from './dto/list-all-task-comments-query.dto';
+import { ListTasksWithCommentsQueryDto } from './dto/list-tasks-with-comments-query.dto';
 import { ListTaskCommentsQueryDto } from './dto/list-task-comments-query.dto';
 import {
   ListTaskCommentAttachmentsQueryDto,
@@ -44,6 +48,11 @@ import {
 } from './dto/task-response.dto';
 import { UpdateTaskCommentDto } from './dto/update-task-comment.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import { TaskWithCommentsSummaryDto } from './dto/task-with-comments-summary.dto';
+import {
+  buildCommentPreview,
+  resolveTaskTitle,
+} from './task-comment-preview.util';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -352,7 +361,7 @@ export class TasksService {
       forceExecutorRole?: boolean;
     } = {}
   ): Prisma.TaskWhereInput {
-    const updatedAtFilter = this.buildUpdatedDateFilter(query.updatedDate);
+    const updatedAtFilter = buildCalendarDayFilter(query.updatedDate);
     const role = options.forceExecutorRole ? TaskListRole.EXECUTOR : query.role;
     const executorApprovalWhere =
       options.executorApprovalFilter === 'unapproved'
@@ -380,6 +389,93 @@ export class TasksService {
     };
 
     return where;
+  }
+
+  private buildParticipantTaskWhere(
+    userId: string,
+    role?: TaskListRole
+  ): Prisma.TaskWhereInput {
+    if (role === TaskListRole.OWNER) {
+      return { ownerId: userId };
+    }
+
+    if (role === TaskListRole.EXECUTOR) {
+      return { executorId: userId };
+    }
+
+    return {
+      OR: [{ ownerId: userId }, { executorId: userId }],
+    };
+  }
+
+  private buildTasksWithCommentsWhere(
+    userId: string,
+    query: ListTasksWithCommentsQueryDto
+  ): Prisma.TaskCommentWhereInput {
+    const taskWhere: Prisma.TaskWhereInput = {
+      ...this.buildParticipantTaskWhere(userId, query.role),
+      ...(query.postId !== undefined && { postId: query.postId }),
+      ...(query.status !== undefined && { status: query.status }),
+    };
+
+    if (query.q === undefined) {
+      return { task: taskWhere };
+    }
+
+    return {
+      AND: [
+        { task: taskWhere },
+        {
+          OR: [
+            { content: { contains: query.q, mode: 'insensitive' } },
+            {
+              task: {
+                ...taskWhere,
+                title: { contains: query.q, mode: 'insensitive' },
+              },
+            },
+            {
+              task: {
+                ...taskWhere,
+                post: {
+                  title: { contains: query.q, mode: 'insensitive' },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  private async countUnreadCommentsByTask(
+    userId: string,
+    taskIds: string[],
+    readAfter?: string
+  ): Promise<Map<string, number>> {
+    if (readAfter === undefined || taskIds.length === 0) {
+      return new Map();
+    }
+
+    const readAfterDate = new Date(readAfter);
+
+    if (Number.isNaN(readAfterDate.getTime())) {
+      throw new BadRequestException('readAfter должен быть валидной датой ISO');
+    }
+
+    const groups = await this.prisma.taskComment.groupBy({
+      by: ['taskId'],
+      where: {
+        taskId: { in: taskIds },
+        createdAt: { gt: readAfterDate },
+        authorId: { not: userId },
+      },
+      _count: { _all: true },
+    });
+
+    return new Map(
+      groups.map(group => [group.taskId, group._count._all])
+    );
   }
 
   async findById(user: AuthUser, id: string): Promise<TaskResponseDto> {
@@ -569,6 +665,190 @@ export class TasksService {
       page,
       limit,
     };
+  }
+
+  async listAllActivities(
+    user: AuthUser,
+    query: ListAllTaskActivitiesQueryDto
+  ) {
+    if (query.taskId !== undefined) {
+      const task = await this.getTaskOrThrow(query.taskId);
+      this.assertParticipant(task, user.userId);
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.TaskActivityWhereInput = {
+      ...(query.taskId !== undefined
+        ? { taskId: query.taskId }
+        : { task: this.buildParticipantTaskWhere(user.userId, query.role) }),
+      ...(query.type !== undefined && { type: query.type }),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.taskActivity.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.taskActivity.count({ where }),
+    ]);
+
+    return {
+      items: items.map(activity => this.toActivityResponse(activity)),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  async listAllComments(
+    user: AuthUser,
+    query: ListAllTaskCommentsQueryDto
+  ) {
+    if (query.taskId !== undefined) {
+      const task = await this.getTaskOrThrow(query.taskId);
+      this.assertParticipant(task, user.userId);
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.TaskCommentWhereInput = {
+      ...(query.taskId !== undefined
+        ? { taskId: query.taskId }
+        : { task: this.buildParticipantTaskWhere(user.userId, query.role) }),
+      ...(query.q !== undefined && {
+        content: { contains: query.q, mode: 'insensitive' },
+      }),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.taskComment.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: commentWithMediaInclude,
+      }),
+      this.prisma.taskComment.count({ where }),
+    ]);
+
+    return {
+      items: items.map(comment => this.toCommentResponse(comment)),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  async listTasksWithComments(
+    user: AuthUser,
+    query: ListTasksWithCommentsQueryDto
+  ) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+    const where = this.buildTasksWithCommentsWhere(user.userId, query);
+
+    const groups = await this.prisma.taskComment.groupBy({
+      by: ['taskId'],
+      where,
+      _count: { _all: true },
+      _max: { createdAt: true },
+    });
+
+    const sortedGroups = groups
+      .map(group => ({
+        taskId: group.taskId,
+        commentsCount: group._count._all,
+        lastCommentAt: group._max.createdAt ?? new Date(0),
+      }))
+      .sort(
+        (left, right) =>
+          right.lastCommentAt.getTime() - left.lastCommentAt.getTime()
+      );
+
+    const total = sortedGroups.length;
+    const pageGroups = sortedGroups.slice(skip, skip + limit);
+
+    if (pageGroups.length === 0) {
+      return { items: [], total, page, limit };
+    }
+
+    const taskIds = pageGroups.map(group => group.taskId);
+
+    const [tasks, lastComments] = await Promise.all([
+      this.prisma.task.findMany({
+        where: { id: { in: taskIds } },
+        select: {
+          id: true,
+          title: true,
+          post: { select: { title: true } },
+        },
+      }),
+      this.prisma.taskComment.findMany({
+        where: { taskId: { in: taskIds } },
+        orderBy: { createdAt: 'desc' },
+        distinct: ['taskId'],
+        select: {
+          taskId: true,
+          content: true,
+          createdAt: true,
+          authorId: true,
+          _count: { select: { media: true } },
+        },
+      }),
+    ]);
+
+    const unreadByTaskId = await this.countUnreadCommentsByTask(
+      user.userId,
+      taskIds,
+      query.readAfter
+    );
+
+    const tasksById = new Map(tasks.map(task => [task.id, task]));
+    const lastCommentsByTaskId = new Map(
+      lastComments.map(comment => [comment.taskId, comment])
+    );
+
+    const items: TaskWithCommentsSummaryDto[] = [];
+
+    for (const group of pageGroups) {
+      const task = tasksById.get(group.taskId);
+      const lastComment = lastCommentsByTaskId.get(group.taskId);
+
+      if (!task || !lastComment) {
+        continue;
+      }
+
+      const item: TaskWithCommentsSummaryDto = {
+        taskId: group.taskId,
+        title: resolveTaskTitle(task.title, task.post.title),
+        lastComment: {
+          preview: buildCommentPreview(
+            lastComment.content,
+            lastComment._count.media > 0
+          ),
+          createdAt: lastComment.createdAt.toISOString(),
+          authorId: lastComment.authorId,
+        },
+        commentsCount: group.commentsCount,
+      };
+
+      const unreadCount = unreadByTaskId.get(group.taskId);
+      if (unreadCount !== undefined) {
+        item.unreadCount = unreadCount;
+      }
+
+      items.push(item);
+    }
+
+    return { items, total, page, limit };
   }
 
   async listComments(
@@ -886,20 +1166,6 @@ export class TasksService {
         });
       }
 
-      if (
-        dto.isCompanyAction !== undefined &&
-        dto.isCompanyAction !== task.isCompanyAction
-      ) {
-        changes.push({
-          type: TaskActivityType.FIELD_UPDATED,
-          payload: {
-            field: 'isCompanyAction',
-            from: task.isCompanyAction,
-            to: dto.isCompanyAction,
-          },
-        });
-      }
-
       return changes;
     }
 
@@ -996,20 +1262,6 @@ export class TasksService {
           field: 'isExecutorApprove',
           from: task.isExecutorApprove,
           to: dto.isExecutorApprove,
-        },
-      });
-    }
-
-    if (
-      dto.isCompanyAction !== undefined &&
-      dto.isCompanyAction !== task.isCompanyAction
-    ) {
-      changes.push({
-        type: TaskActivityType.FIELD_UPDATED,
-        payload: {
-          field: 'isCompanyAction',
-          from: task.isCompanyAction,
-          to: dto.isCompanyAction,
         },
       });
     }
@@ -1142,23 +1394,6 @@ export class TasksService {
         },
       ],
     };
-  }
-
-  private buildUpdatedDateFilter(
-    updatedDate?: string
-  ): Prisma.DateTimeFilter | undefined {
-    if (updatedDate === undefined) {
-      return undefined;
-    }
-
-    const start = new Date(`${updatedDate}T00:00:00.000Z`);
-    const end = new Date(`${updatedDate}T23:59:59.999Z`);
-
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      throw new BadRequestException('Некорректная дата');
-    }
-
-    return { gte: start, lte: end };
   }
 
   private async validateExecutor(

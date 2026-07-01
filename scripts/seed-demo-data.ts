@@ -1,8 +1,4 @@
-import {
-  ApplicationStatus,
-  PrismaClient,
-  Role,
-} from '@prisma/client';
+import { ApplicationStatus, PrismaClient, Role } from '@prisma/client';
 
 const COUNT = 100;
 const MIN_USERS = 15;
@@ -45,15 +41,15 @@ async function ensureUsers(prisma: PrismaClient): Promise<string[]> {
         role,
         ...(role === Role.CREATOR
           ? {
-              creatorProfile: {
-                create: { name: 'Seed', lastName: `User${num}` },
-              },
-            }
+            creatorProfile: {
+              create: { name: 'Seed', lastName: `User${num}` },
+            },
+          }
           : {
-              companyProfile: {
-                create: { companyName: `Seed Co ${num}` },
-              },
-            }),
+            companyProfile: {
+              create: { companyName: `Seed Co ${num}` },
+            },
+          }),
       },
     });
 
@@ -180,7 +176,9 @@ async function seedApplications(
     );
   }
 
-  const result = await prisma.postApplication.createMany({ data: applications });
+  const result = await prisma.postApplication.createMany({
+    data: applications,
+  });
   console.log(`Отклики: создано ${result.count}`);
   return result.count;
 }
@@ -272,7 +270,9 @@ async function seedConversationsAndMessages(
   });
 
   if (existingMessages >= COUNT) {
-    console.log(`Диалоги/сообщения: уже есть ${existingMessages} сообщений, пропуск`);
+    console.log(
+      `Диалоги/сообщения: уже есть ${existingMessages} сообщений, пропуск`
+    );
     return { conversations: 0, messages: 0 };
   }
 

@@ -930,9 +930,18 @@ paths:
       description: "Без `ownerId` — посты других пользователей, доступные для вашей
         роли (креаторы — только COMPANY, компании — только CREATOR); приватные
         посты скрыты. С `ownerId` = свой id — все свои посты (включая
-        приватные). Поиск: `q` — по названию поста или названию компании.
-        Опциональные фильтры: `type` (только для своих постов), `isArchived`,
-        `isPrivate` (только для своих). Пагинация: `page`, `limit`."
+        приватные). Поиск: `q` — по title или companyName; `title` — только по
+        названию поста. Базовые фильтры: `type` (свои), `isArchived`,
+        `isPrivate` (свои). Доп. фильтры: `urgent`, `chips`, `categories`,
+        `platforms`, `placementFormats`, `niche`, `tags`, `workFormat`,
+        `createdDate`, `deadlineDate`, `budgetType`, `budgetCurrency`,
+        `paymentTerms`, `locationCity`, `locationCountry`, `shootingRequired`,
+        `minFollowers`, `maxFollowers`, `minEngagementRate`, `verifiedAccount`,
+        `experienceWithAds`, `contentStyle`, `exclusivity`, `exclusivityDays`,
+        `usageRights`, `usageDurationDays`, `requiresMarking`,
+        `requiresContract`, `ndaRequired`, `briefHashtag`, `briefMention`,
+        `deliverablePlatform`, `deliverableFormat`. Массивы — через запятую
+        (hasSome). Пагинация: `page`, `limit`."
       parameters:
         - name: ownerId
           required: false
@@ -969,6 +978,288 @@ paths:
           description: Поиск по названию поста или названию компании-автора
           schema:
             example: реклама
+            type: string
+        - name: title
+          required: false
+          in: query
+          description: Фильтр по названию поста (contains, без учёта регистра)
+          schema:
+            type: string
+        - name: urgent
+          required: false
+          in: query
+          description: Фильтр по срочности
+          schema:
+            type: boolean
+        - name: chips
+          required: false
+          in: query
+          description: Фильтр по chips (hasSome, через запятую)
+          schema:
+            type: array
+            items:
+              type: string
+        - name: categories
+          required: false
+          in: query
+          description: Фильтр по categories (hasSome, через запятую)
+          schema:
+            type: array
+            items:
+              type: string
+        - name: platforms
+          required: false
+          in: query
+          description: Фильтр по platforms (hasSome, через запятую)
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - INSTAGRAM
+                - TIKTOK
+                - YOUTUBE
+                - TELEGRAM
+                - VK
+                - OTHER
+        - name: placementFormats
+          required: false
+          in: query
+          description: Фильтр по placementFormats (hasSome, через запятую)
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - POST
+                - STORIES
+                - REELS
+                - SHORTS
+                - INTEGRATION
+                - LIVE
+        - name: niche
+          required: false
+          in: query
+          description: Фильтр по niche (hasSome, через запятую)
+          schema:
+            type: array
+            items:
+              type: string
+        - name: tags
+          required: false
+          in: query
+          description: Фильтр по tags (hasSome, через запятую)
+          schema:
+            type: array
+            items:
+              type: string
+        - name: workFormat
+          required: false
+          in: query
+          schema:
+            enum:
+              - REMOTE
+              - ON_SITE
+              - HYBRID
+            type: string
+        - name: createdDate
+          required: false
+          in: query
+          description: Фильтр по дате создания (календарный день, UTC)
+          schema:
+            format: date
+            example: 2026-06-14
+            type: string
+        - name: deadlineDate
+          required: false
+          in: query
+          description: Фильтр по дедлайну (календарный день, UTC)
+          schema:
+            format: date
+            example: 2026-06-14
+            type: string
+        - name: budgetType
+          required: false
+          in: query
+          schema:
+            enum:
+              - FIXED
+              - RANGE
+              - NEGOTIABLE
+              - BARTER
+            type: string
+        - name: budgetCurrency
+          required: false
+          in: query
+          schema:
+            enum:
+              - RUB
+              - USD
+            type: string
+        - name: paymentTerms
+          required: false
+          in: query
+          schema:
+            enum:
+              - PREPAY
+              - POSTPAY
+              - 50_50
+              - SAFE_DEAL
+            type: string
+        - name: locationCity
+          required: false
+          in: query
+          description: Фильтр location.city (contains)
+          schema:
+            type: string
+        - name: locationCountry
+          required: false
+          in: query
+          description: Фильтр location.country (contains)
+          schema:
+            type: string
+        - name: shootingRequired
+          required: false
+          in: query
+          description: Фильтр location.shootingRequired
+          schema:
+            type: boolean
+        - name: minFollowers
+          required: false
+          in: query
+          description: Фильтр bloggerRequirements.minFollowers
+          schema:
+            type: number
+        - name: maxFollowers
+          required: false
+          in: query
+          description: Фильтр bloggerRequirements.maxFollowers
+          schema:
+            type: number
+        - name: minEngagementRate
+          required: false
+          in: query
+          description: Фильтр bloggerRequirements.minEngagementRate
+          schema:
+            type: number
+        - name: verifiedAccount
+          required: false
+          in: query
+          description: Фильтр bloggerRequirements.verifiedAccount
+          schema:
+            type: boolean
+        - name: experienceWithAds
+          required: false
+          in: query
+          description: Фильтр bloggerRequirements.experienceWithAds
+          schema:
+            type: boolean
+        - name: contentStyle
+          required: false
+          in: query
+          description: Фильтр bloggerRequirements.contentStyle (hasSome, через запятую)
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - LIFESTYLE
+                - REVIEW
+                - HUMOR
+                - EXPERT
+                - UGC
+                - UNBOXING
+                - TUTORIAL
+                - VLOG
+                - STORYTELLING
+                - BEFORE_AFTER
+                - CHALLENGE
+                - BUYING
+                - PODCAST
+                - INTERVIEW
+                - ASMR
+                - EDUCATIONAL
+                - SPORTS
+        - name: exclusivity
+          required: false
+          in: query
+          description: Фильтр cooperationDetails.exclusivity
+          schema:
+            type: boolean
+        - name: exclusivityDays
+          required: false
+          in: query
+          description: Фильтр cooperationDetails.exclusivityDays
+          schema:
+            type: number
+        - name: usageRights
+          required: false
+          in: query
+          schema:
+            enum:
+              - ORGANIC_ONLY
+              - PAID_ADS
+              - FULL_LICENSE
+            type: string
+        - name: usageDurationDays
+          required: false
+          in: query
+          description: Фильтр cooperationDetails.usageDurationDays
+          schema:
+            type: number
+        - name: requiresMarking
+          required: false
+          in: query
+          description: Фильтр cooperationDetails.requiresMarking
+          schema:
+            type: boolean
+        - name: requiresContract
+          required: false
+          in: query
+          description: Фильтр cooperationDetails.requiresContract
+          schema:
+            type: boolean
+        - name: ndaRequired
+          required: false
+          in: query
+          description: Фильтр cooperationDetails.ndaRequired
+          schema:
+            type: boolean
+        - name: briefHashtag
+          required: false
+          in: query
+          description: Фильтр brief.hashtags (вхождение значения)
+          schema:
+            type: string
+        - name: briefMention
+          required: false
+          in: query
+          description: Фильтр brief.mentions (вхождение значения)
+          schema:
+            type: string
+        - name: deliverablePlatform
+          required: false
+          in: query
+          schema:
+            enum:
+              - INSTAGRAM
+              - TIKTOK
+              - YOUTUBE
+              - TELEGRAM
+              - VK
+              - OTHER
+            type: string
+        - name: deliverableFormat
+          required: false
+          in: query
+          schema:
+            enum:
+              - POST
+              - STORIES
+              - REELS
+              - SHORTS
+              - INTEGRATION
+              - LIVE
             type: string
         - name: page
           required: false
@@ -1555,6 +1846,196 @@ paths:
           description: Список задач с пагинацией
       tags: *a12
       security: *a13
+  /tasks/activities:
+    get:
+      operationId: TasksController_listAllActivities
+      summary: Лента активностей по всем задачам
+      description: "Активности по задачам, где пользователь owner или executor.
+        Фильтры: `type`, `role` (owner|executor), `taskId`. Сортировка — от
+        новых к старым."
+      parameters:
+        - name: type
+          required: false
+          in: query
+          schema:
+            enum:
+              - STATUS_CHANGED
+              - FIELD_UPDATED
+              - MEDIA_ADDED
+              - MEDIA_REMOVED
+            type: string
+        - name: role
+          required: false
+          in: query
+          description: owner — активности по задачам на мои посты; executor — где я
+            исполнитель
+          schema:
+            enum:
+              - owner
+              - executor
+            type: string
+        - name: taskId
+          required: false
+          in: query
+          description: Только активности указанной задачи (если есть доступ)
+          schema:
+            format: uuid
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Список активностей с пагинацией
+        "403":
+          description: Нет доступа к задаче (при taskId)
+        "404":
+          description: Задача не найдена (при указанном taskId)
+      tags: *a12
+      security: *a13
+  /tasks/comments:
+    get:
+      operationId: TasksController_listAllComments
+      summary: Лента комментариев по всем задачам
+      description: "Комментарии по задачам, где пользователь owner или executor.
+        Фильтры: `role` (owner|executor), `taskId`, `q` (поиск по тексту).
+        Сортировка — от новых к старым."
+      parameters:
+        - name: role
+          required: false
+          in: query
+          description: owner — комментарии по задачам на мои посты; executor — где я
+            исполнитель
+          schema:
+            enum:
+              - owner
+              - executor
+            type: string
+        - name: taskId
+          required: false
+          in: query
+          description: Только комментарии указанной задачи (если есть доступ)
+          schema:
+            format: uuid
+            type: string
+        - name: q
+          required: false
+          in: query
+          description: Поиск по тексту комментария
+          schema:
+            example: договор
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Список комментариев с пагинацией
+        "403":
+          description: Нет доступа к задаче (при taskId)
+        "404":
+          description: Задача не найдена (при указанном taskId)
+      tags: *a12
+      security: *a13
+  /tasks/with-comments:
+    get:
+      operationId: TasksController_listTasksWithComments
+      summary: Задачи с комментариями
+      description: "Только задачи, где есть хотя бы один комментарий. По каждой:
+        title, превью последнего комментария, `commentsCount`. `unreadCount` —
+        если передан `readAfter` (комментарии других после этой даты).
+        Сортировка по времени последнего комментария. Фильтры: `role`, `postId`,
+        `status`, `q`."
+      parameters:
+        - name: role
+          required: false
+          in: query
+          description: owner — задачи на мои посты; executor — где я исполнитель
+          schema:
+            enum:
+              - owner
+              - executor
+            type: string
+        - name: postId
+          required: false
+          in: query
+          schema:
+            format: uuid
+            type: string
+        - name: status
+          required: false
+          in: query
+          schema:
+            enum:
+              - PREPARING
+              - PENDING_APPROVAL
+              - IN_PROGRESS
+              - CHECKING
+              - REVISION
+              - COMPLETED
+              - CANCELLED
+              - CANCELLED_EXECUTOR
+            type: string
+        - name: q
+          required: false
+          in: query
+          description: Поиск по тексту последних комментариев, title задачи или поста
+          schema:
+            example: договор
+            type: string
+        - name: readAfter
+          required: false
+          in: query
+          description: "Метка «прочитано до». Если передана — в ответе будет
+            `unreadCount`: комментарии других участников, созданные позже этой
+            даты."
+          schema:
+            format: date-time
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Список задач с превью комментариев
+      tags: *a12
+      security: *a13
   /tasks/{id}:
     get:
       operationId: TasksController_findById
@@ -2032,11 +2513,24 @@ paths:
   /favorites:
     get:
       operationId: FavoritesController_listFavorites
-      summary: Список избранных постов
-      description: "Все избранные, или фильтр `groupId`, или `ungrouped=true`. Поиск:
-        `q` — по названию поста или названию компании. Каждый элемент содержит
-        полный пост с `media[]`."
+      summary: Список избранного
+      description: "`type=POST` (по умолчанию) — посты; `groupId` / `ungrouped` только
+        для постов. `type=CREATOR` или `type=COMPANY` — избранные профили. Поиск
+        `q`: для постов — title/companyName; для креаторов — name/lastName; для
+        компаний — companyName."
       parameters:
+        - name: type
+          required: false
+          in: query
+          description: "Тип избранного: POST (посты, по умолчанию), CREATOR, COMPANY. Для
+            CREATOR/COMPANY фильтры groupId и ungrouped не применяются."
+          schema:
+            default: POST
+            enum:
+              - POST
+              - CREATOR
+              - COMPANY
+            type: string
         - name: groupId
           required: false
           in: query
@@ -2053,7 +2547,8 @@ paths:
         - name: q
           required: false
           in: query
-          description: Поиск по названию поста или названию компании-автора
+          description: "Поиск: для POST — по названию поста или компании-автора; для
+            CREATOR — по имени/фамилии; для COMPANY — по названию компании"
           schema:
             example: реклама
             type: string
@@ -2079,8 +2574,9 @@ paths:
       security: *a15
     post:
       operationId: FavoritesController_addFavorite
-      summary: Добавить пост в избранное
-      description: "Upsert: повторный вызов обновляет группу. `groupId` опционален."
+      summary: Добавить в избранное
+      description: Укажите `postId` (пост, опционально `groupId`) или `userId`
+        (креатор/компания). Повторный вызов с тем же postId обновляет группу.
       parameters: []
       requestBody:
         required: true
@@ -2094,9 +2590,11 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FavoriteResponseDto"
+                oneOf:
+                  - $ref: "#/components/schemas/FavoriteResponseDto"
+                  - $ref: "#/components/schemas/FavoriteUserItemResponseDto"
         "404":
-          description: Пост или группа не найдены
+          description: Пост, пользователь или группа не найдены
       tags: *a14
       security: *a15
   /favorites/{postId}:
@@ -2143,6 +2641,479 @@ paths:
           description: Пост не найден в избранном
       tags: *a14
       security: *a15
+  /favorites/users/{userId}:
+    delete:
+      operationId: FavoritesController_removeFavoriteUser
+      summary: Убрать креатора или компанию из избранного
+      parameters:
+        - name: userId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Пользователь убран из избранного
+        "404":
+          description: Пользователь не найден в избранном
+      tags: *a14
+      security: *a15
+  /partners/tasks/executors:
+    get:
+      operationId: PartnersController_listTaskExecutors
+      summary: Исполнители из задач (для компании)
+      description: "Уникальные креаторы-исполнители по задачам активной компании.
+        Фильтры: `q`, `postId`, `taskId`, `userId`, `status` / `statuses`,
+        `updatedDate`, `createdDate`, `isExecutorApprove`, `urgent`, `sort`
+        (recent|name)."
+      parameters:
+        - name: q
+          required: false
+          in: query
+          description: "Поиск: для исполнителей — имя/фамилия; для заказчиков — название
+            компании"
+          schema:
+            example: иван
+            type: string
+        - name: postId
+          required: false
+          in: query
+          schema:
+            format: uuid
+            type: string
+        - name: taskId
+          required: false
+          in: query
+          schema:
+            format: uuid
+            type: string
+        - name: userId
+          required: false
+          in: query
+          description: Фильтр по конкретному пользователю
+          schema:
+            format: uuid
+            type: string
+        - name: status
+          required: false
+          in: query
+          schema:
+            enum:
+              - PREPARING
+              - PENDING_APPROVAL
+              - IN_PROGRESS
+              - CHECKING
+              - REVISION
+              - COMPLETED
+              - CANCELLED
+              - CANCELLED_EXECUTOR
+            type: string
+        - name: statuses
+          required: false
+          in: query
+          description: Несколько статусов через запятую
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - PREPARING
+                - PENDING_APPROVAL
+                - IN_PROGRESS
+                - CHECKING
+                - REVISION
+                - COMPLETED
+                - CANCELLED
+                - CANCELLED_EXECUTOR
+        - name: updatedDate
+          required: false
+          in: query
+          description: Фильтр по дате обновления задачи (UTC)
+          schema:
+            format: date
+            example: 2026-06-14
+            type: string
+        - name: createdDate
+          required: false
+          in: query
+          description: Фильтр по дате создания задачи (UTC)
+          schema:
+            format: date
+            example: 2026-06-14
+            type: string
+        - name: isExecutorApprove
+          required: false
+          in: query
+          schema:
+            nullable: true
+            type: boolean
+        - name: urgent
+          required: false
+          in: query
+          schema:
+            type: boolean
+        - name: sort
+          required: false
+          in: query
+          description: recent — по последней задаче; name — по имени/компании
+          schema:
+            default: recent
+            enum:
+              - recent
+              - name
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Список исполнителей с пагинацией
+        "403":
+          description: Доступно только для роли COMPANY
+      tags: &a16
+        - partners
+      security: &a17
+        - access-token: []
+  /partners/tasks/customers:
+    get:
+      operationId: PartnersController_listTaskCustomers
+      summary: Заказчики из задач (для креатора)
+      description: Уникальные компании-заказчики по задачам, где креатор —
+        исполнитель. Те же фильтры, что у `GET /partners/tasks/executors`.
+      parameters:
+        - name: q
+          required: false
+          in: query
+          description: "Поиск: для исполнителей — имя/фамилия; для заказчиков — название
+            компании"
+          schema:
+            example: иван
+            type: string
+        - name: postId
+          required: false
+          in: query
+          schema:
+            format: uuid
+            type: string
+        - name: taskId
+          required: false
+          in: query
+          schema:
+            format: uuid
+            type: string
+        - name: userId
+          required: false
+          in: query
+          description: Фильтр по конкретному пользователю
+          schema:
+            format: uuid
+            type: string
+        - name: status
+          required: false
+          in: query
+          schema:
+            enum:
+              - PREPARING
+              - PENDING_APPROVAL
+              - IN_PROGRESS
+              - CHECKING
+              - REVISION
+              - COMPLETED
+              - CANCELLED
+              - CANCELLED_EXECUTOR
+            type: string
+        - name: statuses
+          required: false
+          in: query
+          description: Несколько статусов через запятую
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - PREPARING
+                - PENDING_APPROVAL
+                - IN_PROGRESS
+                - CHECKING
+                - REVISION
+                - COMPLETED
+                - CANCELLED
+                - CANCELLED_EXECUTOR
+        - name: updatedDate
+          required: false
+          in: query
+          description: Фильтр по дате обновления задачи (UTC)
+          schema:
+            format: date
+            example: 2026-06-14
+            type: string
+        - name: createdDate
+          required: false
+          in: query
+          description: Фильтр по дате создания задачи (UTC)
+          schema:
+            format: date
+            example: 2026-06-14
+            type: string
+        - name: isExecutorApprove
+          required: false
+          in: query
+          schema:
+            nullable: true
+            type: boolean
+        - name: urgent
+          required: false
+          in: query
+          schema:
+            type: boolean
+        - name: sort
+          required: false
+          in: query
+          description: recent — по последней задаче; name — по имени/компании
+          schema:
+            default: recent
+            enum:
+              - recent
+              - name
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Список заказчиков с пагинацией
+        "403":
+          description: Доступно только для роли CREATOR
+      tags: *a16
+      security: *a17
+  /partners/applications/applicants:
+    get:
+      operationId: PartnersController_listApplicationApplicants
+      summary: Соискатели по откликам (для компании)
+      description: "Уникальные креаторы, откликавшиеся на посты компании. Фильтры: `q`
+        (имя/фамилия или название поста), `postId`, `userId`, `status` /
+        `statuses`, `updatedDate`, `createdDate`, `sort`."
+      parameters:
+        - name: q
+          required: false
+          in: query
+          description: "Поиск: для соискателей — имя/фамилия; для компаний — название
+            компании; также по названию поста"
+          schema:
+            example: реклама
+            type: string
+        - name: postId
+          required: false
+          in: query
+          schema:
+            format: uuid
+            type: string
+        - name: userId
+          required: false
+          in: query
+          description: Фильтр по конкретному пользователю
+          schema:
+            format: uuid
+            type: string
+        - name: status
+          required: false
+          in: query
+          schema:
+            enum:
+              - NEW
+              - VIEWED
+              - ACCEPTED
+              - REJECTED
+              - WITHDRAWN
+            type: string
+        - name: statuses
+          required: false
+          in: query
+          description: Несколько статусов через запятую
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - NEW
+                - VIEWED
+                - ACCEPTED
+                - REJECTED
+                - WITHDRAWN
+        - name: updatedDate
+          required: false
+          in: query
+          description: Фильтр по дате обновления отклика (UTC)
+          schema:
+            format: date
+            example: 2026-06-14
+            type: string
+        - name: createdDate
+          required: false
+          in: query
+          description: Фильтр по дате создания отклика (UTC)
+          schema:
+            format: date
+            example: 2026-06-14
+            type: string
+        - name: sort
+          required: false
+          in: query
+          description: recent — по последнему отклику; name — по имени/компании
+          schema:
+            default: recent
+            enum:
+              - recent
+              - name
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Список соискателей с пагинацией
+        "403":
+          description: Доступно только для роли COMPANY
+      tags: *a16
+      security: *a17
+  /partners/applications/companies:
+    get:
+      operationId: PartnersController_listApplicationCompanies
+      summary: Компании по откликам (для креатора)
+      description: "Уникальные компании, на посты которых откликался креатор. Фильтры:
+        `q` (компания или название поста), `postId`, `userId`, `status` /
+        `statuses`, `updatedDate`, `createdDate`, `sort`."
+      parameters:
+        - name: q
+          required: false
+          in: query
+          description: "Поиск: для соискателей — имя/фамилия; для компаний — название
+            компании; также по названию поста"
+          schema:
+            example: реклама
+            type: string
+        - name: postId
+          required: false
+          in: query
+          schema:
+            format: uuid
+            type: string
+        - name: userId
+          required: false
+          in: query
+          description: Фильтр по конкретному пользователю
+          schema:
+            format: uuid
+            type: string
+        - name: status
+          required: false
+          in: query
+          schema:
+            enum:
+              - NEW
+              - VIEWED
+              - ACCEPTED
+              - REJECTED
+              - WITHDRAWN
+            type: string
+        - name: statuses
+          required: false
+          in: query
+          description: Несколько статусов через запятую
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - NEW
+                - VIEWED
+                - ACCEPTED
+                - REJECTED
+                - WITHDRAWN
+        - name: updatedDate
+          required: false
+          in: query
+          description: Фильтр по дате обновления отклика (UTC)
+          schema:
+            format: date
+            example: 2026-06-14
+            type: string
+        - name: createdDate
+          required: false
+          in: query
+          description: Фильтр по дате создания отклика (UTC)
+          schema:
+            format: date
+            example: 2026-06-14
+            type: string
+        - name: sort
+          required: false
+          in: query
+          description: recent — по последнему отклику; name — по имени/компании
+          schema:
+            default: recent
+            enum:
+              - recent
+              - name
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Список компаний с пагинацией
+        "403":
+          description: Доступно только для роли CREATOR
+      tags: *a16
+      security: *a17
 info:
   title: Project Back API
   description: >-
@@ -2237,7 +3208,9 @@ info:
     3. `GET /posts` — посты других пользователей, доступные по роли (креатор →
     COMPANY, компания → CREATOR); приватные посты в общей ленте не показываются;
     `?ownerId={свой id}` — все свои посты (включая приватные); `?isPrivate=` —
-    фильтр для своих; `?q=`, `?isArchived=`.
+    фильтр для своих; `?q=`, `?title=`, `?isArchived=`; доп. фильтры по полям
+    поста (`platforms`, `categories`, `budgetType`, `workFormat`, `createdDate`,
+    `deadlineDate` и др., массивы через запятую).
 
     4. `GET /posts/:id` — пост по id; владелец видит всегда; приватный пост —
     только владелец (403 для остальных); публичный — по правилам типа поста.
@@ -2247,12 +3220,16 @@ info:
 
     1. `POST /favorites/groups` — создать группу (например, «спорт»).
 
-    2. `POST /favorites` — сохранить пост (postId, опционально groupId).
+    2. `POST /favorites` — сохранить пост (`postId`, опционально `groupId`) или
+    профиль (`userId` — креатор/компания).
 
-    3. `GET /favorites` — все избранные; `?q=` — поиск по title или companyName;
-    `?groupId=` или `?ungrouped=true`.
+    3. `GET /favorites` — избранное; `?type=POST` (по умолчанию), `CREATOR`,
+    `COMPANY`; для постов — `?q=`, `?groupId=` или `?ungrouped=true`.
 
-    4. `PATCH /favorites/:postId` — переместить в группу или groupId: null.
+    4. `PATCH /favorites/:postId` — переместить пост в группу или groupId: null.
+
+    5. `DELETE /favorites/users/:userId` — убрать креатора/компанию из
+    избранного.
 
 
     ### Отклики на посты
@@ -2272,6 +3249,23 @@ info:
     VIEWED (владелец).
 
 
+    ### Контрагенты (partners)
+
+    1. `GET /partners/tasks/executors` — **COMPANY**: уникальные
+    креаторы-исполнители из задач (`q`, `postId`, `taskId`, `userId`,
+    `status`/`statuses`, даты, `sort`).
+
+    2. `GET /partners/tasks/customers` — **CREATOR**: уникальные
+    компании-заказчики из задач (те же фильтры).
+
+    3. `GET /partners/applications/applicants` — **COMPANY**: креаторы,
+    откликавшиеся на посты (`q`, `postId`, `userId`, `status`/`statuses`, даты,
+    `sort`).
+
+    4. `GET /partners/applications/companies` — **CREATOR**: компании, на посты
+    которых откликался креатор (те же фильтры).
+
+
     ### Задачи
 
     1. Создаются автоматически при `PATCH /applications/:id/status` → ACCEPTED
@@ -2283,6 +3277,15 @@ info:
 
     2a. `GET /tasks/pending-approval` — задачи исполнителя с `isExecutorApprove:
     null` (те же фильтры, кроме `role`).
+
+    2b. `GET /tasks/activities` — лента активностей по всем доступным задачам
+    (`?type=`, `?role=owner|executor`, `?taskId=`).
+
+    2c. `GET /tasks/comments` — лента комментариев по всем доступным задачам
+    (`?role=owner|executor`, `?taskId=`, `?q=`).
+
+    2d. `GET /tasks/with-comments` — задачи с комментариями: превью последнего,
+    `commentsCount`, опционально `unreadCount` при `readAfter`.
 
     3. `POST /tasks` — создать задачу вручную (владелец поста: `postId`,
     опционально `executorId`). Без отклика; `applicationId` = null. Исполнителя
@@ -2374,6 +3377,8 @@ tags:
     description: "Отклики на посты: mine, incoming, статусы NEW/VIEWED/ACCEPTED/REJECTED"
   - name: tasks
     description: "Задачи: автосоздание при ACCEPTED, owner/executor, комментарии"
+  - name: partners
+    description: "Уникальные контрагенты: исполнители/заказчики из задач и откликов"
 servers:
   - url: http://localhost:3010
     description: Локальная разработка
@@ -3109,12 +4114,12 @@ components:
           type: string
           example: Заголовок поста
         permissions:
-          default: &a16 []
+          default: &a18 []
           type: array
           items:
             type: string
         chips:
-          default: &a17 []
+          default: &a19 []
           type: array
           items:
             type: string
@@ -3126,7 +4131,7 @@ components:
           type: boolean
           default: false
         keyWords:
-          default: &a18 []
+          default: &a20 []
           type: array
           items:
             type: string
@@ -3134,14 +4139,14 @@ components:
           type: boolean
           default: false
         categories:
-          default: &a19 []
+          default: &a21 []
           type: array
           items:
             type: string
         platforms:
           type: array
-          default: &a20 []
-          items: &a21
+          default: &a22 []
+          items: &a23
             type: string
             enum:
               - INSTAGRAM
@@ -3152,8 +4157,8 @@ components:
               - OTHER
         placementFormats:
           type: array
-          default: &a22 []
-          items: &a23
+          default: &a24 []
+          items: &a25
             type: string
             enum:
               - POST
@@ -3163,7 +4168,7 @@ components:
               - INTEGRATION
               - LIVE
         niche:
-          default: &a24 []
+          default: &a26 []
           type: array
           items:
             type: string
@@ -3174,7 +4179,7 @@ components:
           format: date-time
         workFormat:
           type: string
-          enum: &a25
+          enum: &a27
             - REMOTE
             - ON_SITE
             - HYBRID
@@ -3187,7 +4192,7 @@ components:
         brief:
           $ref: "#/components/schemas/PostBriefDto"
         tags:
-          default: &a26 []
+          default: &a28 []
           type: array
           items:
             type: string
@@ -3392,12 +4397,12 @@ components:
           type: string
           example: Заголовок поста
         permissions:
-          default: *a16
+          default: *a18
           type: array
           items:
             type: string
         chips:
-          default: *a17
+          default: *a19
           type: array
           items:
             type: string
@@ -3409,7 +4414,7 @@ components:
           type: boolean
           default: false
         keyWords:
-          default: *a18
+          default: *a20
           type: array
           items:
             type: string
@@ -3417,20 +4422,20 @@ components:
           type: boolean
           default: false
         categories:
-          default: *a19
+          default: *a21
           type: array
           items:
             type: string
         platforms:
           type: array
-          default: *a20
-          items: *a21
-        placementFormats:
-          type: array
           default: *a22
           items: *a23
-        niche:
+        placementFormats:
+          type: array
           default: *a24
+          items: *a25
+        niche:
+          default: *a26
           type: array
           items:
             type: string
@@ -3441,7 +4446,7 @@ components:
           format: date-time
         workFormat:
           type: string
-          enum: *a25
+          enum: *a27
         location:
           $ref: "#/components/schemas/PostLocationDto"
         bloggerRequirements:
@@ -3451,7 +4456,7 @@ components:
         brief:
           $ref: "#/components/schemas/PostBriefDto"
         tags:
-          default: *a26
+          default: *a28
           type: array
           items:
             type: string
@@ -4038,6 +5043,108 @@ components:
           maxLength: 2000
       required:
         - content
+    FavoriteResponseDto:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - POST
+            - CREATOR
+            - COMPANY
+          example: POST
+        postId:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+          description: null — без группы
+        groupName:
+          type: string
+          example: спорт
+          nullable: true
+          description: null — без группы
+        savedAt:
+          type: string
+          format: date-time
+        post:
+          $ref: "#/components/schemas/PostResponseDto"
+      required:
+        - type
+        - postId
+        - savedAt
+        - post
+    FavoriteUserProfileDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+            - CREATOR
+            - COMPANY
+        avatar:
+          type: string
+          nullable: true
+        bio:
+          type: string
+          nullable: true
+        followers:
+          type: number
+        location:
+          type: string
+          nullable: true
+        aboutMe:
+          type: string
+          nullable: true
+        banner:
+          type: string
+          nullable: true
+        name:
+          type: string
+          description: Только для CREATOR
+        lastName:
+          type: string
+          description: Только для CREATOR
+        companyName:
+          type: string
+          description: Только для COMPANY
+        contacts:
+          type: array
+          nullable: true
+        person:
+          type: object
+          nullable: true
+      required:
+        - id
+        - role
+        - followers
+    FavoriteUserItemResponseDto:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - POST
+            - CREATOR
+            - COMPANY
+        userId:
+          type: string
+          format: uuid
+        savedAt:
+          type: string
+          format: date-time
+        user:
+          $ref: "#/components/schemas/FavoriteUserProfileDto"
+      required:
+        - type
+        - userId
+        - savedAt
+        - user
     FavoriteGroupResponseDto:
       type: object
       properties:
@@ -4084,37 +5191,16 @@ components:
         postId:
           type: string
           format: uuid
+          description: Пост для избранного. Укажите postId или userId
+        userId:
+          type: string
+          format: uuid
+          description: Креатор или компания для избранного. Укажите postId или userId
         groupId:
           type: string
           format: uuid
-          description: Группа избранного. Без поля — сохранить без группы
-      required:
-        - postId
-    FavoriteResponseDto:
-      type: object
-      properties:
-        postId:
-          type: string
-          format: uuid
-        groupId:
-          type: string
-          format: uuid
-          nullable: true
-          description: null — без группы
-        groupName:
-          type: string
-          example: спорт
-          nullable: true
-          description: null — без группы
-        savedAt:
-          type: string
-          format: date-time
-        post:
-          $ref: "#/components/schemas/PostResponseDto"
-      required:
-        - postId
-        - savedAt
-        - post
+          description: Группа избранного (только для постов). Без поля — сохранить без
+            группы
     MoveFavoriteDto:
       type: object
       properties:

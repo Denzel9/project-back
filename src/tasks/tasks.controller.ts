@@ -30,6 +30,9 @@ import { AuthUser } from '../auth/auth.types';
 import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { ListTaskActivitiesQueryDto } from './dto/list-task-activities-query.dto';
+import { ListAllTaskActivitiesQueryDto } from './dto/list-all-task-activities-query.dto';
+import { ListAllTaskCommentsQueryDto } from './dto/list-all-task-comments-query.dto';
+import { ListTasksWithCommentsQueryDto } from './dto/list-tasks-with-comments-query.dto';
 import { ListTaskCommentsQueryDto } from './dto/list-task-comments-query.dto';
 import { ListTaskCommentAttachmentsQueryDto } from './dto/list-task-comment-attachments-query.dto';
 import { ListTaskCommentAttachmentsResponseDto } from './dto/list-task-comment-attachments-response.dto';
@@ -79,6 +82,61 @@ export class TasksController {
     @Query() query: ListTasksQueryDto
   ) {
     return this.tasksService.listPendingApproval(user, query);
+  }
+
+  @Get('activities')
+  @ApiOperation({
+    summary: 'Лента активностей по всем задачам',
+    description:
+      'Активности по задачам, где пользователь owner или executor. ' +
+      'Фильтры: `type`, `role` (owner|executor), `taskId`. Сортировка — от новых к старым.',
+  })
+  @ApiOkResponse({ description: 'Список активностей с пагинацией' })
+  @ApiNotFoundResponse({
+    description: 'Задача не найдена (при указанном taskId)',
+  })
+  @ApiForbiddenResponse({ description: 'Нет доступа к задаче (при taskId)' })
+  listAllActivities(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListAllTaskActivitiesQueryDto
+  ) {
+    return this.tasksService.listAllActivities(user, query);
+  }
+
+  @Get('comments')
+  @ApiOperation({
+    summary: 'Лента комментариев по всем задачам',
+    description:
+      'Комментарии по задачам, где пользователь owner или executor. ' +
+      'Фильтры: `role` (owner|executor), `taskId`, `q` (поиск по тексту). Сортировка — от новых к старым.',
+  })
+  @ApiOkResponse({ description: 'Список комментариев с пагинацией' })
+  @ApiNotFoundResponse({
+    description: 'Задача не найдена (при указанном taskId)',
+  })
+  @ApiForbiddenResponse({ description: 'Нет доступа к задаче (при taskId)' })
+  listAllComments(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListAllTaskCommentsQueryDto
+  ) {
+    return this.tasksService.listAllComments(user, query);
+  }
+
+  @Get('with-comments')
+  @ApiOperation({
+    summary: 'Задачи с комментариями',
+    description:
+      'Только задачи, где есть хотя бы один комментарий. ' +
+      'По каждой: title, превью последнего комментария, `commentsCount`. ' +
+      '`unreadCount` — если передан `readAfter` (комментарии других после этой даты). ' +
+      'Сортировка по времени последнего комментария. Фильтры: `role`, `postId`, `status`, `q`.',
+  })
+  @ApiOkResponse({ description: 'Список задач с превью комментариев' })
+  listTasksWithComments(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListTasksWithCommentsQueryDto
+  ) {
+    return this.tasksService.listTasksWithComments(user, query);
   }
 
   @Post()

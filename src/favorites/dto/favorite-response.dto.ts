@@ -1,7 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PostResponseDto } from '../../posts/dto/post-response.dto';
+import { FavoriteListType } from './favorite-list-type.enum';
+import { FavoriteUserProfileDto } from './favorite-user-response.dto';
 
 export class FavoriteResponseDto {
+  @ApiProperty({ enum: FavoriteListType, example: FavoriteListType.POST })
+  type: FavoriteListType.POST;
+
   @ApiProperty({ format: 'uuid' })
   postId: string;
 
@@ -24,4 +29,18 @@ export class FavoriteResponseDto {
 
   @ApiProperty({ type: PostResponseDto })
   post: PostResponseDto;
+}
+
+export class FavoriteUserItemResponseDto {
+  @ApiProperty({ enum: FavoriteListType })
+  type: FavoriteListType.CREATOR | FavoriteListType.COMPANY;
+
+  @ApiProperty({ format: 'uuid' })
+  userId: string;
+
+  @ApiProperty({ format: 'date-time' })
+  savedAt: string;
+
+  @ApiProperty({ type: FavoriteUserProfileDto })
+  user: FavoriteUserProfileDto;
 }

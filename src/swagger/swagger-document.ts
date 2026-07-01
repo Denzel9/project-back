@@ -45,14 +45,15 @@ Backend для marketplace creator ↔ company. Документация для 
 ### Посты с медиа
 1. \`POST /posts\` — создать пост (без медиа). Для прямого назначения исполнителя без публикации: \`isPrivate: true\`.
 2. \`POST /media/upload?postId={id}\` — загрузить файлы; они попадут в \`media[]\` поста.
-3. \`GET /posts\` — посты других пользователей, доступные по роли (креатор → COMPANY, компания → CREATOR); приватные посты в общей ленте не показываются; \`?ownerId={свой id}\` — все свои посты (включая приватные); \`?isPrivate=\` — фильтр для своих; \`?q=\`, \`?isArchived=\`.
+3. \`GET /posts\` — посты других пользователей, доступные по роли (креатор → COMPANY, компания → CREATOR); приватные посты в общей ленте не показываются; \`?ownerId={свой id}\` — все свои посты (включая приватные); \`?isPrivate=\` — фильтр для своих; \`?q=\`, \`?title=\`, \`?isArchived=\`; доп. фильтры по полям поста (\`platforms\`, \`categories\`, \`budgetType\`, \`workFormat\`, \`createdDate\`, \`deadlineDate\` и др., массивы через запятую).
 4. \`GET /posts/:id\` — пост по id; владелец видит всегда; приватный пост — только владелец (403 для остальных); публичный — по правилам типа поста.
 
 ### Избранное
 1. \`POST /favorites/groups\` — создать группу (например, «спорт»).
-2. \`POST /favorites\` — сохранить пост (postId, опционально groupId).
-3. \`GET /favorites\` — все избранные; \`?q=\` — поиск по title или companyName; \`?groupId=\` или \`?ungrouped=true\`.
-4. \`PATCH /favorites/:postId\` — переместить в группу или groupId: null.
+2. \`POST /favorites\` — сохранить пост (\`postId\`, опционально \`groupId\`) или профиль (\`userId\` — креатор/компания).
+3. \`GET /favorites\` — избранное; \`?type=POST\` (по умолчанию), \`CREATOR\`, \`COMPANY\`; для постов — \`?q=\`, \`?groupId=\` или \`?ungrouped=true\`.
+4. \`PATCH /favorites/:postId\` — переместить пост в группу или groupId: null.
+5. \`DELETE /favorites/users/:userId\` — убрать креатора/компанию из избранного.
 
 ### Отклики на посты
 1. \`POST /applications\` — отклик (postId + message); на приватный пост откликнуться нельзя; создаёт сообщение в чате с владельцем поста; владельцу уходит email.
@@ -61,10 +62,19 @@ Backend для marketplace creator ↔ company. Документация для 
 4. \`GET /posts/:id/applications\` — отклики на конкретный пост (владелец).
 5. \`PATCH /applications/:id/status\` — ACCEPTED создаёт задачу; REJECTED / VIEWED (владелец).
 
+### Контрагенты (partners)
+1. \`GET /partners/tasks/executors\` — **COMPANY**: уникальные креаторы-исполнители из задач (\`q\`, \`postId\`, \`taskId\`, \`userId\`, \`status\`/\`statuses\`, даты, \`sort\`).
+2. \`GET /partners/tasks/customers\` — **CREATOR**: уникальные компании-заказчики из задач (те же фильтры).
+3. \`GET /partners/applications/applicants\` — **COMPANY**: креаторы, откликавшиеся на посты (\`q\`, \`postId\`, \`userId\`, \`status\`/\`statuses\`, даты, \`sort\`).
+4. \`GET /partners/applications/companies\` — **CREATOR**: компании, на посты которых откликался креатор (те же фильтры).
+
 ### Задачи
 1. Создаются автоматически при \`PATCH /applications/:id/status\` → ACCEPTED (\`applicationId\` заполнен).
 2. \`GET /tasks\` — список (\`?postId=\`, \`?role=owner|executor\`, \`?status=\`, \`?updatedDate=YYYY-MM-DD\`, \`?q=\` по title или companyName). У исполнителя в ответе нет блока \`post\`.
 2a. \`GET /tasks/pending-approval\` — задачи исполнителя с \`isExecutorApprove: null\` (те же фильтры, кроме \`role\`).
+2b. \`GET /tasks/activities\` — лента активностей по всем доступным задачам (\`?type=\`, \`?role=owner|executor\`, \`?taskId=\`).
+2c. \`GET /tasks/comments\` — лента комментариев по всем доступным задачам (\`?role=owner|executor\`, \`?taskId=\`, \`?q=\`).
+2d. \`GET /tasks/with-comments\` — задачи с комментариями: превью последнего, \`commentsCount\`, опционально \`unreadCount\` при \`readAfter\`.
 3. \`POST /tasks\` — создать задачу вручную (владелец поста: \`postId\`, опционально \`executorId\`). Без отклика; \`applicationId\` = null. Исполнителя можно назначить позже через \`PATCH /tasks/:id\`.
 4. \`GET /tasks/:id\` — задача с \`media[]\` (основные) и \`reportMedia[]\` (отчёт). Исполнитель не видит \`post\`.
 5. \`PATCH /tasks/:id\` — owner: все поля (включая \`executorId\`); executor: только status. \`description\` — Markdown (хранится как строка).
@@ -135,6 +145,10 @@ export function createSwaggerConfig() {
     .addTag(
       'tasks',
       'Задачи: автосоздание при ACCEPTED, owner/executor, комментарии'
+    )
+    .addTag(
+      'partners',
+      'Уникальные контрагенты: исполнители/заказчики из задач и откликов'
     )
     .addCookieAuth('access-token')
     .build();

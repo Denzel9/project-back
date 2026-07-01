@@ -16,9 +16,14 @@ import { UpdatePostDto } from './dto/update-post.dto';
 import {
   jsonToArray,
   jsonToRecord,
-  mapBudgetFromApi,
   mapBudgetToApi,
 } from './post-json.util';
+import { buildPostFieldFilters } from './post-list-filters.util';
+import {
+  buildPostSearchWhere,
+  postListOrderBy,
+} from './post-list-query.util';
+import { postJsonFieldsFromDto } from './post-write-fields.util';
 import {
   assertCanViewPost,
   visiblePostTypeForRole,
@@ -95,32 +100,7 @@ export class PostsService {
         placementFormats: dto.placementFormats ?? [],
         niche: dto.niche ?? [],
         tags: dto.tags ?? [],
-        ...(dto.budget !== undefined && {
-          budget: mapBudgetFromApi(
-            dto.budget as unknown as Record<string, unknown>
-          ) as Prisma.InputJsonValue,
-        }),
-        ...(dto.deadline !== undefined && {
-          deadline: new Date(dto.deadline),
-        }),
-        ...(dto.workFormat !== undefined && { workFormat: dto.workFormat }),
-        ...(dto.location !== undefined && {
-          location: dto.location as unknown as Prisma.InputJsonValue,
-        }),
-        ...(dto.bloggerRequirements !== undefined && {
-          bloggerRequirements:
-            dto.bloggerRequirements as unknown as Prisma.InputJsonValue,
-        }),
-        ...(dto.cooperationDetails !== undefined && {
-          cooperationDetails:
-            dto.cooperationDetails as unknown as Prisma.InputJsonValue,
-        }),
-        ...(dto.brief !== undefined && {
-          brief: dto.brief as unknown as Prisma.InputJsonValue,
-        }),
-        ...(dto.deliverables !== undefined && {
-          deliverables: dto.deliverables as unknown as Prisma.InputJsonValue,
-        }),
+        ...postJsonFieldsFromDto(dto),
       },
       include: postWithMediaInclude,
     });
@@ -167,29 +147,23 @@ export class PostsService {
       ...(!viewingOwnPosts && { type: visibleType }),
       ...(viewingOwnPosts &&
         query.type !== undefined && { type: query.type }),
-      ...(query.isArchived !== undefined && { isArchived: query.isArchived }),
+      ...(query.isArchived !== undefined
+        ? { isArchived: query.isArchived }
+        : !viewingOwnPosts
+          ? { isArchived: false }
+          : {}),
       ...(!viewingOwnPosts && { isPrivate: false }),
       ...(viewingOwnPosts &&
         query.isPrivate !== undefined && { isPrivate: query.isPrivate }),
-      ...(query.q !== undefined && {
-        OR: [
-          { title: { contains: query.q, mode: 'insensitive' } },
-          {
-            owner: {
-              companyProfile: {
-                companyName: { contains: query.q, mode: 'insensitive' },
-              },
-            },
-          },
-        ],
-      }),
+      ...(query.q !== undefined && buildPostSearchWhere(query.q)),
+      ...buildPostFieldFilters(query),
     };
 
     const [items, total] = await Promise.all([
       this.prisma.post.findMany({
         where,
         include: postWithMediaInclude,
-        orderBy: { createdAt: 'desc' },
+        orderBy: postListOrderBy,
         skip,
         take: limit,
       }),
@@ -338,32 +312,8 @@ export class PostsService {
     }
     if (dto.niche !== undefined) data.niche = dto.niche;
     if (dto.tags !== undefined) data.tags = dto.tags;
-    if (dto.budget !== undefined) {
-      data.budget = mapBudgetFromApi(
-        dto.budget as unknown as Record<string, unknown>
-      ) as Prisma.InputJsonValue;
-    }
-    if (dto.deadline !== undefined) {
-      data.deadline = new Date(dto.deadline);
-    }
-    if (dto.workFormat !== undefined) data.workFormat = dto.workFormat;
-    if (dto.location !== undefined) {
-      data.location = dto.location as unknown as Prisma.InputJsonValue;
-    }
-    if (dto.bloggerRequirements !== undefined) {
-      data.bloggerRequirements =
-        dto.bloggerRequirements as unknown as Prisma.InputJsonValue;
-    }
-    if (dto.cooperationDetails !== undefined) {
-      data.cooperationDetails =
-        dto.cooperationDetails as unknown as Prisma.InputJsonValue;
-    }
-    if (dto.brief !== undefined) {
-      data.brief = dto.brief as unknown as Prisma.InputJsonValue;
-    }
-    if (dto.deliverables !== undefined) {
-      data.deliverables = dto.deliverables as unknown as Prisma.InputJsonValue;
-    }
+
+    Object.assign(data, postJsonFieldsFromDto(dto) as Prisma.PostUpdateInput);
 
     return data;
   }

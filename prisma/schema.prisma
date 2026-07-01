@@ -189,6 +189,8 @@ model User {
   posts                    Post[]
   favoriteGroups           FavoriteGroup[]
   favoritePosts            FavoritePost[]
+  favoriteUsers            FavoriteUser[]            @relation("FavoriteUserOwner")
+  favoritedByUsers         FavoriteUser[]            @relation("FavoriteUserTarget")
   applications             PostApplication[]         @relation("PostApplications")
   ownedTasks               Task[]                    @relation("OwnedTasks")
   executedTasks            Task[]                    @relation("ExecutedTasks")
@@ -335,6 +337,19 @@ model FavoritePost {
   @@unique([userId, postId])
   @@index([userId])
   @@index([groupId])
+}
+
+model FavoriteUser {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation("FavoriteUserOwner", fields: [userId], references: [id], onDelete: Cascade)
+  favoriteUserId String
+  favoriteUser   User     @relation("FavoriteUserTarget", fields: [favoriteUserId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+
+  @@unique([userId, favoriteUserId])
+  @@index([userId])
+  @@index([favoriteUserId])
 }
 
 model PostApplication {

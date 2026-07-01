@@ -66,8 +66,14 @@ export class PostsController {
       'Без `ownerId` — посты других пользователей, доступные для вашей роли ' +
       '(креаторы — только COMPANY, компании — только CREATOR); приватные посты скрыты. ' +
       'С `ownerId` = свой id — все свои посты (включая приватные). ' +
-      'Поиск: `q` — по названию поста или названию компании. ' +
-      'Опциональные фильтры: `type` (только для своих постов), `isArchived`, `isPrivate` (только для своих). Пагинация: `page`, `limit`.',
+      'Поиск: `q` — по title или companyName; `title` — только по названию поста. ' +
+      'Базовые фильтры: `type` (свои), `isArchived`, `isPrivate` (свои). ' +
+      'Доп. фильтры: `urgent`, `chips`, `categories`, `platforms`, `placementFormats`, `niche`, `tags`, `workFormat`, ' +
+      '`createdDate`, `deadlineDate`, `budgetType`, `budgetCurrency`, `paymentTerms`, `locationCity`, `locationCountry`, `shootingRequired`, ' +
+      '`minFollowers`, `maxFollowers`, `minEngagementRate`, `verifiedAccount`, `experienceWithAds`, `contentStyle`, ' +
+      '`exclusivity`, `exclusivityDays`, `usageRights`, `usageDurationDays`, `requiresMarking`, `requiresContract`, `ndaRequired`, ' +
+      '`briefHashtag`, `briefMention`, `deliverablePlatform`, `deliverableFormat`. ' +
+      'Массивы — через запятую (hasSome). Пагинация: `page`, `limit`.',
   })
   @ApiOkResponse({ description: 'Список постов с пагинацией' })
   list(@CurrentUser() user: AuthUser, @Query() query: ListPostsQueryDto) {

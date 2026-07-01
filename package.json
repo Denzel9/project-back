@@ -26,6 +26,7 @@
     "openapi:generate": "ts-node -r tsconfig-paths/register scripts/generate-openapi.ts",
     "seed:posts": "ts-node -r tsconfig-paths/register scripts/seed-posts.ts",
     "seed:demo": "ts-node -r tsconfig-paths/register scripts/seed-demo-data.ts",
+    "seed:mixit-tasks": "ts-node -r tsconfig-paths/register scripts/seed-mixit-tasks.ts",
     "backfill:posts": "ts-node -r tsconfig-paths/register scripts/backfill-post-fields.ts"
   },
   "dependencies": {

@@ -13,6 +13,7 @@ import { PostsModule } from './posts/posts.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { ApplicationsModule } from './applications/applications.module';
 import { TasksModule } from './tasks/tasks.module';
+import { PartnersModule } from './partners/partners.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { TasksModule } from './tasks/tasks.module';
     FavoritesModule,
     ApplicationsModule,
     TasksModule,
+    PartnersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

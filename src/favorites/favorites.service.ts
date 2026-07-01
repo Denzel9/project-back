@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { AuthUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -15,20 +15,46 @@ import {
 import { AddFavoriteDto } from './dto/add-favorite.dto';
 import { CreateFavoriteGroupDto } from './dto/create-favorite-group.dto';
 import { FavoriteGroupResponseDto } from './dto/favorite-group-response.dto';
-import { FavoriteResponseDto } from './dto/favorite-response.dto';
+import {
+  FavoriteResponseDto,
+  FavoriteUserItemResponseDto,
+} from './dto/favorite-response.dto';
+import { FavoriteListType } from './dto/favorite-list-type.enum';
 import { ListFavoritesQueryDto } from './dto/list-favorites-query.dto';
 import { MoveFavoriteDto } from './dto/move-favorite.dto';
 import { UpdateFavoriteGroupDto } from './dto/update-favorite-group.dto';
-import { assertCanViewPost, visiblePostTypeForRole } from '../posts/post-visibility.util';
+import { mapFavoriteUserProfile } from './favorite-user-profile.util';
+import {
+  assertCanViewPost,
+  visiblePostTypeForRole,
+} from '../posts/post-visibility.util';
 
 const favoriteInclude = {
   post: { include: postWithMediaInclude },
   group: true,
 } satisfies Prisma.FavoritePostInclude;
 
+const favoriteUserInclude = {
+  favoriteUser: {
+    include: {
+      creatorProfile: true,
+      companyProfile: true,
+    },
+  },
+} satisfies Prisma.FavoriteUserInclude;
+
 type FavoriteWithRelations = Prisma.FavoritePostGetPayload<{
   include: typeof favoriteInclude;
 }>;
+
+type FavoriteUserWithRelations = Prisma.FavoriteUserGetPayload<{
+  include: typeof favoriteUserInclude;
+}>;
+
+const favoriteUserProfileInclude = {
+  creatorProfile: true,
+  companyProfile: true,
+} as const;
 
 @Injectable()
 export class FavoritesService {
@@ -128,23 +154,42 @@ export class FavoritesService {
   async addFavorite(
     user: AuthUser,
     dto: AddFavoriteDto
-  ): Promise<FavoriteResponseDto> {
-    await this.assertPostVisible(user, dto.postId);
+  ): Promise<FavoriteResponseDto | FavoriteUserItemResponseDto> {
+    const hasPostId = dto.postId !== undefined;
+    const hasUserId = dto.userId !== undefined;
+
+    if (hasPostId === hasUserId) {
+      throw new BadRequestException(
+        'Укажите ровно одно поле: postId или userId'
+      );
+    }
+
+    if (hasUserId) {
+      if (dto.groupId !== undefined) {
+        throw new BadRequestException(
+          'Группы избранного доступны только для постов'
+        );
+      }
+
+      return this.addFavoriteUser(user, dto.userId!);
+    }
 
     if (dto.groupId !== undefined) {
       await this.assertGroupOwner(user.userId, dto.groupId);
     }
 
+    await this.assertPostVisible(user, dto.postId!);
+
     const favorite = await this.prisma.favoritePost.upsert({
       where: {
         userId_postId: {
           userId: user.userId,
-          postId: dto.postId,
+          postId: dto.postId!,
         },
       },
       create: {
         userId: user.userId,
-        postId: dto.postId,
+        postId: dto.postId!,
         groupId: dto.groupId ?? null,
       },
       update: {
@@ -153,7 +198,7 @@ export class FavoritesService {
       include: favoriteInclude,
     });
 
-    return this.mapFavorite(favorite);
+    return this.mapPostFavorite(favorite);
   }
 
   async removeFavorite(user: AuthUser, postId: string): Promise<void> {
@@ -171,6 +216,28 @@ export class FavoritesService {
     }
 
     await this.prisma.favoritePost.delete({
+      where: { id: favorite.id },
+    });
+  }
+
+  async removeFavoriteUser(
+    user: AuthUser,
+    favoriteUserId: string
+  ): Promise<void> {
+    const favorite = await this.prisma.favoriteUser.findUnique({
+      where: {
+        userId_favoriteUserId: {
+          userId: user.userId,
+          favoriteUserId,
+        },
+      },
+    });
+
+    if (!favorite) {
+      throw new NotFoundException('Пользователь не найден в избранном');
+    }
+
+    await this.prisma.favoriteUser.delete({
       where: { id: favorite.id },
     });
   }
@@ -203,10 +270,23 @@ export class FavoritesService {
       include: favoriteInclude,
     });
 
-    return this.mapFavorite(updated);
+    return this.mapPostFavorite(updated);
   }
 
   async listFavorites(user: AuthUser, query: ListFavoritesQueryDto) {
+    const listType = query.type ?? FavoriteListType.POST;
+
+    if (listType === FavoriteListType.POST) {
+      return this.listPostFavorites(user, query);
+    }
+
+    return this.listUserFavorites(user, query, listType);
+  }
+
+  private async listPostFavorites(
+    user: AuthUser,
+    query: ListFavoritesQueryDto
+  ) {
     if (query.groupId && query.ungrouped) {
       throw new BadRequestException(
         'Нельзя одновременно использовать groupId и ungrouped'
@@ -228,6 +308,7 @@ export class FavoritesService {
       ...(query.ungrouped === true && { groupId: null }),
       ...(query.q !== undefined && {
         post: {
+          type: visiblePostTypeForRole(user.role),
           OR: [
             { title: { contains: query.q, mode: 'insensitive' } },
             {
@@ -254,11 +335,116 @@ export class FavoritesService {
     ]);
 
     return {
-      items: items.map(item => this.mapFavorite(item)),
+      items: items.map(item => this.mapPostFavorite(item)),
       total,
       page,
       limit,
     };
+  }
+
+  private async listUserFavorites(
+    user: AuthUser,
+    query: ListFavoritesQueryDto,
+    listType: FavoriteListType.CREATOR | FavoriteListType.COMPANY
+  ) {
+    if (query.groupId !== undefined || query.ungrouped !== undefined) {
+      throw new BadRequestException(
+        'Фильтры groupId и ungrouped доступны только для type=POST'
+      );
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+    const role =
+      listType === FavoriteListType.CREATOR ? Role.CREATOR : Role.COMPANY;
+
+    const where: Prisma.FavoriteUserWhereInput = {
+      userId: user.userId,
+      favoriteUser: {
+        role,
+        ...(query.q !== undefined &&
+          (listType === FavoriteListType.CREATOR
+            ? {
+              OR: [
+                {
+                  creatorProfile: {
+                    name: { contains: query.q, mode: 'insensitive' },
+                  },
+                },
+                {
+                  creatorProfile: {
+                    lastName: { contains: query.q, mode: 'insensitive' },
+                  },
+                },
+              ],
+            }
+            : {
+              companyProfile: {
+                companyName: { contains: query.q, mode: 'insensitive' },
+              },
+            })),
+      },
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.favoriteUser.findMany({
+        where,
+        include: favoriteUserInclude,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.favoriteUser.count({ where }),
+    ]);
+
+    return {
+      items: items.map(item => this.mapUserFavorite(item)),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  private async addFavoriteUser(
+    user: AuthUser,
+    favoriteUserId: string
+  ): Promise<FavoriteUserItemResponseDto> {
+    if (favoriteUserId === user.userId) {
+      throw new BadRequestException('Нельзя добавить себя в избранное');
+    }
+
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: favoriteUserId },
+      include: favoriteUserProfileInclude,
+    });
+
+    if (!targetUser) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+
+    if (targetUser.role !== Role.CREATOR && targetUser.role !== Role.COMPANY) {
+      throw new BadRequestException(
+        'В избранное можно добавить только креатора или компанию'
+      );
+    }
+
+    const favorite = await this.prisma.favoriteUser.upsert({
+      where: {
+        userId_favoriteUserId: {
+          userId: user.userId,
+          favoriteUserId,
+        },
+      },
+      create: {
+        userId: user.userId,
+        favoriteUserId,
+      },
+      update: {},
+      include: favoriteUserInclude,
+    });
+
+    return this.mapUserFavorite(favorite);
   }
 
   private async assertPostVisible(user: AuthUser, postId: string) {
@@ -285,13 +471,32 @@ export class FavoritesService {
     }
   }
 
-  private mapFavorite(favorite: FavoriteWithRelations): FavoriteResponseDto {
+  private mapPostFavorite(
+    favorite: FavoriteWithRelations
+  ): FavoriteResponseDto {
     return {
+      type: FavoriteListType.POST,
       postId: favorite.postId,
       groupId: favorite.groupId,
       groupName: favorite.group?.name ?? null,
       savedAt: favorite.createdAt.toISOString(),
       post: this.postsService.toResponse(favorite.post as PostWithMedia),
+    };
+  }
+
+  private mapUserFavorite(
+    favorite: FavoriteUserWithRelations
+  ): FavoriteUserItemResponseDto {
+    const listType =
+      favorite.favoriteUser.role === Role.CREATOR
+        ? FavoriteListType.CREATOR
+        : FavoriteListType.COMPANY;
+
+    return {
+      type: listType,
+      userId: favorite.favoriteUserId,
+      savedAt: favorite.createdAt.toISOString(),
+      user: mapFavoriteUserProfile(favorite.favoriteUser),
     };
   }
 }

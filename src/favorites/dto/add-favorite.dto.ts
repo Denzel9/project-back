@@ -1,14 +1,26 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsUUID } from 'class-validator';
+import { IsOptional, IsUUID, ValidateIf } from 'class-validator';
 
 export class AddFavoriteDto {
-  @ApiProperty({ format: 'uuid' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Пост для избранного. Укажите postId или userId',
+  })
+  @ValidateIf(dto => dto.userId === undefined)
   @IsUUID()
-  postId: string;
+  postId?: string;
 
   @ApiPropertyOptional({
     format: 'uuid',
-    description: 'Группа избранного. Без поля — сохранить без группы',
+    description: 'Креатор или компания для избранного. Укажите postId или userId',
+  })
+  @ValidateIf(dto => dto.postId === undefined)
+  @IsUUID()
+  userId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Группа избранного (только для постов). Без поля — сохранить без группы',
   })
   @IsOptional()
   @IsUUID()

@@ -2,6 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -10,8 +11,19 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { FavoriteListType } from './favorite-list-type.enum';
 
 export class ListFavoritesQueryDto {
+  @ApiPropertyOptional({
+    enum: FavoriteListType,
+    default: FavoriteListType.POST,
+    description:
+      'Тип избранного: POST (посты, по умолчанию), CREATOR, COMPANY. ' +
+      'Для CREATOR/COMPANY фильтры groupId и ungrouped не применяются.',
+  })
+  @IsOptional()
+  @IsEnum(FavoriteListType)
+  type?: FavoriteListType = FavoriteListType.POST;
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'Только избранное в указанной группе',
@@ -33,7 +45,9 @@ export class ListFavoritesQueryDto {
   ungrouped?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Поиск по названию поста или названию компании-автора',
+    description:
+      'Поиск: для POST — по названию поста или компании-автора; ' +
+      'для CREATOR — по имени/фамилии; для COMPANY — по названию компании',
     example: 'реклама',
   })
   @IsOptional()

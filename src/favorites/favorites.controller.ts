@@ -16,11 +16,13 @@ import {
   ApiConflictResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
+  ApiExtraModels,
   ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
@@ -28,7 +30,10 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AddFavoriteDto } from './dto/add-favorite.dto';
 import { CreateFavoriteGroupDto } from './dto/create-favorite-group.dto';
 import { FavoriteGroupResponseDto } from './dto/favorite-group-response.dto';
-import { FavoriteResponseDto } from './dto/favorite-response.dto';
+import {
+  FavoriteResponseDto,
+  FavoriteUserItemResponseDto,
+} from './dto/favorite-response.dto';
 import { ListFavoritesQueryDto } from './dto/list-favorites-query.dto';
 import { MoveFavoriteDto } from './dto/move-favorite.dto';
 import { UpdateFavoriteGroupDto } from './dto/update-favorite-group.dto';
@@ -36,6 +41,7 @@ import { FavoritesService } from './favorites.service';
 
 @ApiTags('favorites')
 @ApiCookieAuth('access-token')
+@ApiExtraModels(FavoriteResponseDto, FavoriteUserItemResponseDto)
 @Controller('favorites')
 @UseGuards(JwtAuthGuard)
 export class FavoritesController {
@@ -106,11 +112,11 @@ export class FavoritesController {
 
   @Get()
   @ApiOperation({
-    summary: 'Список избранных постов',
+    summary: 'Список избранного',
     description:
-      'Все избранные, или фильтр `groupId`, или `ungrouped=true`. ' +
-      'Поиск: `q` — по названию поста или названию компании. ' +
-      'Каждый элемент содержит полный пост с `media[]`.',
+      '`type=POST` (по умолчанию) — посты; `groupId` / `ungrouped` только для постов. ' +
+      '`type=CREATOR` или `type=COMPANY` — избранные профили. ' +
+      'Поиск `q`: для постов — title/companyName; для креаторов — name/lastName; для компаний — companyName.',
   })
   @ApiOkResponse({ description: 'Избранное с пагинацией' })
   listFavorites(
@@ -122,12 +128,22 @@ export class FavoritesController {
 
   @Post()
   @ApiOperation({
-    summary: 'Добавить пост в избранное',
+    summary: 'Добавить в избранное',
     description:
-      'Upsert: повторный вызов обновляет группу. `groupId` опционален.',
+      'Укажите `postId` (пост, опционально `groupId`) или `userId` (креатор/компания). ' +
+      'Повторный вызов с тем же postId обновляет группу.',
   })
-  @ApiCreatedResponse({ type: FavoriteResponseDto })
-  @ApiNotFoundResponse({ description: 'Пост или группа не найдены' })
+  @ApiCreatedResponse({
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(FavoriteResponseDto) },
+        { $ref: getSchemaPath(FavoriteUserItemResponseDto) },
+      ],
+    },
+  })
+  @ApiNotFoundResponse({
+    description: 'Пост, пользователь или группа не найдены',
+  })
   addFavorite(@CurrentUser() user: AuthUser, @Body() dto: AddFavoriteDto) {
     return this.favoritesService.addFavorite(user, dto);
   }
@@ -147,6 +163,18 @@ export class FavoritesController {
     @Body() dto: MoveFavoriteDto
   ) {
     return this.favoritesService.moveFavorite(user, postId, dto);
+  }
+
+  @Delete('users/:userId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Убрать креатора или компанию из избранного' })
+  @ApiNoContentResponse({ description: 'Пользователь убран из избранного' })
+  @ApiNotFoundResponse({ description: 'Пользователь не найден в избранном' })
+  removeFavoriteUser(
+    @CurrentUser() user: AuthUser,
+    @Param('userId', ParseUUIDPipe) userId: string
+  ) {
+    return this.favoritesService.removeFavoriteUser(user, userId);
   }
 
   @Delete(':postId')
