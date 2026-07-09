@@ -8,10 +8,11 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { SignOptions } from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
-import { MembershipRole, Prisma, Role } from '@prisma/client';
+import { MembershipRole, NotificationType, Prisma, Role } from '@prisma/client';
 import { AccountMembershipService } from '../accounts/account-membership.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { MailService } from '../mail/mail.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { getRefreshExpiresIn } from './auth-cookies';
@@ -45,7 +46,8 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-    private readonly mailService: MailService
+    private readonly mailService: MailService,
+    private readonly notificationsService: NotificationsService
   ) {}
 
   async registerCreator(dto: RegisterCreatorDto) {
@@ -312,11 +314,47 @@ export class AuthService {
     return this.invitesService.acceptInvite(authUser.accountId, dto.token);
   }
 
-  revokeMembership(authUser: AuthUser, membershipId: string) {
-    return this.membershipService.revokeMembership(
+  async revokeMembership(authUser: AuthUser, membershipId: string) {
+    const membership = await this.membershipService.revokeMembership(
       membershipId,
       authUser.accountId
     );
+
+    if (membership.userId !== authUser.userId) {
+      const profileName = this.getProfileDisplayName(membership.user);
+
+      await this.notificationsService.notify({
+        recipientId: membership.userId,
+        actorId: authUser.userId,
+        type: NotificationType.MEMBERSHIP_REVOKED,
+        title: 'Доступ к профилю отозван',
+        body: `Профиль: ${profileName}`,
+        payload: {
+          entityType: 'invite',
+          entityId: membership.id,
+          meta: {
+            membershipId: membership.id,
+            profileName,
+          },
+        },
+      });
+    }
+  }
+
+  private getProfileDisplayName(user: {
+    role: Role;
+    creatorProfile: { name: string; lastName: string } | null;
+    companyProfile: { companyName: string } | null;
+  }): string {
+    if (user.role === Role.CREATOR && user.creatorProfile) {
+      return `${user.creatorProfile.name} ${user.creatorProfile.lastName}`.trim();
+    }
+
+    if (user.role === Role.COMPANY && user.companyProfile) {
+      return user.companyProfile.companyName;
+    }
+
+    return user.role;
   }
 
   async getProfile(authUser: AuthUser): Promise<AuthSessionUser> {

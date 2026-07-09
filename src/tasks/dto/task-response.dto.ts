@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { TaskStatus } from '@prisma/client';
 import { TaskCommentMediaDto } from './task-comment-media.dto';
 import { TaskMediaDto } from './task-media.dto';
@@ -87,7 +87,4 @@ export class TaskResponseDto {
 
   @ApiProperty({ format: 'date-time' })
   updatedAt: string;
-
-  @ApiPropertyOptional({ type: [TaskCommentResponseDto] })
-  comments?: TaskCommentResponseDto[];
 }

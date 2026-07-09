@@ -5,6 +5,7 @@ import { PassportModule } from '@nestjs/passport';
 import type { SignOptions } from 'jsonwebtoken';
 import { AccountsModule } from '../accounts/accounts.module';
 import { MailModule } from '../mail/mail.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -17,6 +18,7 @@ import { MembershipWriteGuard } from './guards/membership-write.guard';
     AccountsModule,
     forwardRef(() => UsersModule),
     MailModule,
+    forwardRef(() => NotificationsModule),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

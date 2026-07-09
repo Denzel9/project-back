@@ -6,18 +6,20 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import {
   ApplicationStatus,
-  MembershipRole,
+  NotificationType,
   PostAuthorType,
   Prisma,
   Role,
+  Task,
 } from '@prisma/client';
 import { AuthUser } from '../auth/auth.types';
 import { ChatGateway } from '../chat/chat.gateway';
 import { ChatService } from '../chat/chat.service';
-import { MailService } from '../mail/mail.service';
+import { buildCalendarDayFilter } from '../common/date/calendar-day-filter';
+import { formatApplicationStatus } from '../notifications/notification-labels.util';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TasksService } from '../tasks/tasks.service';
 import { canViewPost } from '../posts/post-visibility.util';
@@ -105,8 +107,7 @@ export class ApplicationsService {
     private readonly chatService: ChatService,
     private readonly chatGateway: ChatGateway,
     private readonly tasksService: TasksService,
-    private readonly mailService: MailService,
-    private readonly configService: ConfigService
+    private readonly notificationsService: NotificationsService
   ) {}
 
   async create(
@@ -161,7 +162,7 @@ export class ApplicationsService {
 
       this.chatGateway.broadcastMessage(conversationId, message);
 
-      await this.notifyPostOwnerAboutApplication(application);
+      await this.notifyPostOwnerAboutApplication(application, user.userId);
 
       return this.mapApplication(application, { includePost: true });
     } catch (error) {
@@ -178,14 +179,14 @@ export class ApplicationsService {
 
   async listMine(user: AuthUser, query: ListApplicationsQueryDto) {
     const postFilter = this.buildPostListFilter(query);
-    const updatedAtFilter = this.buildUpdatedDateFilter(query.updatedDate);
+    const createdAtFilter = buildCalendarDayFilter(query.createdDate);
 
     return this.listApplications(
       {
         applicantId: user.userId,
         ...(query.status !== undefined && { status: query.status }),
         ...(postFilter !== undefined && { post: postFilter }),
-        ...(updatedAtFilter !== undefined && { updatedAt: updatedAtFilter }),
+        ...(createdAtFilter !== undefined && { createdAt: createdAtFilter }),
       },
       query,
       { includePost: true }
@@ -194,13 +195,13 @@ export class ApplicationsService {
 
   async listIncoming(user: AuthUser, query: ListApplicationsQueryDto) {
     const postFilter = this.buildIncomingPostFilter(user.userId, query);
-    const updatedAtFilter = this.buildUpdatedDateFilter(query.updatedDate);
+    const createdAtFilter = buildCalendarDayFilter(query.createdDate);
 
     return this.listApplications(
       {
         post: postFilter,
         ...(query.status !== undefined && { status: query.status }),
-        ...(updatedAtFilter !== undefined && { updatedAt: updatedAtFilter }),
+        ...(createdAtFilter !== undefined && { createdAt: createdAtFilter }),
       },
       query,
       { includeApplicant: true, includePost: true }
@@ -268,6 +269,24 @@ export class ApplicationsService {
       include: applicationInclude,
     });
 
+    await this.notificationsService.notify({
+      recipientId: updated.post.ownerId,
+      actorId: user.userId,
+      type: NotificationType.APPLICATION_WITHDRAWN,
+      title: `Отклик отозван: «${updated.post.title}»`,
+      body: `${this.getApplicantDisplayName(updated.applicant)} отозвал отклик`,
+      payload: {
+        entityType: 'application',
+        entityId: updated.id,
+        postId: updated.postId,
+        applicationId: updated.id,
+        meta: {
+          postTitle: updated.post.title,
+          status: updated.status,
+        },
+      },
+    });
+
     return this.mapApplication(updated, { includePost: true });
   }
 
@@ -300,6 +319,8 @@ export class ApplicationsService {
       throw new BadRequestException('Недопустимый статус');
     }
 
+    let createdTask: Task | null = null;
+
     const updated = await this.prisma.$transaction(async tx => {
       const application = await tx.postApplication.update({
         where: { id },
@@ -308,30 +329,54 @@ export class ApplicationsService {
       });
 
       if (dto.status === ApplicationStatus.ACCEPTED) {
-        await this.tasksService.createFromAcceptedApplication(tx, id);
+        createdTask = await this.tasksService.createFromAcceptedApplication(
+          tx,
+          id
+        );
       }
 
       return application;
     });
 
+    await this.notificationsService.notify({
+      recipientId: updated.applicantId,
+      actorId: user.userId,
+      type: NotificationType.APPLICATION_STATUS_CHANGED,
+      title: `Статус отклика: ${formatApplicationStatus(updated.status)}`,
+      body: `Пост «${updated.post.title}»`,
+      payload: {
+        entityType: 'application',
+        entityId: updated.id,
+        postId: updated.postId,
+        applicationId: updated.id,
+        meta: {
+          postTitle: updated.post.title,
+          status: updated.status,
+        },
+      },
+    });
+
+    if (createdTask) {
+      await this.notificationsService.notify({
+        recipientId: createdTask.executorId!,
+        actorId: user.userId,
+        type: NotificationType.TASK_CREATED,
+        title: `Создана задача по посту «${updated.post.title}»`,
+        body: 'Вы назначены исполнителем',
+        payload: {
+          entityType: 'task',
+          entityId: createdTask.id,
+          postId: createdTask.postId,
+          taskId: createdTask.id,
+          applicationId: updated.id,
+          meta: {
+            postTitle: updated.post.title,
+          },
+        },
+      });
+    }
+
     return this.mapApplication(updated, { includeApplicant: true });
-  }
-
-  private buildUpdatedDateFilter(
-    updatedDate?: string
-  ): Prisma.DateTimeFilter | undefined {
-    if (updatedDate === undefined) {
-      return undefined;
-    }
-
-    const start = new Date(`${updatedDate}T00:00:00.000Z`);
-    const end = new Date(`${updatedDate}T23:59:59.999Z`);
-
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      throw new BadRequestException('Некорректная дата');
-    }
-
-    return { gte: start, lte: end };
   }
 
   private buildPostListFilter(
@@ -475,44 +520,29 @@ export class ApplicationsService {
   }
 
   private async notifyPostOwnerAboutApplication(
-    application: ApplicationWithRelations
+    application: ApplicationWithRelations,
+    actorId: string
   ) {
     try {
-      const ownerMembership = await this.prisma.accountMembership.findFirst({
-        where: {
-          userId: application.post.ownerId,
-          role: MembershipRole.OWNER,
-        },
-        include: {
-          account: {
-            select: { email: true },
+      await this.notificationsService.notify({
+        recipientId: application.post.ownerId,
+        actorId,
+        type: NotificationType.APPLICATION_NEW,
+        title: `Новый отклик на «${application.post.title}»`,
+        body: `${this.getApplicantDisplayName(application.applicant)}: ${application.message}`,
+        payload: {
+          entityType: 'application',
+          entityId: application.id,
+          postId: application.postId,
+          applicationId: application.id,
+          meta: {
+            postTitle: application.post.title,
+            applicantName: this.getApplicantDisplayName(application.applicant),
           },
         },
       });
-
-      if (!ownerMembership?.account.email) {
-        this.logger.warn(
-          `Email OWNER не найден для владельца поста ${application.post.ownerId}`
-        );
-        return;
-      }
-
-      const frontendUrl = this.configService
-        .getOrThrow<string>('FRONTEND_URL')
-        .replace(/\/$/, '');
-      const applicationsUrl = `${frontendUrl}/applications/incoming`;
-
-      await this.mailService.sendApplicationReceivedEmail(
-        ownerMembership.account.email,
-        {
-          postTitle: application.post.title,
-          applicantName: this.getApplicantDisplayName(application.applicant),
-          message: application.message,
-          applicationsUrl,
-        }
-      );
     } catch (error) {
-      this.logger.error('Не удалось отправить письмо о новом отклике', error);
+      this.logger.error('Не удалось отправить уведомление о новом отклике', error);
     }
   }
 

@@ -5,9 +5,10 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { Role, Prisma } from '@prisma/client';
+import { Role, Prisma, NotificationType } from '@prisma/client';
 import { StorageService } from '../media/storage.service';
 import { ALLOWED_DOCUMENT_MIME_TYPES } from '../media/media.constants';
+import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -43,7 +44,8 @@ export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly notificationsService: NotificationsService
   ) {}
 
   async listConversations(userId: string): Promise<ChatConversationDto[]> {
@@ -391,7 +393,56 @@ export class ChatService {
       )
     );
 
+    await this.notifyRecipientAboutMessage(conversationId, senderId, message);
+
     return this.mapMessage(message);
+  }
+
+  private async notifyRecipientAboutMessage(
+    conversationId: string,
+    senderId: string,
+    message: {
+      id: string;
+      content: string;
+      media?: Array<{ id: string }>;
+    }
+  ): Promise<void> {
+    const participants = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId },
+      select: { userId: true },
+    });
+
+    const recipientId = participants
+      .map(participant => participant.userId)
+      .find(userId => userId !== senderId);
+
+    if (!recipientId) {
+      return;
+    }
+
+    const preview =
+      message.content.trim().length > 0
+        ? message.content.trim().slice(0, 200)
+        : message.media && message.media.length > 0
+          ? '[медиа]'
+          : 'Новое сообщение';
+
+    await this.notificationsService.notify({
+      recipientId,
+      actorId: senderId,
+      type: NotificationType.CHAT_MESSAGE,
+      title: 'Новое сообщение в чате',
+      body: preview,
+      payload: {
+        entityType: 'conversation',
+        entityId: conversationId,
+        conversationId,
+        meta: {
+          messageId: message.id,
+          preview,
+        },
+      },
+    });
   }
 
   async sendApplicationMessageInTransaction(

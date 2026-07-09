@@ -41,6 +41,9 @@ import { ListTaskAttachmentsResponseDto } from './dto/list-task-attachments-resp
 import { SearchTaskCommentsQueryDto } from './dto/search-task-comments-query.dto';
 import { SearchTaskCommentsResponseDto } from './dto/search-task-comments-response.dto';
 import { ListTasksQueryDto } from './dto/list-tasks-query.dto';
+import { ListTasksCalendarQueryDto } from './dto/list-tasks-calendar-query.dto';
+import { ListTaskStatsQueryDto } from './dto/list-task-stats-query.dto';
+import { TaskStatsResponseDto } from './dto/task-stats-response.dto';
 import {
   TaskCommentResponseDto,
   TaskResponseDto,
@@ -60,8 +63,7 @@ export class TasksController {
   @ApiOperation({
     summary: 'Список задач',
     description:
-      'Задачи, где пользователь owner или executor. Фильтры: `postId`, `role`, `status`, `updatedDate` (YYYY-MM-DD, UTC), `q` (название поста или компании). ' +
-      'Задачи без ответа исполнителя (`isExecutorApprove: null`) — в `GET /tasks/pending-approval`. ' +
+      'Задачи, где пользователь owner или executor. Фильтры: `postId`, `role`, `status`, `statuses`, `active`, `excludeCompleted`, `isCompanyAction`, `isExecutorApprove` (`true`/`false`/`null`), `unassigned`, `overdue`, `urgent`, `createdDate`, `dateFrom`/`dateTo`, `q`. ' +
       'Создание — автоматически при ACCEPTED отклика или `POST /tasks` вручную (владелец поста). У исполнителя нет блока `post`.',
   })
   @ApiOkResponse({ description: 'Список задач с пагинацией' })
@@ -139,6 +141,44 @@ export class TasksController {
     return this.tasksService.listTasksWithComments(user, query);
   }
 
+  @Get('calendar')
+  @ApiOperation({
+    summary: 'Задачи для календаря',
+    description:
+      'Компактный список задач, где пользователь owner или executor. ' +
+      'Поля: id, createdAt, updatedAt, urgent, finalDate, title, owner, executor. ' +
+      'Фильтры: `dateFrom`/`dateTo` + `dateField` (`createdAt` | `updatedAt` | `finalDate`), ' +
+      '`urgent`, `ownerId`, `executorId`, `role` (owner|executor). ' +
+      'Сортировка по выбранному `dateField` (по возрастанию).',
+  })
+  @ApiOkResponse({ description: 'Список задач для календаря с пагинацией' })
+  listCalendar(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListTasksCalendarQueryDto
+  ) {
+    return this.tasksService.listCalendar(user, query);
+  }
+
+  @Get('stats')
+  @ApiOperation({
+    summary: 'Счётчики задач для дашборда',
+    description:
+      'Счётчики по доступным задачам (owner или executor). Категории могут пересекаться. ' +
+      '`awaitingAction` — очередь текущего пользователя (`isCompanyAction`). ' +
+      '`awaitingConfirmation` — `isExecutorApprove: null`. ' +
+      '`unassigned` — без исполнителя (только owner). ' +
+      '`overdue` — `finalDate` в прошлом. `urgent` — срочные активные. `underReview` — `CHECKING`. ' +
+      '`cancelled` — отменённые (`CANCELLED`, `CANCELLED_EXECUTOR`). ' +
+      'Фильтры: `role`, `postId`.',
+  })
+  @ApiOkResponse({ type: TaskStatsResponseDto })
+  getStats(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListTaskStatsQueryDto
+  ) {
+    return this.tasksService.getStats(user, query);
+  }
+
   @Post()
   @UseGuards(MembershipWriteGuard)
   @ApiOperation({
@@ -159,7 +199,7 @@ export class TasksController {
   @ApiOperation({
     summary: 'Задача по id',
     description:
-      'С комментариями. `description` — Markdown. Исполнитель не видит `post`.',
+      '`description` — Markdown. Исполнитель не видит `post`. Комментарии — `GET /tasks/:id/comments`.',
   })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiNotFoundResponse({ description: 'Задача не найдена' })

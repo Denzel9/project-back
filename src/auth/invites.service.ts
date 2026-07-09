@@ -6,11 +6,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { MembershipRole } from '@prisma/client';
+import { MembershipRole, NotificationType } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { AccountMembershipService } from '../accounts/account-membership.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { MailService } from '../mail/mail.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -20,6 +21,7 @@ export class InvitesService {
     private readonly accountsService: AccountsService,
     private readonly membershipService: AccountMembershipService,
     private readonly mailService: MailService,
+    private readonly notificationsService: NotificationsService,
     private readonly configService: ConfigService
   ) {}
 
@@ -83,6 +85,37 @@ export class InvitesService {
     });
 
     await this.mailService.sendAccountInviteEmail(dto.email, token);
+
+    const inviteeAccount = await this.prisma.account.findUnique({
+      where: { email: dto.email },
+      include: {
+        memberships: {
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+        },
+      },
+    });
+
+    const inviteeUserId = inviteeAccount?.memberships[0]?.userId;
+
+    if (inviteeUserId) {
+      await this.notificationsService.notify({
+        recipientId: inviteeUserId,
+        actorId: dto.userId,
+        type: NotificationType.TEAM_INVITE,
+        title: 'Приглашение в команду',
+        body: `Вам предоставят доступ к профилю`,
+        payload: {
+          entityType: 'invite',
+          entityId: invite.id,
+          meta: {
+            inviteId: invite.id,
+            role: invite.role,
+          },
+        },
+        sendEmail: false,
+      });
+    }
 
     return {
       id: invite.id,

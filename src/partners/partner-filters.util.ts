@@ -21,7 +21,6 @@ function resolveStatuses<T extends string>(
 export function buildTaskPartnerTaskFilters(
   query: ListTaskPartnersQueryDto
 ): Prisma.TaskWhereInput {
-  const updatedAtFilter = buildCalendarDayFilter(query.updatedDate);
   const createdAtFilter = buildCalendarDayFilter(query.createdDate);
   const statusFilter = resolveStatuses(query.status, query.statuses);
 
@@ -29,7 +28,6 @@ export function buildTaskPartnerTaskFilters(
     ...(query.postId !== undefined && { postId: query.postId }),
     ...(query.taskId !== undefined && { id: query.taskId }),
     ...(statusFilter !== undefined && { status: { in: statusFilter } }),
-    ...(updatedAtFilter !== undefined && { updatedAt: updatedAtFilter }),
     ...(createdAtFilter !== undefined && { createdAt: createdAtFilter }),
     ...(query.isExecutorApprove !== undefined && {
       isExecutorApprove: query.isExecutorApprove,
@@ -41,14 +39,12 @@ export function buildTaskPartnerTaskFilters(
 export function buildApplicationPartnerFilters(
   query: ListApplicationPartnersQueryDto
 ): Prisma.PostApplicationWhereInput {
-  const updatedAtFilter = buildCalendarDayFilter(query.updatedDate);
   const createdAtFilter = buildCalendarDayFilter(query.createdDate);
   const statusFilter = resolveStatuses(query.status, query.statuses);
 
   return {
     ...(query.postId !== undefined && { postId: query.postId }),
     ...(statusFilter !== undefined && { status: { in: statusFilter } }),
-    ...(updatedAtFilter !== undefined && { updatedAt: updatedAtFilter }),
     ...(createdAtFilter !== undefined && { createdAt: createdAtFilter }),
   };
 }

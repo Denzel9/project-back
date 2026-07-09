@@ -43,6 +43,30 @@ export function transformOptionalBoolean({
   return value as boolean;
 }
 
+export function transformOptionalNullableBoolean({
+  value,
+}: {
+  value: unknown;
+}): boolean | null | undefined {
+  if (value === 'true') {
+    return true;
+  }
+
+  if (value === 'false') {
+    return false;
+  }
+
+  if (value === 'null') {
+    return null;
+  }
+
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  return value as boolean;
+}
+
 export function transformTrimmedString({
   value,
 }: {

@@ -14,6 +14,8 @@ import { FavoritesModule } from './favorites/favorites.module';
 import { ApplicationsModule } from './applications/applications.module';
 import { TasksModule } from './tasks/tasks.module';
 import { PartnersModule } from './partners/partners.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { PublicationsModule } from './publications/publications.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { PartnersModule } from './partners/partners.module';
     ApplicationsModule,
     TasksModule,
     PartnersModule,
+    NotificationsModule,
+    PublicationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

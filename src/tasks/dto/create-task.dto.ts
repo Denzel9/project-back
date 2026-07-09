@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEnum,
@@ -10,16 +11,22 @@ import {
   IsUUID,
   MaxLength,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
+import { TaskCommentMediaInputDto } from './task-comment-media-input.dto';
 
 export class CreateTaskDto {
-  @ApiProperty({ format: 'uuid', description: 'UUID поста (только владелец поста)' })
+  @ApiProperty({
+    format: 'uuid',
+    description: 'UUID поста (только владелец поста)',
+  })
   @IsUUID()
   postId: string;
 
   @ApiPropertyOptional({
     format: 'uuid',
-    description: 'UUID исполнителя задачи. Можно назначить позже через PATCH /tasks/:id',
+    description:
+      'UUID исполнителя задачи. Можно назначить позже через PATCH /tasks/:id',
   })
   @IsOptional()
   @IsUUID()
@@ -82,4 +89,16 @@ export class CreateTaskDto {
   @Type(() => Boolean)
   @IsBoolean()
   isCompanyAction?: boolean;
+
+  @ApiPropertyOptional({
+    type: [TaskCommentMediaInputDto],
+    description:
+      'Вложения после загрузки в S3 (`POST /media/upload` без taskId или с `postId`). ' +
+      'Привязываются к задаче как основные (kind=MAIN).',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TaskCommentMediaInputDto)
+  media?: TaskCommentMediaInputDto[];
 }

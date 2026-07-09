@@ -57,7 +57,7 @@ export class ApplicationsController {
     summary: 'Мои отклики',
     description:
       'Отклики активного профиля с краткой информацией о посте. ' +
-      'Фильтры: `type` (CREATOR / COMPANY), `status`, `updatedDate` (YYYY-MM-DD). ' +
+      'Фильтры: `type` (CREATOR / COMPANY), `status`, `createdDate` (YYYY-MM-DD, UTC). ' +
       'Поиск: `q` — по названию поста или названию компании.',
   })
   @ApiOkResponse({ description: 'Список откликов с пагинацией' })
@@ -73,7 +73,7 @@ export class ApplicationsController {
     summary: 'Входящие отклики на мои посты',
     description:
       'Все отклики на посты активного профиля (владелец). ' +
-      'Фильтры: `postId`, `status`, `updatedDate` (YYYY-MM-DD, UTC), `type` (CREATOR / COMPANY). ' +
+      'Фильтры: `postId`, `status`, `createdDate` (YYYY-MM-DD, UTC), `type` (CREATOR / COMPANY). ' +
       'Поиск: `q` — по названию поста. Содержит данные поста и соискателя (applicant).',
   })
   @ApiOkResponse({ description: 'Список входящих откликов с пагинацией' })

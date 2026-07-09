@@ -29,7 +29,7 @@ export class PartnersController {
     summary: 'Исполнители из задач (для компании)',
     description:
       'Уникальные креаторы-исполнители по задачам активной компании. ' +
-      'Фильтры: `q`, `postId`, `taskId`, `userId`, `status` / `statuses`, `updatedDate`, `createdDate`, `isExecutorApprove`, `urgent`, `sort` (recent|name).',
+      'Фильтры: `q`, `postId`, `taskId`, `userId`, `status` / `statuses`, `createdDate`, `isExecutorApprove`, `urgent`, `sort` (recent|name).',
   })
   @ApiOkResponse({ description: 'Список исполнителей с пагинацией' })
   @ApiForbiddenResponse({ description: 'Доступно только для роли COMPANY' })
@@ -63,7 +63,7 @@ export class PartnersController {
     summary: 'Соискатели по откликам (для компании)',
     description:
       'Уникальные креаторы, откликавшиеся на посты компании. ' +
-      'Фильтры: `q` (имя/фамилия или название поста), `postId`, `userId`, `status` / `statuses`, `updatedDate`, `createdDate`, `sort`.',
+      'Фильтры: `q` (имя/фамилия или название поста), `postId`, `userId`, `status` / `statuses`, `createdDate`, `sort`.',
   })
   @ApiOkResponse({ description: 'Список соискателей с пагинацией' })
   @ApiForbiddenResponse({ description: 'Доступно только для роли COMPANY' })
@@ -80,7 +80,7 @@ export class PartnersController {
     summary: 'Компании по откликам (для креатора)',
     description:
       'Уникальные компании, на посты которых откликался креатор. ' +
-      'Фильтры: `q` (компания или название поста), `postId`, `userId`, `status` / `statuses`, `updatedDate`, `createdDate`, `sort`.',
+      'Фильтры: `q` (компания или название поста), `postId`, `userId`, `status` / `statuses`, `createdDate`, `sort`.',
   })
   @ApiOkResponse({ description: 'Список компаний с пагинацией' })
   @ApiForbiddenResponse({ description: 'Доступно только для роли CREATOR' })

@@ -56,9 +56,9 @@ Backend для marketplace creator ↔ company. Документация для 
 5. \`DELETE /favorites/users/:userId\` — убрать креатора/компанию из избранного.
 
 ### Отклики на посты
-1. \`POST /applications\` — отклик (postId + message); на приватный пост откликнуться нельзя; создаёт сообщение в чате с владельцем поста; владельцу уходит email.
+1. \`POST /applications\` — отклик (postId + message); на приватный пост откликнуться нельзя; создаёт сообщение в чате с владельцем поста; владельцу — in-app уведомление + email.
 2. \`GET /applications/mine\` — мои отклики; \`?type=\`, \`?q=\`, \`?status=\`.
-3. \`GET /applications/incoming\` — входящие на мои посты; \`?status=\`, \`?updatedDate=YYYY-MM-DD\`, \`?q=\` (название поста), \`?postId=\`, \`?type=\`.
+3. \`GET /applications/incoming\` — входящие на мои посты; \`?status=\`, \`?createdDate=YYYY-MM-DD\`, \`?q=\` (название поста), \`?postId=\`, \`?type=\`.
 4. \`GET /posts/:id/applications\` — отклики на конкретный пост (владелец).
 5. \`PATCH /applications/:id/status\` — ACCEPTED создаёт задачу; REJECTED / VIEWED (владелец).
 
@@ -70,17 +70,26 @@ Backend для marketplace creator ↔ company. Документация для 
 
 ### Задачи
 1. Создаются автоматически при \`PATCH /applications/:id/status\` → ACCEPTED (\`applicationId\` заполнен).
-2. \`GET /tasks\` — список (\`?postId=\`, \`?role=owner|executor\`, \`?status=\`, \`?updatedDate=YYYY-MM-DD\`, \`?q=\` по title или companyName). У исполнителя в ответе нет блока \`post\`.
+2. \`GET /tasks\` — список (\`?postId=\`, \`?role=owner|executor\`, \`?status=\`, \`?statuses=\`, \`?active=true\`, \`?excludeCompleted=true\`, \`?isCompanyAction=\`, \`?isExecutorApprove=true|false|null\`, \`?unassigned=true\`, \`?overdue=true\`, \`?urgent=true\`, \`?createdDate=YYYY-MM-DD\`, \`?dateFrom=\`/\`?dateTo=\` по \`createdAt\`, \`?q=\` по title или companyName). У исполнителя в ответе нет блока \`post\`.
 2a. \`GET /tasks/pending-approval\` — задачи исполнителя с \`isExecutorApprove: null\` (те же фильтры, кроме \`role\`).
 2b. \`GET /tasks/activities\` — лента активностей по всем доступным задачам (\`?type=\`, \`?role=owner|executor\`, \`?taskId=\`).
 2c. \`GET /tasks/comments\` — лента комментариев по всем доступным задачам (\`?role=owner|executor\`, \`?taskId=\`, \`?q=\`).
 2d. \`GET /tasks/with-comments\` — задачи с комментариями: превью последнего, \`commentsCount\`, опционально \`unreadCount\` при \`readAfter\`.
+2e. \`GET /tasks/calendar\` — компактный список для календаря (id, даты, urgent, finalDate, title, owner, executor). Фильтры: \`dateFrom\`/\`dateTo\` + \`dateField=createdAt|updatedAt|finalDate\`, \`urgent\`, \`ownerId\`, \`executorId\`, \`role\`.
+2f. \`GET /tasks/stats\` — счётчики для дашборда: \`awaitingAction\`, \`awaitingConfirmation\`, \`unassigned\`, \`overdue\`, \`urgent\`, \`underReview\`, \`cancelled\`. Фильтры: \`role\`, \`postId\`.
 3. \`POST /tasks\` — создать задачу вручную (владелец поста: \`postId\`, опционально \`executorId\`). Без отклика; \`applicationId\` = null. Исполнителя можно назначить позже через \`PATCH /tasks/:id\`.
-4. \`GET /tasks/:id\` — задача с \`media[]\` (основные) и \`reportMedia[]\` (отчёт). Исполнитель не видит \`post\`.
+4. \`GET /tasks/:id\` — задача с \`media[]\` (основные) и \`reportMedia[]\` (отчёт). Комментарии — отдельно (\`GET /tasks/:id/comments\`). Исполнитель не видит \`post\`.
 5. \`PATCH /tasks/:id\` — owner: все поля (включая \`executorId\`); executor: только status. \`description\` — Markdown (хранится как строка).
 6. \`DELETE /tasks/:id\` — удалить задачу (только owner поста).
 7. Медиа задачи: \`POST /media/upload?taskId=\` (main), \`?taskId=&kind=report\` (отчёт), \`GET /tasks/:id/attachments\` (фильтры kind, type).
 8. Комментарии: \`GET/POST /tasks/:id/comments\`, \`GET .../comments/search?q=\`, \`GET .../comments/attachments\`, \`PATCH/DELETE .../comments/:commentId\`. Вложения в комментарий: \`POST /media/upload?taskId=&forComment=true\`.
+9. При переходе задачи в \`COMPLETED\` автоматически создаётся публикация (снимок \`reportMedia\` и метаданных задачи). См. раздел «Публикации».
+
+### Публикации
+1. Создаются **автоматически** при \`PATCH /tasks/:id\` → \`status: COMPLETED\` (снимок \`reportMedia\` и полей задачи). Ручного \`POST /publications\` нет.
+2. \`GET /publications\` — список, где пользователь owner или executor (\`?role=owner|executor\`, \`?postId=\`, \`?taskId=\`, \`?q=\` по title, пагинация).
+3. \`GET /publications/:id\` — детали + \`media[]\` + \`owner\` / \`executor\`.
+4. \`PATCH /publications/:id\` — участники задачи: \`title\`, \`description\`, \`externalUrl\`, \`platform\`.
 
 ### Приватный пост + прямое назначение
 1. Компания: \`POST /posts\` с \`isPrivate: true\` → медиа → \`POST /tasks\` с \`postId\` (и опционально \`executorId\`, либо назначить через \`PATCH /tasks/:id\`).
@@ -91,6 +100,17 @@ Backend для marketplace creator ↔ company. Документация для 
 - WebSocket \`/chat\`: realtime-сообщения (Socket.IO).
 - Медиа: \`POST /media/upload?conversationId=\` → \`send_message\` с media[] (фото, видео, документы).
 - 1:1 диалог между любыми пользователями.
+- Новые сообщения — in-app уведомление + email (offline fallback).
+
+### Уведомления
+1. \`GET /notifications\` — inbox активного профиля (\`?read=true|false\`, \`?type=\`). Сортировка от новых к старым.
+2. \`GET /notifications/unread-count\` — число непрочитанных.
+3. \`PATCH /notifications/:id/read\` — пометить одно прочитанным.
+4. \`PATCH /notifications/read-all\` — прочитать все.
+5. WebSocket \`/notifications\`: при connect — комната \`user:{userId}\`; событие \`notification\` с телом уведомления и \`unreadCount\`.
+6. Email для критичных событий (отклики, задачи, чат, отзыв доступа). \`TEAM_INVITE\` — только специализированное invite-письмо + in-app при наличии аккаунта.
+
+Триггеры: новый/изменённый/отозванный отклик; создание/статус/исполнитель/комментарий/отчёт задачи; публикация по завершённой задаче; сообщение в чате; отзыв membership.
 
 ### Сброс и проверка пароля
 1. \`POST /auth/recovery-password\` — письмо на email Account.
@@ -104,6 +124,13 @@ Backend для marketplace creator ↔ company. Документация для 
 - \`join_conversation\` → \`{ conversationId }\`
 - \`send_message\` → \`{ conversationId, content?, media? }\`
 - Ответ: \`message\`, ошибки: \`error\`
+
+## WebSocket /notifications
+
+- URL: \`http://localhost:3010/notifications\`, \`withCredentials: true\`.
+- При connect автоматически join в комнату пользователя.
+- Событие: \`notification\` → \`{ notification, unreadCount }\`
+- Ошибки: \`error\`
 `.trim();
 
 export function createSwaggerConfig() {
@@ -149,6 +176,14 @@ export function createSwaggerConfig() {
     .addTag(
       'partners',
       'Уникальные контрагенты: исполнители/заказчики из задач и откликов'
+    )
+    .addTag(
+      'notifications',
+      'In-app уведомления: inbox, read/unread, WebSocket /notifications'
+    )
+    .addTag(
+      'publications',
+      'Публикации по завершённым задачам: автосоздание, снимок reportMedia, доступ owner/executor'
     )
     .addCookieAuth('access-token')
     .build();

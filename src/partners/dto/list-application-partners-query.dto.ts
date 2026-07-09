@@ -57,17 +57,6 @@ export class ListApplicationPartnersQueryDto {
 
   @ApiPropertyOptional({
     format: 'date',
-    description: 'Фильтр по дате обновления отклика (UTC)',
-    example: '2026-06-14',
-  })
-  @IsOptional()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
-    message: 'updatedDate должен быть в формате YYYY-MM-DD',
-  })
-  updatedDate?: string;
-
-  @ApiPropertyOptional({
-    format: 'date',
     description: 'Фильтр по дате создания отклика (UTC)',
     example: '2026-06-14',
   })

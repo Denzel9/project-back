@@ -52,14 +52,14 @@ export class ListApplicationsQueryDto {
 
   @ApiPropertyOptional({
     format: 'date',
-    description: 'Фильтр по дате обновления отклика (календарный день, UTC)',
+    description: 'Фильтр по дате создания отклика (календарный день, UTC)',
     example: '2026-06-14',
   })
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/, {
-    message: 'updatedDate должен быть в формате YYYY-MM-DD',
+    message: 'createdDate должен быть в формате YYYY-MM-DD',
   })
-  updatedDate?: string;
+  createdDate?: string;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()

@@ -159,6 +159,11 @@ export class AccountMembershipService {
   async revokeMembership(membershipId: string, actorAccountId: string) {
     const membership = await this.prisma.accountMembership.findUnique({
       where: { id: membershipId },
+      include: {
+        user: {
+          include: userWithProfileInclude,
+        },
+      },
     });
 
     if (!membership) {
@@ -174,6 +179,8 @@ export class AccountMembershipService {
     await this.prisma.accountMembership.delete({
       where: { id: membershipId },
     });
+
+    return membership;
   }
 
   private getDisplayName(user: {

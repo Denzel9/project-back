@@ -546,6 +546,113 @@ paths:
         "204":
           description: Выход выполнен
       tags: *a3
+  /notifications:
+    get:
+      operationId: NotificationsController_list
+      summary: Список уведомлений
+      description: "Inbox активного профиля. Фильтры: `read` (true/false), `type`.
+        Сортировка — от новых к старым."
+      parameters:
+        - name: read
+          required: false
+          in: query
+          description: true — только прочитанные; false — только непрочитанные
+          schema:
+            type: boolean
+        - name: type
+          required: false
+          in: query
+          schema:
+            enum:
+              - APPLICATION_NEW
+              - APPLICATION_STATUS_CHANGED
+              - APPLICATION_WITHDRAWN
+              - TASK_CREATED
+              - TASK_STATUS_CHANGED
+              - TASK_EXECUTOR_ASSIGNED
+              - TASK_COMMENT_CREATED
+              - TASK_MEDIA_ADDED
+              - CHAT_MESSAGE
+              - TEAM_INVITE
+              - MEMBERSHIP_REVOKED
+              - PUBLICATION_CREATED
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Список уведомлений с пагинацией
+      tags: &a4
+        - notifications
+      security: &a5
+        - access-token: []
+  /notifications/unread-count:
+    get:
+      operationId: NotificationsController_getUnreadCount
+      summary: Число непрочитанных уведомлений
+      parameters: []
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationUnreadCountDto"
+      tags: *a4
+      security: *a5
+  /notifications/read-all:
+    patch:
+      operationId: NotificationsController_markAllRead
+      summary: Пометить все уведомления прочитанными
+      parameters: []
+      responses:
+        "200":
+          description: Количество обновлённых записей
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    type: number
+      tags: *a4
+      security: *a5
+  /notifications/{id}/read:
+    patch:
+      operationId: NotificationsController_markRead
+      summary: Пометить уведомление прочитанным
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationResponseDto"
+        "403":
+          description: Нет доступа
+        "404":
+          description: Уведомление не найдено
+      tags: *a4
+      security: *a5
   /chat/conversations:
     get:
       operationId: ChatController_listConversations
@@ -563,9 +670,9 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ChatConversationResponse"
-      tags: &a4
+      tags: &a6
         - chat
-      security: &a5
+      security: &a7
         - access-token: []
     post:
       operationId: ChatController_createConversation
@@ -590,8 +697,8 @@ paths:
           description: Нельзя создать диалог с самим собой
         "404":
           description: Получатель не найден
-      tags: *a4
-      security: *a5
+      tags: *a6
+      security: *a7
   /chat/conversations/{id}/messages/search:
     get:
       operationId: ChatController_searchMessages
@@ -635,8 +742,8 @@ paths:
                 $ref: "#/components/schemas/SearchMessagesResponse"
         "403":
           description: Нет доступа к диалогу
-      tags: *a4
-      security: *a5
+      tags: *a6
+      security: *a7
   /chat/conversations/{id}/messages:
     get:
       operationId: ChatController_listMessages
@@ -677,8 +784,8 @@ paths:
                   $ref: "#/components/schemas/ChatMessageResponse"
         "403":
           description: Нет доступа к диалогу
-      tags: *a4
-      security: *a5
+      tags: *a6
+      security: *a7
   /chat/conversations/{id}/attachments:
     get:
       operationId: ChatController_listAttachments
@@ -727,8 +834,8 @@ paths:
                 $ref: "#/components/schemas/ListAttachmentsResponse"
         "403":
           description: Нет доступа к диалогу
-      tags: *a4
-      security: *a5
+      tags: *a6
+      security: *a7
   /creator/profile:
     get:
       operationId: CreatorController_getProfile
@@ -850,9 +957,9 @@ paths:
             задачи или не участник диалога)
         "404":
           description: Пост или задача не найдены
-      tags: &a6
+      tags: &a8
         - media
-      security: &a7
+      security: &a9
         - access-token: []
   /media/{mediaId}:
     delete:
@@ -894,8 +1001,8 @@ paths:
           description: Недостаточно прав
         "404":
           description: Медиа, пост, задача или диалог не найдены
-      tags: *a6
-      security: *a7
+      tags: *a8
+      security: *a9
   /posts:
     post:
       operationId: PostsController_create
@@ -920,9 +1027,9 @@ paths:
                 $ref: "#/components/schemas/PostResponseDto"
         "403":
           description: Недостаточно прав (роль VIEWER)
-      tags: &a8
+      tags: &a10
         - posts
-      security: &a9
+      security: &a11
         - access-token: []
     get:
       operationId: PostsController_list
@@ -1279,8 +1386,8 @@ paths:
       responses:
         "200":
           description: Список постов с пагинацией
-      tags: *a8
-      security: *a9
+      tags: *a10
+      security: *a11
   /posts/{id}/applications:
     get:
       operationId: PostsController_listApplications
@@ -1328,10 +1435,10 @@ paths:
               - CREATOR
               - COMPANY
             type: string
-        - name: updatedDate
+        - name: createdDate
           required: false
           in: query
-          description: Фильтр по дате обновления отклика (календарный день, UTC)
+          description: Фильтр по дате создания отклика (календарный день, UTC)
           schema:
             format: date
             example: 2026-06-14
@@ -1358,8 +1465,8 @@ paths:
           description: Нет доступа к откликам на этот пост
         "404":
           description: Пост не найден
-      tags: *a8
-      security: *a9
+      tags: *a10
+      security: *a11
   /posts/{id}:
     get:
       operationId: PostsController_findById
@@ -1384,8 +1491,8 @@ paths:
           description: Пост недоступен для вашей роли
         "404":
           description: Пост не найден
-      tags: *a8
-      security: *a9
+      tags: *a10
+      security: *a11
     patch:
       operationId: PostsController_update
       summary: Обновить пост
@@ -1414,8 +1521,8 @@ paths:
           description: Недостаточно прав (не владелец или VIEWER)
         "404":
           description: Пост не найден
-      tags: *a8
-      security: *a9
+      tags: *a10
+      security: *a11
     delete:
       operationId: PostsController_remove
       summary: Удалить пост
@@ -1433,8 +1540,8 @@ paths:
           description: Недостаточно прав (не владелец или VIEWER)
         "404":
           description: Пост не найден
-      tags: *a8
-      security: *a9
+      tags: *a10
+      security: *a11
   /applications:
     post:
       operationId: ApplicationsController_create
@@ -1462,17 +1569,17 @@ paths:
           description: Пост не найден
         "409":
           description: Уже откликались на этот пост
-      tags: &a10
+      tags: &a12
         - applications
-      security: &a11
+      security: &a13
         - access-token: []
   /applications/mine:
     get:
       operationId: ApplicationsController_listMine
       summary: Мои отклики
       description: "Отклики активного профиля с краткой информацией о посте. Фильтры:
-        `type` (CREATOR / COMPANY), `status`, `updatedDate` (YYYY-MM-DD). Поиск:
-        `q` — по названию поста или названию компании."
+        `type` (CREATOR / COMPANY), `status`, `createdDate` (YYYY-MM-DD, UTC).
+        Поиск: `q` — по названию поста или названию компании."
       parameters:
         - name: postId
           required: false
@@ -1509,10 +1616,10 @@ paths:
               - CREATOR
               - COMPANY
             type: string
-        - name: updatedDate
+        - name: createdDate
           required: false
           in: query
-          description: Фильтр по дате обновления отклика (календарный день, UTC)
+          description: Фильтр по дате создания отклика (календарный день, UTC)
           schema:
             format: date
             example: 2026-06-14
@@ -1535,14 +1642,14 @@ paths:
       responses:
         "200":
           description: Список откликов с пагинацией
-      tags: *a10
-      security: *a11
+      tags: *a12
+      security: *a13
   /applications/incoming:
     get:
       operationId: ApplicationsController_listIncoming
       summary: Входящие отклики на мои посты
       description: "Все отклики на посты активного профиля (владелец). Фильтры:
-        `postId`, `status`, `updatedDate` (YYYY-MM-DD, UTC), `type` (CREATOR /
+        `postId`, `status`, `createdDate` (YYYY-MM-DD, UTC), `type` (CREATOR /
         COMPANY). Поиск: `q` — по названию поста. Содержит данные поста и
         соискателя (applicant)."
       parameters:
@@ -1581,10 +1688,10 @@ paths:
               - CREATOR
               - COMPANY
             type: string
-        - name: updatedDate
+        - name: createdDate
           required: false
           in: query
-          description: Фильтр по дате обновления отклика (календарный день, UTC)
+          description: Фильтр по дате создания отклика (календарный день, UTC)
           schema:
             format: date
             example: 2026-06-14
@@ -1607,8 +1714,8 @@ paths:
       responses:
         "200":
           description: Список входящих откликов с пагинацией
-      tags: *a10
-      security: *a11
+      tags: *a12
+      security: *a13
   /applications/{id}/withdraw:
     patch:
       operationId: ApplicationsController_withdraw
@@ -1633,8 +1740,8 @@ paths:
           description: Не ваш отклик
         "404":
           description: Отклик не найден
-      tags: *a10
-      security: *a11
+      tags: *a12
+      security: *a13
   /applications/{id}/status:
     patch:
       operationId: ApplicationsController_updateStatus
@@ -1666,18 +1773,18 @@ paths:
           description: Не владелец поста
         "404":
           description: Отклик не найден
-      tags: *a10
-      security: *a11
+      tags: *a12
+      security: *a13
   /tasks:
     get:
       operationId: TasksController_list
       summary: Список задач
       description: "Задачи, где пользователь owner или executor. Фильтры: `postId`,
-        `role`, `status`, `updatedDate` (YYYY-MM-DD, UTC), `q` (название поста
-        или компании). Задачи без ответа исполнителя (`isExecutorApprove: null`)
-        — в `GET /tasks/pending-approval`. Создание — автоматически при ACCEPTED
-        отклика или `POST /tasks` вручную (владелец поста). У исполнителя нет
-        блока `post`."
+        `role`, `status`, `statuses`, `active`, `excludeCompleted`,
+        `isCompanyAction`, `isExecutorApprove` (`true`/`false`/`null`),
+        `unassigned`, `overdue`, `urgent`, `createdDate`, `dateFrom`/`dateTo`,
+        `q`. Создание — автоматически при ACCEPTED отклика или `POST /tasks`
+        вручную (владелец поста). У исполнителя нет блока `post`."
       parameters:
         - name: postId
           required: false
@@ -1709,13 +1816,97 @@ paths:
               - CANCELLED
               - CANCELLED_EXECUTOR
             type: string
-        - name: updatedDate
+        - name: statuses
           required: false
           in: query
-          description: Фильтр по дате обновления задачи (календарный день, UTC)
+          description: Несколько статусов через запятую, например
+            `CANCELLED,CANCELLED_EXECUTOR`
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - PREPARING
+                - PENDING_APPROVAL
+                - IN_PROGRESS
+                - CHECKING
+                - REVISION
+                - COMPLETED
+                - CANCELLED
+                - CANCELLED_EXECUTOR
+        - name: active
+          required: false
+          in: query
+          description: "Только активные: исключить `COMPLETED`, `CANCELLED`,
+            `CANCELLED_EXECUTOR`. Сочетается с `status`/`statuses`
+            (пересечение)."
+          schema:
+            type: boolean
+        - name: excludeCompleted
+          required: false
+          in: query
+          description: Исключить только `COMPLETED`. Не применяется, если передан
+            `active=true`.
+          schema:
+            type: boolean
+        - name: isCompanyAction
+          required: false
+          in: query
+          description: Очередь компании (`true`) или исполнителя (`false`).
+          schema:
+            type: boolean
+        - name: isExecutorApprove
+          required: false
+          in: query
+          description: "Фильтр по одобрению исполнителя: `true`, `false` или `null` (ещё
+            не ответил)."
+          schema:
+            nullable: true
+            type: boolean
+        - name: unassigned
+          required: false
+          in: query
+          description: "Только без назначенного исполнителя (`executorId: null`). Для
+            owner; при `role=executor` — пустой список."
+          schema:
+            type: boolean
+        - name: overdue
+          required: false
+          in: query
+          description: "Просроченные: `finalDate` раньше текущего момента."
+          schema:
+            type: boolean
+        - name: urgent
+          required: false
+          in: query
+          description: "Только срочные (`urgent: true`)."
+          schema:
+            type: boolean
+        - name: createdDate
+          required: false
+          in: query
+          description: Фильтр по дате создания задачи (календарный день, UTC)
           schema:
             format: date
             example: 2026-06-14
+            type: string
+        - name: dateFrom
+          required: false
+          in: query
+          description: Начало диапазона по `createdAt` (UTC, включительно). Не сочетается
+            с `createdDate`.
+          schema:
+            format: date
+            example: 2026-06-01
+            type: string
+        - name: dateTo
+          required: false
+          in: query
+          description: Конец диапазона по `createdAt` (UTC, включительно). Можно передать
+            только dateFrom или только dateTo.
+          schema:
+            format: date
+            example: 2026-06-30
             type: string
         - name: q
           required: false
@@ -1742,9 +1933,9 @@ paths:
       responses:
         "200":
           description: Список задач с пагинацией
-      tags: &a12
+      tags: &a14
         - tasks
-      security: &a13
+      security: &a15
         - access-token: []
     post:
       operationId: TasksController_create
@@ -1771,8 +1962,8 @@ paths:
           description: Не владелец поста или VIEWER
         "404":
           description: Пост или исполнитель не найдены
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
   /tasks/pending-approval:
     get:
       operationId: TasksController_listPendingApproval
@@ -1811,13 +2002,97 @@ paths:
               - CANCELLED
               - CANCELLED_EXECUTOR
             type: string
-        - name: updatedDate
+        - name: statuses
           required: false
           in: query
-          description: Фильтр по дате обновления задачи (календарный день, UTC)
+          description: Несколько статусов через запятую, например
+            `CANCELLED,CANCELLED_EXECUTOR`
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - PREPARING
+                - PENDING_APPROVAL
+                - IN_PROGRESS
+                - CHECKING
+                - REVISION
+                - COMPLETED
+                - CANCELLED
+                - CANCELLED_EXECUTOR
+        - name: active
+          required: false
+          in: query
+          description: "Только активные: исключить `COMPLETED`, `CANCELLED`,
+            `CANCELLED_EXECUTOR`. Сочетается с `status`/`statuses`
+            (пересечение)."
+          schema:
+            type: boolean
+        - name: excludeCompleted
+          required: false
+          in: query
+          description: Исключить только `COMPLETED`. Не применяется, если передан
+            `active=true`.
+          schema:
+            type: boolean
+        - name: isCompanyAction
+          required: false
+          in: query
+          description: Очередь компании (`true`) или исполнителя (`false`).
+          schema:
+            type: boolean
+        - name: isExecutorApprove
+          required: false
+          in: query
+          description: "Фильтр по одобрению исполнителя: `true`, `false` или `null` (ещё
+            не ответил)."
+          schema:
+            nullable: true
+            type: boolean
+        - name: unassigned
+          required: false
+          in: query
+          description: "Только без назначенного исполнителя (`executorId: null`). Для
+            owner; при `role=executor` — пустой список."
+          schema:
+            type: boolean
+        - name: overdue
+          required: false
+          in: query
+          description: "Просроченные: `finalDate` раньше текущего момента."
+          schema:
+            type: boolean
+        - name: urgent
+          required: false
+          in: query
+          description: "Только срочные (`urgent: true`)."
+          schema:
+            type: boolean
+        - name: createdDate
+          required: false
+          in: query
+          description: Фильтр по дате создания задачи (календарный день, UTC)
           schema:
             format: date
             example: 2026-06-14
+            type: string
+        - name: dateFrom
+          required: false
+          in: query
+          description: Начало диапазона по `createdAt` (UTC, включительно). Не сочетается
+            с `createdDate`.
+          schema:
+            format: date
+            example: 2026-06-01
+            type: string
+        - name: dateTo
+          required: false
+          in: query
+          description: Конец диапазона по `createdAt` (UTC, включительно). Можно передать
+            только dateFrom или только dateTo.
+          schema:
+            format: date
+            example: 2026-06-30
             type: string
         - name: q
           required: false
@@ -1844,8 +2119,8 @@ paths:
       responses:
         "200":
           description: Список задач с пагинацией
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
   /tasks/activities:
     get:
       operationId: TasksController_listAllActivities
@@ -1903,8 +2178,8 @@ paths:
           description: Нет доступа к задаче (при taskId)
         "404":
           description: Задача не найдена (при указанном taskId)
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
   /tasks/comments:
     get:
       operationId: TasksController_listAllComments
@@ -1959,8 +2234,8 @@ paths:
           description: Нет доступа к задаче (при taskId)
         "404":
           description: Задача не найдена (при указанном taskId)
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
   /tasks/with-comments:
     get:
       operationId: TasksController_listTasksWithComments
@@ -2034,13 +2309,142 @@ paths:
       responses:
         "200":
           description: Список задач с превью комментариев
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
+  /tasks/calendar:
+    get:
+      operationId: TasksController_listCalendar
+      summary: Задачи для календаря
+      description: "Компактный список задач, где пользователь owner или executor.
+        Поля: id, createdAt, updatedAt, urgent, finalDate, title, owner,
+        executor. Фильтры: `dateFrom`/`dateTo` + `dateField` (`createdAt` |
+        `updatedAt` | `finalDate`), `urgent`, `ownerId`, `executorId`, `role`
+        (owner|executor). Сортировка по выбранному `dateField` (по
+        возрастанию)."
+      parameters:
+        - name: dateFrom
+          required: false
+          in: query
+          description: Начало диапазона (UTC, включительно). Поле задаётся через
+            `dateField` (по умолчанию `createdAt`).
+          schema:
+            format: date
+            example: 2026-06-01
+            type: string
+        - name: dateTo
+          required: false
+          in: query
+          description: Конец диапазона (UTC, включительно). Можно передать только dateFrom
+            или только dateTo.
+          schema:
+            format: date
+            example: 2026-06-30
+            type: string
+        - name: dateField
+          required: false
+          in: query
+          description: "По какому полю задачи фильтровать `dateFrom` / `dateTo`:
+            `createdAt`, `updatedAt` или `finalDate`."
+          schema:
+            default: createdAt
+            enum:
+              - createdAt
+              - updatedAt
+              - finalDate
+            type: string
+        - name: urgent
+          required: false
+          in: query
+          description: "Только срочные (`urgent: true`) или несрочные (`urgent: false`)"
+          schema:
+            type: boolean
+        - name: ownerId
+          required: false
+          in: query
+          description: Фильтр по владельцу задачи (owner.id)
+          schema:
+            format: uuid
+            type: string
+        - name: executorId
+          required: false
+          in: query
+          description: Фильтр по исполнителю (executor.id)
+          schema:
+            format: uuid
+            type: string
+        - name: role
+          required: false
+          in: query
+          description: owner — задачи на мои посты; executor — задачи где я исполнитель
+          schema:
+            enum:
+              - owner
+              - executor
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 500
+            default: 100
+            type: number
+      responses:
+        "200":
+          description: Список задач для календаря с пагинацией
+      tags: *a14
+      security: *a15
+  /tasks/stats:
+    get:
+      operationId: TasksController_getStats
+      summary: Счётчики задач для дашборда
+      description: "Счётчики по доступным задачам (owner или executor). Категории
+        могут пересекаться. `awaitingAction` — очередь текущего пользователя
+        (`isCompanyAction`). `awaitingConfirmation` — `isExecutorApprove: null`.
+        `unassigned` — без исполнителя (только owner). `overdue` — `finalDate` в
+        прошлом. `urgent` — срочные активные. `underReview` — `CHECKING`.
+        `cancelled` — отменённые (`CANCELLED`, `CANCELLED_EXECUTOR`). Фильтры:
+        `role`, `postId`."
+      parameters:
+        - name: role
+          required: false
+          in: query
+          description: owner — счётчики по задачам на мои посты; executor — где я
+            исполнитель
+          schema:
+            enum:
+              - owner
+              - executor
+            type: string
+        - name: postId
+          required: false
+          in: query
+          description: Ограничить счётчики задачами поста
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskStatsResponseDto"
+      tags: *a14
+      security: *a15
   /tasks/{id}:
     get:
       operationId: TasksController_findById
       summary: Задача по id
-      description: С комментариями. `description` — Markdown. Исполнитель не видит `post`.
+      description: "`description` — Markdown. Исполнитель не видит `post`. Комментарии
+        — `GET /tasks/:id/comments`."
       parameters:
         - name: id
           required: true
@@ -2058,8 +2462,8 @@ paths:
           description: Нет доступа
         "404":
           description: Задача не найдена
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
     patch:
       operationId: TasksController_update
       summary: Обновить задачу
@@ -2089,8 +2493,8 @@ paths:
           description: Нет доступа или недопустимые поля
         "404":
           description: Задача не найдена
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
     delete:
       operationId: TasksController_remove
       summary: Удалить задачу
@@ -2109,8 +2513,8 @@ paths:
           description: Не владелец поста или VIEWER
         "404":
           description: Задача не найдена
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
   /tasks/{id}/activities:
     get:
       operationId: TasksController_listActivities
@@ -2156,8 +2560,8 @@ paths:
           description: Нет доступа
         "404":
           description: Задача не найдена
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
   /tasks/{id}/attachments:
     get:
       operationId: TasksController_listAttachments
@@ -2216,8 +2620,8 @@ paths:
           description: Нет доступа
         "404":
           description: Задача не найдена
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
   /tasks/{id}/comments/search:
     get:
       operationId: TasksController_searchComments
@@ -2263,8 +2667,8 @@ paths:
           description: Нет доступа
         "404":
           description: Задача не найдена
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
   /tasks/{id}/comments/attachments:
     get:
       operationId: TasksController_listCommentAttachments
@@ -2314,8 +2718,8 @@ paths:
           description: Нет доступа
         "404":
           description: Задача не найдена
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
   /tasks/{id}/comments:
     get:
       operationId: TasksController_listComments
@@ -2344,8 +2748,8 @@ paths:
       responses:
         "200":
           description: Список комментариев с пагинацией
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
     post:
       operationId: TasksController_createComment
       summary: Добавить комментарий
@@ -2370,8 +2774,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskCommentResponseDto"
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
   /tasks/{id}/comments/{commentId}:
     patch:
       operationId: TasksController_updateComment
@@ -2401,8 +2805,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskCommentResponseDto"
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
     delete:
       operationId: TasksController_deleteComment
       summary: Удалить комментарий
@@ -2421,8 +2825,118 @@ paths:
       responses:
         "204":
           description: Комментарий удалён
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
+  /publications:
+    get:
+      operationId: PublicationsController_list
+      summary: Список публикаций
+      description: "Публикации по задачам, где пользователь owner или executor.
+        Создаются автоматически при `COMPLETED` задачи. Фильтры: `role`,
+        `postId`, `taskId`, `q` (title)."
+      parameters:
+        - name: role
+          required: false
+          in: query
+          description: owner — публикации по моим задачам; executor — где я исполнитель
+          schema:
+            enum:
+              - owner
+              - executor
+            type: string
+        - name: postId
+          required: false
+          in: query
+          schema:
+            format: uuid
+            type: string
+        - name: taskId
+          required: false
+          in: query
+          schema:
+            format: uuid
+            type: string
+        - name: q
+          required: false
+          in: query
+          description: Поиск по title
+          schema:
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+      responses:
+        "200":
+          description: Список публикаций с пагинацией
+      tags: &a16
+        - publications
+      security: &a17
+        - access-token: []
+  /publications/{id}:
+    get:
+      operationId: PublicationsController_findById
+      summary: Публикация по id
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicationResponseDto"
+        "403":
+          description: Нет доступа
+        "404":
+          description: Публикация не найдена
+      tags: *a16
+      security: *a17
+    patch:
+      operationId: PublicationsController_update
+      summary: Обновить публикацию
+      description: Участники задачи могут редактировать `title`, `description`,
+        `externalUrl`, `platform`.
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePublicationDto"
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicationResponseDto"
+        "403":
+          description: Нет доступа
+        "404":
+          description: Публикация не найдена
+      tags: *a16
+      security: *a17
   /favorites/groups:
     get:
       operationId: FavoritesController_listGroups
@@ -2438,9 +2952,9 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/FavoriteGroupResponseDto"
-      tags: &a14
+      tags: &a18
         - favorites
-      security: &a15
+      security: &a19
         - access-token: []
     post:
       operationId: FavoritesController_createGroup
@@ -2462,8 +2976,8 @@ paths:
                 $ref: "#/components/schemas/FavoriteGroupResponseDto"
         "409":
           description: Группа с таким названием уже существует
-      tags: *a14
-      security: *a15
+      tags: *a18
+      security: *a19
   /favorites/groups/{id}:
     patch:
       operationId: FavoritesController_updateGroup
@@ -2491,8 +3005,8 @@ paths:
           description: Группа не найдена
         "409":
           description: Группа с таким названием уже существует
-      tags: *a14
-      security: *a15
+      tags: *a18
+      security: *a19
     delete:
       operationId: FavoritesController_deleteGroup
       summary: Удалить группу
@@ -2508,8 +3022,8 @@ paths:
           description: Группа удалена
         "404":
           description: Группа не найдена
-      tags: *a14
-      security: *a15
+      tags: *a18
+      security: *a19
   /favorites:
     get:
       operationId: FavoritesController_listFavorites
@@ -2570,8 +3084,8 @@ paths:
       responses:
         "200":
           description: Избранное с пагинацией
-      tags: *a14
-      security: *a15
+      tags: *a18
+      security: *a19
     post:
       operationId: FavoritesController_addFavorite
       summary: Добавить в избранное
@@ -2595,8 +3109,8 @@ paths:
                   - $ref: "#/components/schemas/FavoriteUserItemResponseDto"
         "404":
           description: Пост, пользователь или группа не найдены
-      tags: *a14
-      security: *a15
+      tags: *a18
+      security: *a19
   /favorites/{postId}:
     patch:
       operationId: FavoritesController_moveFavorite
@@ -2623,8 +3137,8 @@ paths:
                 $ref: "#/components/schemas/FavoriteResponseDto"
         "404":
           description: Пост не найден в избранном или группа не найдена
-      tags: *a14
-      security: *a15
+      tags: *a18
+      security: *a19
     delete:
       operationId: FavoritesController_removeFavorite
       summary: Убрать пост из избранного
@@ -2639,8 +3153,8 @@ paths:
           description: Пост убран из избранного
         "404":
           description: Пост не найден в избранном
-      tags: *a14
-      security: *a15
+      tags: *a18
+      security: *a19
   /favorites/users/{userId}:
     delete:
       operationId: FavoritesController_removeFavoriteUser
@@ -2656,16 +3170,15 @@ paths:
           description: Пользователь убран из избранного
         "404":
           description: Пользователь не найден в избранном
-      tags: *a14
-      security: *a15
+      tags: *a18
+      security: *a19
   /partners/tasks/executors:
     get:
       operationId: PartnersController_listTaskExecutors
       summary: Исполнители из задач (для компании)
       description: "Уникальные креаторы-исполнители по задачам активной компании.
         Фильтры: `q`, `postId`, `taskId`, `userId`, `status` / `statuses`,
-        `updatedDate`, `createdDate`, `isExecutorApprove`, `urgent`, `sort`
-        (recent|name)."
+        `createdDate`, `isExecutorApprove`, `urgent`, `sort` (recent|name)."
       parameters:
         - name: q
           required: false
@@ -2725,14 +3238,6 @@ paths:
                 - COMPLETED
                 - CANCELLED
                 - CANCELLED_EXECUTOR
-        - name: updatedDate
-          required: false
-          in: query
-          description: Фильтр по дате обновления задачи (UTC)
-          schema:
-            format: date
-            example: 2026-06-14
-            type: string
         - name: createdDate
           required: false
           in: query
@@ -2782,9 +3287,9 @@ paths:
           description: Список исполнителей с пагинацией
         "403":
           description: Доступно только для роли COMPANY
-      tags: &a16
+      tags: &a20
         - partners
-      security: &a17
+      security: &a21
         - access-token: []
   /partners/tasks/customers:
     get:
@@ -2851,14 +3356,6 @@ paths:
                 - COMPLETED
                 - CANCELLED
                 - CANCELLED_EXECUTOR
-        - name: updatedDate
-          required: false
-          in: query
-          description: Фильтр по дате обновления задачи (UTC)
-          schema:
-            format: date
-            example: 2026-06-14
-            type: string
         - name: createdDate
           required: false
           in: query
@@ -2908,15 +3405,15 @@ paths:
           description: Список заказчиков с пагинацией
         "403":
           description: Доступно только для роли CREATOR
-      tags: *a16
-      security: *a17
+      tags: *a20
+      security: *a21
   /partners/applications/applicants:
     get:
       operationId: PartnersController_listApplicationApplicants
       summary: Соискатели по откликам (для компании)
       description: "Уникальные креаторы, откликавшиеся на посты компании. Фильтры: `q`
         (имя/фамилия или название поста), `postId`, `userId`, `status` /
-        `statuses`, `updatedDate`, `createdDate`, `sort`."
+        `statuses`, `createdDate`, `sort`."
       parameters:
         - name: q
           required: false
@@ -2964,14 +3461,6 @@ paths:
                 - ACCEPTED
                 - REJECTED
                 - WITHDRAWN
-        - name: updatedDate
-          required: false
-          in: query
-          description: Фильтр по дате обновления отклика (UTC)
-          schema:
-            format: date
-            example: 2026-06-14
-            type: string
         - name: createdDate
           required: false
           in: query
@@ -3010,15 +3499,15 @@ paths:
           description: Список соискателей с пагинацией
         "403":
           description: Доступно только для роли COMPANY
-      tags: *a16
-      security: *a17
+      tags: *a20
+      security: *a21
   /partners/applications/companies:
     get:
       operationId: PartnersController_listApplicationCompanies
       summary: Компании по откликам (для креатора)
       description: "Уникальные компании, на посты которых откликался креатор. Фильтры:
         `q` (компания или название поста), `postId`, `userId`, `status` /
-        `statuses`, `updatedDate`, `createdDate`, `sort`."
+        `statuses`, `createdDate`, `sort`."
       parameters:
         - name: q
           required: false
@@ -3066,14 +3555,6 @@ paths:
                 - ACCEPTED
                 - REJECTED
                 - WITHDRAWN
-        - name: updatedDate
-          required: false
-          in: query
-          description: Фильтр по дате обновления отклика (UTC)
-          schema:
-            format: date
-            example: 2026-06-14
-            type: string
         - name: createdDate
           required: false
           in: query
@@ -3112,8 +3593,8 @@ paths:
           description: Список компаний с пагинацией
         "403":
           description: Доступно только для роли CREATOR
-      tags: *a16
-      security: *a17
+      tags: *a20
+      security: *a21
 info:
   title: Project Back API
   description: >-
@@ -3236,12 +3717,12 @@ info:
 
     1. `POST /applications` — отклик (postId + message); на приватный пост
     откликнуться нельзя; создаёт сообщение в чате с владельцем поста; владельцу
-    уходит email.
+    — in-app уведомление + email.
 
     2. `GET /applications/mine` — мои отклики; `?type=`, `?q=`, `?status=`.
 
     3. `GET /applications/incoming` — входящие на мои посты; `?status=`,
-    `?updatedDate=YYYY-MM-DD`, `?q=` (название поста), `?postId=`, `?type=`.
+    `?createdDate=YYYY-MM-DD`, `?q=` (название поста), `?postId=`, `?type=`.
 
     4. `GET /posts/:id/applications` — отклики на конкретный пост (владелец).
 
@@ -3272,8 +3753,11 @@ info:
     (`applicationId` заполнен).
 
     2. `GET /tasks` — список (`?postId=`, `?role=owner|executor`, `?status=`,
-    `?updatedDate=YYYY-MM-DD`, `?q=` по title или companyName). У исполнителя в
-    ответе нет блока `post`.
+    `?statuses=`, `?active=true`, `?excludeCompleted=true`, `?isCompanyAction=`,
+    `?isExecutorApprove=true|false|null`, `?unassigned=true`, `?overdue=true`,
+    `?urgent=true`, `?createdDate=YYYY-MM-DD`, `?dateFrom=`/`?dateTo=` по
+    `createdAt`, `?q=` по title или companyName). У исполнителя в ответе нет
+    блока `post`.
 
     2a. `GET /tasks/pending-approval` — задачи исполнителя с `isExecutorApprove:
     null` (те же фильтры, кроме `role`).
@@ -3287,12 +3771,22 @@ info:
     2d. `GET /tasks/with-comments` — задачи с комментариями: превью последнего,
     `commentsCount`, опционально `unreadCount` при `readAfter`.
 
+    2e. `GET /tasks/calendar` — компактный список для календаря (id, даты,
+    urgent, finalDate, title, owner, executor). Фильтры: `dateFrom`/`dateTo` +
+    `dateField=createdAt|updatedAt|finalDate`, `urgent`, `ownerId`,
+    `executorId`, `role`.
+
+    2f. `GET /tasks/stats` — счётчики для дашборда: `awaitingAction`,
+    `awaitingConfirmation`, `unassigned`, `overdue`, `urgent`, `underReview`,
+    `cancelled`. Фильтры: `role`, `postId`.
+
     3. `POST /tasks` — создать задачу вручную (владелец поста: `postId`,
     опционально `executorId`). Без отклика; `applicationId` = null. Исполнителя
     можно назначить позже через `PATCH /tasks/:id`.
 
     4. `GET /tasks/:id` — задача с `media[]` (основные) и `reportMedia[]`
-    (отчёт). Исполнитель не видит `post`.
+    (отчёт). Комментарии — отдельно (`GET /tasks/:id/comments`). Исполнитель не
+    видит `post`.
 
     5. `PATCH /tasks/:id` — owner: все поля (включая `executorId`); executor:
     только status. `description` — Markdown (хранится как строка).
@@ -3306,6 +3800,23 @@ info:
     .../comments/search?q=`, `GET .../comments/attachments`, `PATCH/DELETE
     .../comments/:commentId`. Вложения в комментарий: `POST
     /media/upload?taskId=&forComment=true`.
+
+    9. При переходе задачи в `COMPLETED` автоматически создаётся публикация
+    (снимок `reportMedia` и метаданных задачи). См. раздел «Публикации».
+
+
+    ### Публикации
+
+    1. Создаются **автоматически** при `PATCH /tasks/:id` → `status: COMPLETED`
+    (снимок `reportMedia` и полей задачи). Ручного `POST /publications` нет.
+
+    2. `GET /publications` — список, где пользователь owner или executor
+    (`?role=owner|executor`, `?postId=`, `?taskId=`, `?q=` по title, пагинация).
+
+    3. `GET /publications/:id` — детали + `media[]` + `owner` / `executor`.
+
+    4. `PATCH /publications/:id` — участники задачи: `title`, `description`,
+    `externalUrl`, `platform`.
 
 
     ### Приватный пост + прямое назначение
@@ -3328,6 +3839,32 @@ info:
     (фото, видео, документы).
 
     - 1:1 диалог между любыми пользователями.
+
+    - Новые сообщения — in-app уведомление + email (offline fallback).
+
+
+    ### Уведомления
+
+    1. `GET /notifications` — inbox активного профиля (`?read=true|false`,
+    `?type=`). Сортировка от новых к старым.
+
+    2. `GET /notifications/unread-count` — число непрочитанных.
+
+    3. `PATCH /notifications/:id/read` — пометить одно прочитанным.
+
+    4. `PATCH /notifications/read-all` — прочитать все.
+
+    5. WebSocket `/notifications`: при connect — комната `user:{userId}`;
+    событие `notification` с телом уведомления и `unreadCount`.
+
+    6. Email для критичных событий (отклики, задачи, чат, отзыв доступа).
+    `TEAM_INVITE` — только специализированное invite-письмо + in-app при наличии
+    аккаунта.
+
+
+    Триггеры: новый/изменённый/отозванный отклик;
+    создание/статус/исполнитель/комментарий/отчёт задачи; публикация по
+    завершённой задаче; сообщение в чате; отзыв membership.
 
 
     ### Сброс и проверка пароля
@@ -3352,6 +3889,18 @@ info:
     - `send_message` → `{ conversationId, content?, media? }`
 
     - Ответ: `message`, ошибки: `error`
+
+
+    ## WebSocket /notifications
+
+
+    - URL: `http://localhost:3010/notifications`, `withCredentials: true`.
+
+    - При connect автоматически join в комнату пользователя.
+
+    - Событие: `notification` → `{ notification, unreadCount }`
+
+    - Ошибки: `error`
   version: "1.0"
   contact: {}
 tags:
@@ -3379,6 +3928,11 @@ tags:
     description: "Задачи: автосоздание при ACCEPTED, owner/executor, комментарии"
   - name: partners
     description: "Уникальные контрагенты: исполнители/заказчики из задач и откликов"
+  - name: notifications
+    description: "In-app уведомления: inbox, read/unread, WebSocket /notifications"
+  - name: publications
+    description: "Публикации по завершённым задачам: автосоздание, снимок
+      reportMedia, доступ owner/executor"
 servers:
   - url: http://localhost:3010
     description: Локальная разработка
@@ -3757,6 +4311,85 @@ components:
           example: true
       required:
         - valid
+    NotificationUnreadCountDto:
+      type: object
+      properties:
+        count:
+          type: number
+      required:
+        - count
+    NotificationActorDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+            - CREATOR
+            - COMPANY
+        avatar:
+          type: string
+          nullable: true
+        name:
+          type: string
+          description: Для CREATOR
+        lastName:
+          type: string
+          description: Для CREATOR
+        companyName:
+          type: string
+          description: Для COMPANY
+      required:
+        - id
+        - role
+    NotificationResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+            - APPLICATION_NEW
+            - APPLICATION_STATUS_CHANGED
+            - APPLICATION_WITHDRAWN
+            - TASK_CREATED
+            - TASK_STATUS_CHANGED
+            - TASK_EXECUTOR_ASSIGNED
+            - TASK_COMMENT_CREATED
+            - TASK_MEDIA_ADDED
+            - CHAT_MESSAGE
+            - TEAM_INVITE
+            - MEMBERSHIP_REVOKED
+            - PUBLICATION_CREATED
+        title:
+          type: string
+        body:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        actor:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/NotificationActorDto"
+      required:
+        - id
+        - type
+        - title
+        - payload
+        - createdAt
     ChatPeerResponse:
       type: object
       properties:
@@ -4114,12 +4747,12 @@ components:
           type: string
           example: Заголовок поста
         permissions:
-          default: &a18 []
+          default: &a22 []
           type: array
           items:
             type: string
         chips:
-          default: &a19 []
+          default: &a23 []
           type: array
           items:
             type: string
@@ -4131,7 +4764,7 @@ components:
           type: boolean
           default: false
         keyWords:
-          default: &a20 []
+          default: &a24 []
           type: array
           items:
             type: string
@@ -4139,14 +4772,14 @@ components:
           type: boolean
           default: false
         categories:
-          default: &a21 []
+          default: &a25 []
           type: array
           items:
             type: string
         platforms:
           type: array
-          default: &a22 []
-          items: &a23
+          default: &a26 []
+          items: &a27
             type: string
             enum:
               - INSTAGRAM
@@ -4157,8 +4790,8 @@ components:
               - OTHER
         placementFormats:
           type: array
-          default: &a24 []
-          items: &a25
+          default: &a28 []
+          items: &a29
             type: string
             enum:
               - POST
@@ -4168,7 +4801,7 @@ components:
               - INTEGRATION
               - LIVE
         niche:
-          default: &a26 []
+          default: &a30 []
           type: array
           items:
             type: string
@@ -4179,7 +4812,7 @@ components:
           format: date-time
         workFormat:
           type: string
-          enum: &a27
+          enum: &a31
             - REMOTE
             - ON_SITE
             - HYBRID
@@ -4192,7 +4825,7 @@ components:
         brief:
           $ref: "#/components/schemas/PostBriefDto"
         tags:
-          default: &a28 []
+          default: &a32 []
           type: array
           items:
             type: string
@@ -4397,12 +5030,12 @@ components:
           type: string
           example: Заголовок поста
         permissions:
-          default: *a18
+          default: *a22
           type: array
           items:
             type: string
         chips:
-          default: *a19
+          default: *a23
           type: array
           items:
             type: string
@@ -4414,7 +5047,7 @@ components:
           type: boolean
           default: false
         keyWords:
-          default: *a20
+          default: *a24
           type: array
           items:
             type: string
@@ -4422,20 +5055,20 @@ components:
           type: boolean
           default: false
         categories:
-          default: *a21
+          default: *a25
           type: array
           items:
             type: string
         platforms:
           type: array
-          default: *a22
-          items: *a23
+          default: *a26
+          items: *a27
         placementFormats:
           type: array
-          default: *a24
-          items: *a25
+          default: *a28
+          items: *a29
         niche:
-          default: *a26
+          default: *a30
           type: array
           items:
             type: string
@@ -4446,7 +5079,7 @@ components:
           format: date-time
         workFormat:
           type: string
-          enum: *a27
+          enum: *a31
         location:
           $ref: "#/components/schemas/PostLocationDto"
         bloggerRequirements:
@@ -4456,7 +5089,7 @@ components:
         brief:
           $ref: "#/components/schemas/PostBriefDto"
         tags:
-          default: *a28
+          default: *a32
           type: array
           items:
             type: string
@@ -4585,6 +5218,62 @@ components:
           description: VIEWED, ACCEPTED или REJECTED
       required:
         - status
+    TaskStatsResponseDto:
+      type: object
+      properties:
+        awaitingAction:
+          type: number
+          description: "Ожидают действия текущего пользователя: owner + `isCompanyAction:
+            true` или executor + `isCompanyAction: false`. Только активные
+            задачи."
+        awaitingConfirmation:
+          type: number
+          description: "Ожидают подтверждения исполнителя (`isExecutorApprove: null`).
+            Только активные задачи."
+        unassigned:
+          type: number
+          description: "Без назначенного исполнителя (`executorId: null`). Считается
+            только для owner."
+        overdue:
+          type: number
+          description: "Просроченные: `finalDate` в прошлом, статус не завершён/отменён."
+        urgent:
+          type: number
+          description: "Срочные (`urgent: true`) среди активных задач."
+        underReview:
+          type: number
+          description: "На проверке (`status: CHECKING`)."
+        cancelled:
+          type: number
+          description: "Отменённые: `status` — `CANCELLED` или `CANCELLED_EXECUTOR`."
+      required:
+        - awaitingAction
+        - awaitingConfirmation
+        - unassigned
+        - overdue
+        - urgent
+        - underReview
+        - cancelled
+    TaskCommentMediaInputDto:
+      type: object
+      properties:
+        url:
+          type: string
+          example: https://8e99a641-b75a-4250-a2a3-d3ec2dbeb156.selstorage.ru/tasks/uuid/file.jpg
+        key:
+          type: string
+          example: tasks/uuid/file.jpg
+        size:
+          type: string
+          example: "12345"
+        mimeType:
+          type: string
+          example: image/jpeg
+      required:
+        - url
+        - key
+        - size
+        - mimeType
     CreateTaskDto:
       type: object
       properties:
@@ -4633,6 +5322,12 @@ components:
         isCompanyAction:
           type: boolean
           default: true
+        media:
+          description: Вложения после загрузки в S3 (`POST /media/upload` без taskId или с
+            `postId`). Привязываются к задаче как основные (kind=MAIN).
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskCommentMediaInputDto"
       required:
         - postId
     TaskMediaDto:
@@ -4666,63 +5361,6 @@ components:
         - size
         - mimeType
         - kind
-    TaskCommentMediaDto:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        url:
-          type: string
-          example: https://s3.ru-7.storage.selcloud.ru/project-media/tasks/uuid/file.jpg
-        key:
-          type: string
-          example: tasks/uuid/file.jpg
-        size:
-          type: string
-          example: "12345"
-        mimeType:
-          type: string
-          example: image/jpeg
-      required:
-        - id
-        - url
-        - key
-        - size
-        - mimeType
-    TaskCommentResponseDto:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        taskId:
-          type: string
-          format: uuid
-        authorId:
-          type: string
-          format: uuid
-        content:
-          type: string
-        media:
-          default: []
-          type: array
-          items:
-            $ref: "#/components/schemas/TaskCommentMediaDto"
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required:
-        - id
-        - taskId
-        - authorId
-        - content
-        - media
-        - createdAt
-        - updatedAt
     TaskResponseDto:
       type: object
       properties:
@@ -4794,10 +5432,6 @@ components:
         updatedAt:
           type: string
           format: date-time
-        comments:
-          type: array
-          items:
-            $ref: "#/components/schemas/TaskCommentResponseDto"
       required:
         - id
         - applicationId
@@ -4921,6 +5555,63 @@ components:
         - total
         - page
         - limit
+    TaskCommentMediaDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          example: https://s3.ru-7.storage.selcloud.ru/project-media/tasks/uuid/file.jpg
+        key:
+          type: string
+          example: tasks/uuid/file.jpg
+        size:
+          type: string
+          example: "12345"
+        mimeType:
+          type: string
+          example: image/jpeg
+      required:
+        - id
+        - url
+        - key
+        - size
+        - mimeType
+    TaskCommentResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+        authorId:
+          type: string
+          format: uuid
+        content:
+          type: string
+        media:
+          default: []
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskCommentMediaDto"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - taskId
+        - authorId
+        - content
+        - media
+        - createdAt
+        - updatedAt
     SearchTaskCommentsResponseDto:
       type: object
       properties:
@@ -5001,26 +5692,6 @@ components:
         - total
         - page
         - limit
-    TaskCommentMediaInputDto:
-      type: object
-      properties:
-        url:
-          type: string
-          example: https://8e99a641-b75a-4250-a2a3-d3ec2dbeb156.selstorage.ru/tasks/uuid/file.jpg
-        key:
-          type: string
-          example: tasks/uuid/file.jpg
-        size:
-          type: string
-          example: "12345"
-        mimeType:
-          type: string
-          example: image/jpeg
-      required:
-        - url
-        - key
-        - size
-        - mimeType
     CreateTaskCommentDto:
       type: object
       properties:
@@ -5043,6 +5714,129 @@ components:
           maxLength: 2000
       required:
         - content
+    PublicationMediaDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sourceTaskMediaId:
+          type: string
+          format: uuid
+          nullable: true
+        url:
+          type: string
+        key:
+          type: string
+        size:
+          type: string
+        mimeType:
+          type: string
+      required:
+        - id
+        - url
+        - key
+        - size
+        - mimeType
+    PublicationResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+        postId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          nullable: true
+        description:
+          type: string
+        externalUrl:
+          type: string
+          nullable: true
+        platform:
+          type: string
+          enum:
+            - INSTAGRAM
+            - TIKTOK
+            - YOUTUBE
+            - TELEGRAM
+            - VK
+            - OTHER
+          nullable: true
+        brief:
+          type: object
+          additionalProperties: true
+          nullable: true
+        deliverables:
+          type: object
+          additionalProperties: true
+          nullable: true
+        location:
+          type: object
+          additionalProperties: true
+          nullable: true
+        status:
+          type: string
+          enum:
+            - PUBLISHED
+        publishedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        media:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublicationMediaDto"
+        owner:
+          $ref: "#/components/schemas/ApplicationOwnerDto"
+        executor:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ApplicationApplicantDto"
+      required:
+        - id
+        - taskId
+        - postId
+        - description
+        - status
+        - publishedAt
+        - createdAt
+        - updatedAt
+        - media
+        - owner
+    UpdatePublicationDto:
+      type: object
+      properties:
+        title:
+          type: string
+          nullable: true
+        description:
+          type: string
+          maxLength: 5000
+        externalUrl:
+          type: string
+          nullable: true
+          example: https://instagram.com/p/abc
+        platform:
+          type: string
+          enum:
+            - INSTAGRAM
+            - TIKTOK
+            - YOUTUBE
+            - TELEGRAM
+            - VK
+            - OTHER
+          nullable: true
     FavoriteResponseDto:
       type: object
       properties:

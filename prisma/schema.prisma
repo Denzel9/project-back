@@ -124,6 +124,25 @@ enum TaskMediaKind {
   REPORT
 }
 
+enum NotificationType {
+  APPLICATION_NEW
+  APPLICATION_STATUS_CHANGED
+  APPLICATION_WITHDRAWN
+  TASK_CREATED
+  TASK_STATUS_CHANGED
+  TASK_EXECUTOR_ASSIGNED
+  TASK_COMMENT_CREATED
+  TASK_MEDIA_ADDED
+  CHAT_MESSAGE
+  TEAM_INVITE
+  MEMBERSHIP_REVOKED
+  PUBLICATION_CREATED
+}
+
+enum PublicationStatus {
+  PUBLISHED
+}
+
 model Account {
   id          String              @id @default(uuid())
   email       String              @unique
@@ -196,6 +215,27 @@ model User {
   executedTasks            Task[]                    @relation("ExecutedTasks")
   taskComments             TaskComment[]
   taskActivities           TaskActivity[]
+  notifications            Notification[]
+  sentNotifications        Notification[]            @relation("NotificationActor")
+  ownedPublications        Publication[]             @relation("OwnedPublications")
+  executedPublications     Publication[]             @relation("ExecutedPublications")
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  recipientId String
+  recipient   User             @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  actorId     String?
+  actor       User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  type        NotificationType
+  title       String
+  body        String?
+  payload     Json
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@index([recipientId, createdAt])
+  @@index([recipientId, readAt])
 }
 
 model Conversation {
@@ -289,6 +329,7 @@ model Post {
   favorites           FavoritePost[]
   applications        PostApplication[]
   tasks               Task[]
+  publications        Publication[]
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
 
@@ -389,9 +430,15 @@ model Task {
   urgent            Boolean          @default(false)
   isExecutorApprove Boolean?
   isCompanyAction   Boolean          @default(true)
+  location          Json?
+  bloggerRequirements Json?
+  cooperationDetails  Json?
+  brief               Json?
+  deliverables        Json?
   media             TaskMedia[]
   comments          TaskComment[]
   activities        TaskActivity[]
+  publication       Publication?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -456,4 +503,47 @@ model TaskActivity {
   createdAt DateTime         @default(now())
 
   @@index([taskId, createdAt])
+}
+
+model Publication {
+  id           String             @id @default(uuid())
+  taskId       String             @unique
+  task         Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  postId       String
+  post         Post               @relation(fields: [postId], references: [id], onDelete: Cascade)
+  ownerId      String
+  owner        User               @relation("OwnedPublications", fields: [ownerId], references: [id], onDelete: Cascade)
+  executorId   String?
+  executor     User?              @relation("ExecutedPublications", fields: [executorId], references: [id], onDelete: SetNull)
+  title        String?
+  description  String             @default("")
+  externalUrl  String?
+  platform     Platform?
+  brief        Json?
+  deliverables Json?
+  location     Json?
+  status       PublicationStatus  @default(PUBLISHED)
+  media        PublicationMedia[]
+  publishedAt  DateTime           @default(now())
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([ownerId])
+  @@index([executorId])
+  @@index([postId])
+}
+
+model PublicationMedia {
+  id                String      @id @default(uuid())
+  publicationId     String
+  publication       Publication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  sourceTaskMediaId String?
+  url               String
+  key               String
+  size              String
+  mimeType          String
+  sortOrder         Int         @default(0)
+  createdAt         DateTime    @default(now())
+
+  @@index([publicationId])
 }

@@ -13,12 +13,19 @@ import {
   TaskActivityType,
   TaskMediaKind,
   TaskStatus,
+  NotificationType,
 } from '@prisma/client';
 import { ApplicationApplicantDto } from '../applications/dto/application-applicant.dto';
 import { AuthUser } from '../auth/auth.types';
-import { buildCalendarDayFilter } from '../common/date/calendar-day-filter';
+import {
+  buildCalendarDayFilter,
+  buildCalendarDateRangeFilter,
+} from '../common/date/calendar-day-filter';
 import { StorageService } from '../media/storage.service';
 import { ALLOWED_DOCUMENT_MIME_TYPES } from '../media/media.constants';
+import { formatTaskStatus } from '../notifications/notification-labels.util';
+import { NotificationsService } from '../notifications/notifications.service';
+import { PublicationsService } from '../publications/publications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
 import { TaskCommentMediaInputDto } from './dto/task-comment-media-input.dto';
@@ -40,6 +47,14 @@ import { TaskAttachmentResponseDto } from './dto/task-attachment-response.dto';
 import { SearchTaskCommentsQueryDto } from './dto/search-task-comments-query.dto';
 import { TaskCommentAttachmentResponseDto } from './dto/task-comment-attachment-response.dto';
 import { ListTasksQueryDto, TaskListRole } from './dto/list-tasks-query.dto';
+import { ListTasksCalendarQueryDto } from './dto/list-tasks-calendar-query.dto';
+import { ListTaskStatsQueryDto } from './dto/list-task-stats-query.dto';
+import { TaskStatsResponseDto } from './dto/task-stats-response.dto';
+import { TaskCalendarDateField } from './dto/task-calendar-date-field.enum';
+import {
+  TaskCalendarItemDto,
+  TaskCalendarParticipantDto,
+} from './dto/task-calendar-item.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { TaskActivityResponseDto } from './dto/task-activity-response.dto';
 import {
@@ -55,6 +70,12 @@ import {
 } from './task-comment-preview.util';
 
 type PrismaTx = Prisma.TransactionClient;
+
+const TERMINAL_TASK_STATUSES: TaskStatus[] = [
+  TaskStatus.COMPLETED,
+  TaskStatus.CANCELLED,
+  TaskStatus.CANCELLED_EXECUTOR,
+];
 
 export const taskWithMediaInclude = {
   media: {
@@ -100,24 +121,29 @@ export const taskListInclude = {
   },
 } satisfies Prisma.TaskInclude;
 
+const taskCalendarInclude = {
+  post: {
+    select: {
+      title: true,
+    },
+  },
+  owner: {
+    include: executorInclude,
+  },
+  executor: {
+    include: executorInclude,
+  },
+} satisfies Prisma.TaskInclude;
+
+type TaskCalendarItem = Prisma.TaskGetPayload<{
+  include: typeof taskCalendarInclude;
+}>;
+
 const commentWithMediaInclude = {
   media: {
     orderBy: { sortOrder: 'asc' as const },
   },
 } satisfies Prisma.TaskCommentInclude;
-
-const taskInclude = {
-  ...taskListInclude,
-  executor: {
-    select: {
-      id: true,
-    },
-  },
-  comments: {
-    orderBy: { createdAt: 'asc' as const },
-    include: commentWithMediaInclude,
-  },
-} satisfies Prisma.TaskInclude;
 
 type TaskListItem = Prisma.TaskGetPayload<{
   include: typeof taskListInclude;
@@ -134,23 +160,7 @@ export type TaskWithMedia = Task & {
   }[];
 };
 
-type TaskWithRelations = TaskWithMedia & {
-  comments?: Array<{
-    id: string;
-    taskId: string;
-    authorId: string;
-    content: string;
-    createdAt: Date;
-    updatedAt: Date;
-    media: {
-      id: string;
-      url: string;
-      key: string;
-      size: string;
-      mimeType: string;
-    }[];
-  }>;
-};
+type TaskWithRelations = TaskWithMedia;
 
 type TaskChange = {
   type: TaskActivityType;
@@ -161,7 +171,9 @@ type TaskChange = {
 export class TasksService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly notificationsService: NotificationsService,
+    private readonly publicationsService: PublicationsService
   ) {}
 
   async createFromAcceptedApplication(
@@ -254,7 +266,43 @@ export class TasksService {
       include: taskListInclude,
     });
 
-    return this.toResponse(task, {
+    const media = dto.media ?? [];
+
+    if (media.length > 0) {
+      this.assertCreateTaskMediaKeys(task.id, task.postId, post.ownerId, media);
+
+      for (const item of media) {
+        await this.addMedia(task.id, user.userId, item);
+      }
+    }
+
+    const taskWithMedia =
+      media.length > 0
+        ? await this.prisma.task.findUniqueOrThrow({
+          where: { id: task.id },
+          include: taskListInclude,
+        })
+        : task;
+
+    if (task.executorId) {
+      const title = task.title ?? task.post.title;
+      await this.notificationsService.notify({
+        recipientId: task.executorId,
+        actorId: user.userId,
+        type: NotificationType.TASK_CREATED,
+        title: `Создана задача «${title}»`,
+        body: 'Вы назначены исполнителем',
+        payload: {
+          entityType: 'task',
+          entityId: task.id,
+          postId: task.postId,
+          taskId: task.id,
+          meta: { postTitle: task.post.title, taskTitle: task.title },
+        },
+      });
+    }
+
+    return this.toResponse(taskWithMedia, {
       includePost: true,
       includeExecutor: true,
       includeOwner: true,
@@ -315,6 +363,180 @@ export class TasksService {
     });
   }
 
+  async getStats(
+    user: AuthUser,
+    query: ListTaskStatsQueryDto
+  ): Promise<TaskStatsResponseDto> {
+    const baseWhere = this.buildStatsBaseWhere(user.userId, query);
+    const activeWhere: Prisma.TaskWhereInput = {
+      ...baseWhere,
+      status: { notIn: TERMINAL_TASK_STATUSES },
+    };
+    const now = new Date();
+
+    const [
+      awaitingAction,
+      awaitingConfirmation,
+      unassigned,
+      overdue,
+      urgent,
+      underReview,
+      cancelled,
+    ] = await Promise.all([
+      this.prisma.task.count({
+        where: this.buildAwaitingActionWhere(
+          user.userId,
+          query.role,
+          activeWhere
+        ),
+      }),
+      this.prisma.task.count({
+        where: {
+          ...activeWhere,
+          isExecutorApprove: null,
+        },
+      }),
+      query.role === TaskListRole.EXECUTOR
+        ? Promise.resolve(0)
+        : this.prisma.task.count({
+          where: {
+            ...activeWhere,
+            ownerId: user.userId,
+            executorId: null,
+          },
+        }),
+      this.prisma.task.count({
+        where: {
+          ...activeWhere,
+          finalDate: { lt: now },
+        },
+      }),
+      this.prisma.task.count({
+        where: {
+          ...activeWhere,
+          urgent: true,
+        },
+      }),
+      this.prisma.task.count({
+        where: {
+          ...baseWhere,
+          status: TaskStatus.CHECKING,
+        },
+      }),
+      this.prisma.task.count({
+        where: {
+          ...baseWhere,
+          status: {
+            in: [TaskStatus.CANCELLED, TaskStatus.CANCELLED_EXECUTOR],
+          },
+        },
+      }),
+    ]);
+
+    return {
+      awaitingAction,
+      awaitingConfirmation,
+      unassigned,
+      overdue,
+      urgent,
+      underReview,
+      cancelled,
+    };
+  }
+
+  async listCalendar(user: AuthUser, query: ListTasksCalendarQueryDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 100;
+    const skip = (page - 1) * limit;
+    const dateField = query.dateField ?? TaskCalendarDateField.CREATED_AT;
+    const where = this.buildCalendarWhere(user.userId, query);
+
+    const [items, total] = await Promise.all([
+      this.prisma.task.findMany({
+        where,
+        orderBy: { [dateField]: 'asc' },
+        skip,
+        take: limit,
+        include: taskCalendarInclude,
+      }),
+      this.prisma.task.count({ where }),
+    ]);
+
+    return {
+      items: items.map(task => this.toCalendarItem(task)),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  private buildCalendarWhere(
+    userId: string,
+    query: ListTasksCalendarQueryDto
+  ): Prisma.TaskWhereInput {
+    const dateRangeFilter = buildCalendarDateRangeFilter(
+      query.dateFrom,
+      query.dateTo
+    );
+    const dateField = query.dateField ?? TaskCalendarDateField.CREATED_AT;
+
+    return {
+      ...this.buildParticipantTaskWhere(userId, query.role),
+      ...(query.ownerId !== undefined && { ownerId: query.ownerId }),
+      ...(query.executorId !== undefined && { executorId: query.executorId }),
+      ...(query.urgent !== undefined && { urgent: query.urgent }),
+      ...(dateRangeFilter !== undefined && {
+        [dateField]: dateRangeFilter,
+      }),
+    };
+  }
+
+  private toCalendarItem(task: TaskCalendarItem): TaskCalendarItemDto {
+    return {
+      id: task.id,
+      createdAt: task.createdAt.toISOString(),
+      updatedAt: task.updatedAt.toISOString(),
+      urgent: task.urgent,
+      finalDate: task.finalDate?.toISOString() ?? null,
+      title: resolveTaskTitle(task.title, task.post.title),
+      owner: this.mapCalendarParticipant(task.owner),
+      executor: task.executor
+        ? this.mapCalendarParticipant(task.executor)
+        : null,
+    };
+  }
+
+  private mapCalendarParticipant(user: {
+    id: string;
+    role: Role;
+    avatar: string | null;
+    creatorProfile: { name: string; lastName: string } | null;
+    companyProfile: { companyName: string } | null;
+  }): TaskCalendarParticipantDto {
+    const base: TaskCalendarParticipantDto = {
+      id: user.id,
+      role: user.role,
+      avatar: user.avatar,
+    };
+
+    if (user.role === Role.CREATOR && user.creatorProfile) {
+      return {
+        ...base,
+        name: user.creatorProfile.name,
+        lastName: user.creatorProfile.lastName,
+      };
+    }
+
+    if (user.role === Role.COMPANY && user.companyProfile) {
+      return {
+        ...base,
+        companyName: user.companyProfile.companyName,
+      };
+    }
+
+    return base;
+  }
+
   private async queryTasks(
     user: AuthUser,
     query: ListTasksQueryDto,
@@ -361,12 +583,31 @@ export class TasksService {
       forceExecutorRole?: boolean;
     } = {}
   ): Prisma.TaskWhereInput {
-    const updatedAtFilter = buildCalendarDayFilter(query.updatedDate);
+    const hasDateRange =
+      query.dateFrom !== undefined || query.dateTo !== undefined;
+
+    if (query.createdDate !== undefined && hasDateRange) {
+      throw new BadRequestException(
+        'Нельзя одновременно использовать createdDate и dateFrom/dateTo'
+      );
+    }
+
+    const createdAtDayFilter = buildCalendarDayFilter(query.createdDate);
+    const createdAtRangeFilter = buildCalendarDateRangeFilter(
+      query.dateFrom,
+      query.dateTo
+    );
     const role = options.forceExecutorRole ? TaskListRole.EXECUTOR : query.role;
     const executorApprovalWhere =
       options.executorApprovalFilter === 'unapproved'
         ? { isExecutorApprove: null }
         : {};
+    const statusFilter = this.resolveTaskStatusFilter(query);
+    const unassignedWhere = this.buildUnassignedListWhere(
+      userId,
+      query,
+      role
+    );
 
     const where: Prisma.TaskWhereInput = {
       ...(role === TaskListRole.OWNER && { ownerId: userId }),
@@ -380,15 +621,108 @@ export class TasksService {
           { executorId: userId, ...executorApprovalWhere },
         ],
       }),
-      ...(query.status !== undefined && { status: query.status }),
+      ...(statusFilter !== undefined && { status: statusFilter }),
       ...(query.postId !== undefined && { postId: query.postId }),
-      ...(updatedAtFilter !== undefined && { updatedAt: updatedAtFilter }),
+      ...(createdAtDayFilter !== undefined && {
+        createdAt: createdAtDayFilter,
+      }),
+      ...(createdAtRangeFilter !== undefined && {
+        createdAt: createdAtRangeFilter,
+      }),
       ...(query.q !== undefined && {
         post: this.buildPostSearchWhere(query.q),
       }),
+      ...(query.isCompanyAction !== undefined && {
+        isCompanyAction: query.isCompanyAction,
+      }),
+      ...(query.isExecutorApprove !== undefined &&
+        options.executorApprovalFilter !== 'unapproved' && {
+          isExecutorApprove: query.isExecutorApprove,
+        }),
+      ...(query.urgent !== undefined && { urgent: query.urgent }),
+      ...(query.overdue === true && {
+        finalDate: { lt: new Date() },
+      }),
+      ...unassignedWhere,
     };
 
     return where;
+  }
+
+  private resolveStatuses(
+    status?: TaskStatus,
+    statuses?: TaskStatus[]
+  ): TaskStatus[] | undefined {
+    if (statuses !== undefined && statuses.length > 0) {
+      return statuses;
+    }
+
+    if (status !== undefined) {
+      return [status];
+    }
+
+    return undefined;
+  }
+
+  private resolveTaskStatusFilter(
+    query: ListTasksQueryDto
+  ): Prisma.EnumTaskStatusFilter | undefined {
+    const explicit = this.resolveStatuses(query.status, query.statuses);
+
+    if (explicit !== undefined) {
+      let allowed = explicit;
+
+      if (query.active === true) {
+        allowed = allowed.filter(
+          status => !TERMINAL_TASK_STATUSES.includes(status)
+        );
+      } else if (query.excludeCompleted === true) {
+        allowed = allowed.filter(status => status !== TaskStatus.COMPLETED);
+      }
+
+      if (allowed.length === 0) {
+        return { in: [] };
+      }
+
+      return allowed.length === 1
+        ? { equals: allowed[0] }
+        : { in: allowed };
+    }
+
+    if (query.active === true) {
+      return { notIn: TERMINAL_TASK_STATUSES };
+    }
+
+    if (query.excludeCompleted === true) {
+      return { not: TaskStatus.COMPLETED };
+    }
+
+    return undefined;
+  }
+
+  private buildUnassignedListWhere(
+    userId: string,
+    query: ListTasksQueryDto,
+    role?: TaskListRole
+  ): Prisma.TaskWhereInput {
+    if (query.unassigned !== true) {
+      return {};
+    }
+
+    if (role === TaskListRole.EXECUTOR) {
+      return {
+        AND: [{ executorId: userId }, { executorId: null }],
+      };
+    }
+
+    if (role === TaskListRole.OWNER) {
+      return { executorId: null };
+    }
+
+    return {
+      ownerId: userId,
+      executorId: null,
+    };
   }
 
   private buildParticipantTaskWhere(
@@ -405,6 +739,48 @@ export class TasksService {
 
     return {
       OR: [{ ownerId: userId }, { executorId: userId }],
+    };
+  }
+
+  private buildStatsBaseWhere(
+    userId: string,
+    query: ListTaskStatsQueryDto
+  ): Prisma.TaskWhereInput {
+    return {
+      ...this.buildParticipantTaskWhere(userId, query.role),
+      ...(query.postId !== undefined && { postId: query.postId }),
+    };
+  }
+
+  private buildAwaitingActionWhere(
+    userId: string,
+    role: TaskListRole | undefined,
+    activeWhere: Prisma.TaskWhereInput
+  ): Prisma.TaskWhereInput {
+    if (role === TaskListRole.OWNER) {
+      return {
+        ...activeWhere,
+        isCompanyAction: true,
+      };
+    }
+
+    if (role === TaskListRole.EXECUTOR) {
+      return {
+        ...activeWhere,
+        isCompanyAction: false,
+      };
+    }
+
+    return {
+      AND: [
+        activeWhere,
+        {
+          OR: [
+            { ownerId: userId, isCompanyAction: true },
+            { executorId: userId, isCompanyAction: false },
+          ],
+        },
+      ],
     };
   }
 
@@ -473,15 +849,13 @@ export class TasksService {
       _count: { _all: true },
     });
 
-    return new Map(
-      groups.map(group => [group.taskId, group._count._all])
-    );
+    return new Map(groups.map(group => [group.taskId, group._count._all]));
   }
 
   async findById(user: AuthUser, id: string): Promise<TaskResponseDto> {
     const task = await this.prisma.task.findUnique({
       where: { id },
-      include: taskInclude,
+      include: taskListInclude,
     });
 
     if (!task) {
@@ -490,10 +864,10 @@ export class TasksService {
 
     this.assertParticipant(task, user.userId);
 
-    return this.toResponse(task, {
-      includeComments: true,
-      ...this.participantResponseOptions(user.userId, task),
-    });
+    return this.toResponse(
+      task,
+      this.participantResponseOptions(user.userId, task)
+    );
   }
 
   async update(
@@ -532,7 +906,121 @@ export class TasksService {
       return updatedTask;
     });
 
+    await this.dispatchTaskUpdateNotifications(
+      task,
+      updated,
+      user.userId,
+      changes
+    );
+    await this.dispatchPublicationOnCompleted(updated, user.userId, changes);
+
     return this.toResponse(updated);
+  }
+
+  private async dispatchPublicationOnCompleted(
+    task: Task,
+    actorId: string,
+    changes: TaskChange[]
+  ): Promise<void> {
+    const completed = changes.some(change => {
+      if (change.type !== TaskActivityType.STATUS_CHANGED) {
+        return false;
+      }
+
+      const payload = change.payload as { to?: TaskStatus };
+      return payload.to === TaskStatus.COMPLETED;
+    });
+
+    if (!completed) {
+      return;
+    }
+
+    await this.publicationsService.createFromCompletedTask(task.id, actorId);
+  }
+
+  private async dispatchTaskUpdateNotifications(
+    previous: Task,
+    updated: Task,
+    actorId: string,
+    changes: TaskChange[]
+  ): Promise<void> {
+    const recipientId = this.resolveOtherParticipantId(previous, actorId);
+
+    if (!recipientId) {
+      return;
+    }
+
+    const taskTitle = updated.title ?? 'Задача';
+
+    for (const change of changes) {
+      if (change.type === TaskActivityType.STATUS_CHANGED) {
+        const payload = change.payload as {
+          from: TaskStatus;
+          to: TaskStatus;
+        };
+
+        await this.notificationsService.notify({
+          recipientId,
+          actorId,
+          type: NotificationType.TASK_STATUS_CHANGED,
+          title: `Статус задачи: ${formatTaskStatus(payload.to)}`,
+          body: `«${taskTitle}»`,
+          payload: {
+            entityType: 'task',
+            entityId: updated.id,
+            postId: updated.postId,
+            taskId: updated.id,
+            meta: {
+              taskTitle: updated.title,
+              from: payload.from,
+              to: payload.to,
+            },
+          },
+        });
+      }
+
+      if (
+        change.type === TaskActivityType.FIELD_UPDATED &&
+        (change.payload as { field?: string }).field === 'executorId'
+      ) {
+        const payload = change.payload as {
+          from: string | null;
+          to: string | null;
+        };
+
+        if (payload.to && payload.to !== actorId) {
+          await this.notificationsService.notify({
+            recipientId: payload.to,
+            actorId,
+            type: NotificationType.TASK_EXECUTOR_ASSIGNED,
+            title: `Вас назначили исполнителем`,
+            body: `«${taskTitle}»`,
+            payload: {
+              entityType: 'task',
+              entityId: updated.id,
+              postId: updated.postId,
+              taskId: updated.id,
+              meta: { taskTitle: updated.title },
+            },
+          });
+        }
+      }
+    }
+  }
+
+  private resolveOtherParticipantId(
+    task: { ownerId: string; executorId: string | null },
+    actorId: string
+  ): string | null {
+    if (task.ownerId === actorId) {
+      return task.executorId;
+    }
+
+    if (task.executorId === actorId) {
+      return task.ownerId;
+    }
+
+    return null;
   }
 
   async assertParticipantForMedia(userId: string, taskId: string) {
@@ -584,6 +1072,30 @@ export class TasksService {
       mimeType: media.mimeType,
       size: media.size,
     });
+
+    if (kind === TaskMediaKind.REPORT) {
+      const task = await this.prisma.task.findUnique({
+        where: { id: taskId },
+        select: { id: true, ownerId: true, postId: true, title: true },
+      });
+
+      if (task && task.ownerId !== actorId) {
+        await this.notificationsService.notify({
+          recipientId: task.ownerId,
+          actorId,
+          type: NotificationType.TASK_MEDIA_ADDED,
+          title: 'Исполнитель загрузил отчёт',
+          body: task.title ? `«${task.title}»` : undefined,
+          payload: {
+            entityType: 'task',
+            entityId: task.id,
+            postId: task.postId,
+            taskId: task.id,
+            meta: { taskTitle: task.title, kind },
+          },
+        });
+      }
+    }
 
     return media;
   }
@@ -705,10 +1217,7 @@ export class TasksService {
     };
   }
 
-  async listAllComments(
-    user: AuthUser,
-    query: ListAllTaskCommentsQueryDto
-  ) {
+  async listAllComments(user: AuthUser, query: ListAllTaskCommentsQueryDto) {
     if (query.taskId !== undefined) {
       const task = await this.getTaskOrThrow(query.taskId);
       this.assertParticipant(task, user.userId);
@@ -1065,6 +1574,35 @@ export class TasksService {
       data: { updatedAt: comment.createdAt },
     });
 
+    const recipientId = this.resolveOtherParticipantId(task, user.userId);
+
+    if (recipientId) {
+      const preview =
+        content.length > 0
+          ? content.slice(0, 200)
+          : media.length > 0
+            ? '[медиа]'
+            : '';
+
+      await this.notificationsService.notify({
+        recipientId,
+        actorId: user.userId,
+        type: NotificationType.TASK_COMMENT_CREATED,
+        title: 'Новый комментарий к задаче',
+        body: preview,
+        payload: {
+          entityType: 'task',
+          entityId: taskId,
+          postId: task.postId,
+          taskId,
+          meta: {
+            commentId: comment.id,
+            preview,
+          },
+        },
+      });
+    }
+
     return this.toCommentResponse(comment);
   }
 
@@ -1364,6 +1902,29 @@ export class TasksService {
     }
   }
 
+  private assertCreateTaskMediaKeys(
+    taskId: string,
+    postId: string,
+    ownerId: string,
+    media: TaskCommentMediaInputDto[]
+  ) {
+    const allowedPrefixes = [
+      `${ownerId}/`,
+      `posts/${postId}/`,
+      `tasks/${taskId}/main/`,
+      `tasks/${taskId}/reports/`,
+      `tasks/${taskId}/`,
+    ];
+
+    for (const item of media) {
+      if (!allowedPrefixes.some(prefix => item.key.startsWith(prefix))) {
+        throw new BadRequestException(
+          'Недопустимый ключ медиа. Загрузите файл через POST /media/upload (без taskId или с postId)'
+        );
+      }
+    }
+  }
+
   private async getCommentOrThrow(
     taskId: string,
     commentId: string,
@@ -1498,7 +2059,6 @@ export class TasksService {
   private toResponse(
     task: TaskWithRelations | TaskListItem,
     options: {
-      includeComments?: boolean;
       includeExecutor?: boolean;
       includePost?: boolean;
       includeOwner?: boolean;
@@ -1526,13 +2086,6 @@ export class TasksService {
       isCompanyAction: task.isCompanyAction,
       createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString(),
-      ...(options.includeComments &&
-        'comments' in task &&
-        task.comments && {
-        comments: task.comments.map(comment =>
-          this.toCommentResponse(comment)
-        ),
-      }),
       ...(options.includePost &&
         'post' in task && {
         post: {

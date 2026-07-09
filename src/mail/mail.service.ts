@@ -12,6 +12,10 @@ import {
   ApplicationReceivedEmailParams,
   buildApplicationReceivedEmail,
 } from './templates/application-received';
+import {
+  buildNotificationEmail,
+  NotificationEmailParams,
+} from './templates/notification';
 
 @Injectable()
 export class MailService {
@@ -59,6 +63,15 @@ export class MailService {
     params: ApplicationReceivedEmailParams
   ): Promise<void> {
     const { subject, text, html } = buildApplicationReceivedEmail(params);
+
+    await this.sendMail({ to, subject, text, html });
+  }
+
+  async sendNotificationEmail(
+    to: string,
+    params: NotificationEmailParams
+  ): Promise<void> {
+    const { subject, text, html } = buildNotificationEmail(params);
 
     await this.sendMail({ to, subject, text, html });
   }
