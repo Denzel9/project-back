@@ -26,6 +26,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { MembershipWriteGuard } from '../auth/guards/membership-write.guard';
+import { EmailConfirmedGuard } from '../auth/guards/email-confirmed.guard';
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
 import { PostResponseDto } from './dto/post-response.dto';
@@ -45,7 +46,7 @@ export class PostsController {
   ) {}
 
   @Post()
-  @UseGuards(MembershipWriteGuard)
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Создать пост',
     description:
@@ -68,7 +69,7 @@ export class PostsController {
       'С `ownerId` = свой id — все свои посты (включая приватные). ' +
       'Поиск: `q` — по title или companyName; `title` — только по названию поста. ' +
       'Базовые фильтры: `type` (свои), `isArchived`, `isPrivate` (свои). ' +
-      'Доп. фильтры: `urgent`, `chips`, `categories`, `platforms`, `placementFormats`, `niche`, `tags`, `workFormat`, ' +
+      'Доп. фильтры: `urgent`, `hasPhoto`, `chips`, `categories`, `platforms`, `placementFormats`, `niche`, `tags`, `workFormat`, ' +
       '`createdDate`, `deadlineDate`, `budgetType`, `budgetCurrency`, `paymentTerms`, `locationCity`, `locationCountry`, `shootingRequired`, ' +
       '`minFollowers`, `maxFollowers`, `minEngagementRate`, `verifiedAccount`, `experienceWithAds`, `contentStyle`, ' +
       '`exclusivity`, `exclusivityDays`, `usageRights`, `usageDurationDays`, `requiresMarking`, `requiresContract`, `ndaRequired`, ' +
@@ -85,7 +86,8 @@ export class PostsController {
     summary: 'Отклики на пост',
     description:
       'Владелец поста — все отклики с данными соискателя (applicant). ' +
-      'Соискатель — только свой отклик. Фильтр по status, пагинация page/limit.',
+      'Соискатель — только свой отклик. ' +
+      'Фильтры: `status`, `createdDate` (YYYY-MM-DD, UTC), пагинация `page`/`limit`.',
   })
   @ApiOkResponse({ description: 'Список откликов на пост' })
   @ApiNotFoundResponse({ description: 'Пост не найден' })
@@ -117,7 +119,7 @@ export class PostsController {
   }
 
   @Patch(':id')
-  @UseGuards(MembershipWriteGuard)
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Обновить пост',
     description:
@@ -138,7 +140,7 @@ export class PostsController {
   }
 
   @Delete(':id')
-  @UseGuards(MembershipWriteGuard)
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Удалить пост',

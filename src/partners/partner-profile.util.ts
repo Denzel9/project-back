@@ -4,6 +4,12 @@ import { PartnerSummaryDto } from './dto/partner-summary.dto';
 const partnerUserInclude = {
   creatorProfile: true,
   companyProfile: true,
+  _count: {
+    select: {
+      ownedPublications: true,
+      executedPublications: true,
+    },
+  },
 } satisfies Prisma.UserInclude;
 
 export type PartnerUser = Prisma.UserGetPayload<{
@@ -20,8 +26,9 @@ export function mapPartnerSummary(
     id: user.id,
     role: user.role,
     avatar: user.avatar,
-    bio: user.bio,
-    followers: user.followers,
+    isVerified: user.isVerified,
+    publicationsCount:
+      user._count.ownedPublications + user._count.executedPublications,
     interactionsCount: stats.interactionsCount,
     lastInteractionAt: stats.lastInteractionAt.toISOString(),
   };

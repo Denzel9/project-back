@@ -39,6 +39,7 @@ import { RegisterCompanyDto } from './dto/register-company.dto';
 import { RegisterCreatorDto } from './dto/register-creator.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ConfirmEmailDto } from './dto/confirm-email.dto';
 import { VerifyPasswordDto } from './dto/verify-password.dto';
 import { VerifyPasswordResponseDto } from './dto/verify-password-response.dto';
 import { SwitchProfileDto } from './dto/switch-profile.dto';
@@ -270,6 +271,48 @@ export class AuthController {
   })
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
+  }
+
+  @Post('confirm-email/send')
+  @UseGuards(JwtAuthGuard)
+  @ApiCookieAuth('access-token')
+  @ApiOperation({
+    summary: 'Отправить письмо для подтверждения почты',
+    description:
+      'Отправляет письмо со ссылкой подтверждения на email Account текущего профиля. ' +
+      'Если почта уже подтверждена — возвращает сообщение без повторной отправки.',
+  })
+  @ApiOkResponse({
+    description: 'Письмо отправлено или почта уже подтверждена',
+    schema: {
+      type: 'object',
+      properties: { message: { type: 'string' } },
+    },
+  })
+  @ApiUnauthorizedResponse({ description: 'Не авторизован' })
+  sendConfirmEmail(@CurrentUser() user: AuthUser) {
+    return this.authService.sendConfirmEmail(user);
+  }
+
+  @Post('confirm-email')
+  @ApiOperation({
+    summary: 'Подтвердить почту',
+    description:
+      'Подтверждает почту по token из письма. ' +
+      'Token передаёт фронт из query-параметра URL `/auth/confirm-email?token=...`.',
+  })
+  @ApiOkResponse({
+    description: 'Почта подтверждена',
+    schema: {
+      type: 'object',
+      properties: { message: { type: 'string' } },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: 'Недействительный или просроченный token',
+  })
+  confirmEmail(@Body() dto: ConfirmEmailDto) {
+    return this.authService.confirmEmail(dto);
   }
 
   @Post('verify-password')

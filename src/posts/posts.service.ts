@@ -28,27 +28,18 @@ import {
   assertCanViewPost,
   visiblePostTypeForRole,
 } from './post-visibility.util';
+import {
+  mapOwnerWithStats,
+  userOwnerWithStatsSelect,
+  type UserStatsCount,
+} from '../users/user-stats.util';
 
 export const postWithMediaInclude = {
   media: {
     orderBy: { sortOrder: 'asc' as const },
   },
   owner: {
-    select: {
-      id: true,
-      avatar: true,
-      creatorProfile: {
-        select: {
-          name: true,
-          lastName: true,
-        },
-      },
-      companyProfile: {
-        select: {
-          companyName: true,
-        },
-      },
-    },
+    select: userOwnerWithStatsSelect,
   },
 } satisfies Prisma.PostInclude;
 
@@ -71,6 +62,7 @@ export type PostWithMedia = Post & {
     companyProfile: {
       companyName: string;
     };
+    _count: UserStatsCount;
   };
 };
 
@@ -332,17 +324,7 @@ export class PostsService {
       type: post.type,
       chips: post.chips,
       urgent: post.urgent,
-      owner: {
-        id: post.owner.id,
-        avatar: post.owner.avatar,
-        creatorProfile: {
-          name: post.owner.creatorProfile?.name,
-          lastName: post.owner.creatorProfile?.lastName,
-        },
-        companyProfile: {
-          companyName: post.owner.companyProfile?.companyName,
-        },
-      },
+      owner: mapOwnerWithStats(post.owner),
       createdAt: post.createdAt.toISOString(),
       updatedAt: post.updatedAt.toISOString(),
       media: post.media.map(item => ({

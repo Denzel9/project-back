@@ -2,9 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import {
   Prisma,
@@ -17,6 +19,10 @@ import {
 } from '@prisma/client';
 import { ApplicationApplicantDto } from '../applications/dto/application-applicant.dto';
 import { AuthUser } from '../auth/auth.types';
+import {
+  mapOwnerWithStats,
+  userOwnerWithStatsSelect,
+} from '../users/user-stats.util';
 import {
   buildCalendarDayFilter,
   buildCalendarDateRangeFilter,
@@ -68,6 +74,13 @@ import {
   buildCommentPreview,
   resolveTaskTitle,
 } from './task-comment-preview.util';
+import {
+  countUnreadComments,
+  isCommentRead,
+} from './task-comment-read.util';
+import { TaskCommentsGateway } from './task-comments.gateway';
+import { taskJsonFieldsFromDto } from './task-json-fields.util';
+import { jsonToArray, jsonToRecord } from '../posts/post-json.util';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -100,21 +113,7 @@ export const taskListInclude = {
     },
   },
   owner: {
-    select: {
-      id: true,
-      avatar: true,
-      creatorProfile: {
-        select: {
-          name: true,
-          lastName: true,
-        },
-      },
-      companyProfile: {
-        select: {
-          companyName: true,
-        },
-      },
-    },
+    select: userOwnerWithStatsSelect,
   },
   executor: {
     include: executorInclude,
@@ -173,7 +172,9 @@ export class TasksService {
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
     private readonly notificationsService: NotificationsService,
-    private readonly publicationsService: PublicationsService
+    private readonly publicationsService: PublicationsService,
+    @Inject(forwardRef(() => TaskCommentsGateway))
+    private readonly taskCommentsGateway: TaskCommentsGateway
   ) {}
 
   async createFromAcceptedApplication(
@@ -262,6 +263,7 @@ export class TasksService {
         ...(dto.isCompanyAction !== undefined && {
           isCompanyAction: dto.isCompanyAction,
         }),
+        ...taskJsonFieldsFromDto(dto),
       },
       include: taskListInclude,
     });
@@ -623,6 +625,8 @@ export class TasksService {
       }),
       ...(statusFilter !== undefined && { status: statusFilter }),
       ...(query.postId !== undefined && { postId: query.postId }),
+      ...(query.ownerId !== undefined && { ownerId: query.ownerId }),
+      ...(query.executorId !== undefined && { executorId: query.executorId }),
       ...(createdAtDayFilter !== undefined && {
         createdAt: createdAtDayFilter,
       }),
@@ -791,6 +795,7 @@ export class TasksService {
     const taskWhere: Prisma.TaskWhereInput = {
       ...this.buildParticipantTaskWhere(userId, query.role),
       ...(query.postId !== undefined && { postId: query.postId }),
+      ...(query.taskId !== undefined && { id: query.taskId }),
       ...(query.status !== undefined && { status: query.status }),
     };
 
@@ -826,30 +831,33 @@ export class TasksService {
 
   private async countUnreadCommentsByTask(
     userId: string,
-    taskIds: string[],
-    readAfter?: string
+    taskIds: string[]
   ): Promise<Map<string, number>> {
-    if (readAfter === undefined || taskIds.length === 0) {
+    if (taskIds.length === 0) {
       return new Map();
     }
 
-    const readAfterDate = new Date(readAfter);
-
-    if (Number.isNaN(readAfterDate.getTime())) {
-      throw new BadRequestException('readAfter должен быть валидной датой ISO');
-    }
-
-    const groups = await this.prisma.taskComment.groupBy({
-      by: ['taskId'],
-      where: {
-        taskId: { in: taskIds },
-        createdAt: { gt: readAfterDate },
-        authorId: { not: userId },
-      },
-      _count: { _all: true },
+    const readStates = await this.prisma.taskCommentReadState.findMany({
+      where: { userId, taskId: { in: taskIds } },
+      select: { taskId: true, lastReadAt: true },
     });
+    const lastReadByTask = new Map(
+      readStates.map(state => [state.taskId, state.lastReadAt])
+    );
 
-    return new Map(groups.map(group => [group.taskId, group._count._all]));
+    const entries = await Promise.all(
+      taskIds.map(async taskId => {
+        const count = await countUnreadComments(
+          this.prisma,
+          taskId,
+          userId,
+          lastReadByTask.get(taskId) ?? null
+        );
+        return [taskId, count] as const;
+      })
+    );
+
+    return new Map(entries);
   }
 
   async findById(user: AuthUser, id: string): Promise<TaskResponseDto> {
@@ -1247,8 +1255,10 @@ export class TasksService {
       this.prisma.taskComment.count({ where }),
     ]);
 
+    const mapped = await this.mapCommentsWithReadState(user.userId, items);
+
     return {
-      items: items.map(comment => this.toCommentResponse(comment)),
+      items: mapped,
       total,
       page,
       limit,
@@ -1316,8 +1326,7 @@ export class TasksService {
 
     const unreadByTaskId = await this.countUnreadCommentsByTask(
       user.userId,
-      taskIds,
-      query.readAfter
+      taskIds
     );
 
     const tasksById = new Map(tasks.map(task => [task.id, task]));
@@ -1335,7 +1344,7 @@ export class TasksService {
         continue;
       }
 
-      const item: TaskWithCommentsSummaryDto = {
+      items.push({
         taskId: group.taskId,
         title: resolveTaskTitle(task.title, task.post.title),
         lastComment: {
@@ -1347,14 +1356,8 @@ export class TasksService {
           authorId: lastComment.authorId,
         },
         commentsCount: group.commentsCount,
-      };
-
-      const unreadCount = unreadByTaskId.get(group.taskId);
-      if (unreadCount !== undefined) {
-        item.unreadCount = unreadCount;
-      }
-
-      items.push(item);
+        unreadCount: unreadByTaskId.get(group.taskId) ?? 0,
+      });
     }
 
     return { items, total, page, limit };
@@ -1371,6 +1374,14 @@ export class TasksService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
+    const shouldMarkRead = query.markRead ?? true;
+
+    let readState = await this.getTaskCommentReadState(task, user.userId);
+
+    if (shouldMarkRead) {
+      const readAt = await this.markTaskCommentsAsRead(taskId, user.userId);
+      readState = { ...readState, viewerLastReadAt: readAt };
+    }
 
     const where = { taskId };
 
@@ -1386,11 +1397,53 @@ export class TasksService {
     ]);
 
     return {
-      items: items.map(comment => this.toCommentResponse(comment)),
+      items: items.map(comment =>
+        this.toCommentResponse(
+          comment,
+          user.userId,
+          readState.viewerLastReadAt,
+          readState.peerLastReadAt
+        )
+      ),
       total,
       page,
       limit,
     };
+  }
+
+  async markTaskCommentsAsRead(taskId: string, userId: string): Promise<Date> {
+    const task = await this.getTaskOrThrow(taskId);
+    this.assertParticipant(task, userId);
+
+    const latestComment = await this.prisma.taskComment.findFirst({
+      where: { taskId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { createdAt: true },
+    });
+
+    const readAt = latestComment?.createdAt ?? new Date();
+
+    await this.prisma.taskCommentReadState.upsert({
+      where: {
+        taskId_userId: { taskId, userId },
+      },
+      create: {
+        taskId,
+        userId,
+        lastReadAt: readAt,
+      },
+      update: {
+        lastReadAt: readAt,
+      },
+    });
+
+    this.taskCommentsGateway.broadcastCommentsRead(taskId, {
+      taskId,
+      userId,
+      readAt: readAt.toISOString(),
+    });
+
+    return readAt;
   }
 
   async searchComments(
@@ -1404,6 +1457,7 @@ export class TasksService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
+    const readState = await this.getTaskCommentReadState(task, user.userId);
 
     const where: Prisma.TaskCommentWhereInput = {
       taskId,
@@ -1422,7 +1476,14 @@ export class TasksService {
     ]);
 
     return {
-      items: items.map(comment => this.toCommentResponse(comment)),
+      items: items.map(comment =>
+        this.toCommentResponse(
+          comment,
+          user.userId,
+          readState.viewerLastReadAt,
+          readState.peerLastReadAt
+        )
+      ),
       total,
       page,
       limit,
@@ -1603,7 +1664,17 @@ export class TasksService {
       });
     }
 
-    return this.toCommentResponse(comment);
+    const readState = await this.getTaskCommentReadState(task, user.userId);
+    const response = this.toCommentResponse(
+      comment,
+      user.userId,
+      readState.viewerLastReadAt,
+      readState.peerLastReadAt
+    );
+
+    this.taskCommentsGateway.broadcastComment(taskId, response);
+
+    return response;
   }
 
   async updateComment(
@@ -1615,15 +1686,49 @@ export class TasksService {
     const task = await this.getTaskOrThrow(taskId);
     this.assertParticipant(task, user.userId);
 
-    const comment = await this.getCommentOrThrow(taskId, commentId);
+    const comment = await this.getCommentOrThrow(taskId, commentId, {
+      includeMedia: true,
+    });
     this.assertCanModifyComment(task, comment.authorId, user.userId);
+
+    const trimmedContent = dto.content.trim();
+
+    if (!trimmedContent && comment.media.length === 0) {
+      throw new BadRequestException('Комментарий не может быть пустым');
+    }
+
+    const readState = await this.getTaskCommentReadState(task, user.userId);
+
+    if (trimmedContent === comment.content.trim()) {
+      return this.toCommentResponse(
+        comment,
+        user.userId,
+        readState.viewerLastReadAt,
+        readState.peerLastReadAt
+      );
+    }
+
+    const editedAt = new Date();
 
     const updated = await this.prisma.taskComment.update({
       where: { id: commentId },
-      data: { content: dto.content.trim() },
+      data: {
+        content: trimmedContent,
+        editedAt,
+      },
+      include: commentWithMediaInclude,
     });
 
-    return this.toCommentResponse(updated);
+    const response = this.toCommentResponse(
+      updated,
+      user.userId,
+      readState.viewerLastReadAt,
+      readState.peerLastReadAt
+    );
+
+    this.taskCommentsGateway.broadcastCommentEdited(taskId, response);
+
+    return response;
   }
 
   async deleteComment(
@@ -1650,6 +1755,16 @@ export class TasksService {
     await this.prisma.taskComment.delete({
       where: { id: commentId },
     });
+
+    this.taskCommentsGateway.broadcastCommentDeleted(taskId, {
+      taskId,
+      commentId,
+    });
+  }
+
+  async assertTaskParticipant(taskId: string, userId: string): Promise<void> {
+    const task = await this.getTaskOrThrow(taskId);
+    this.assertParticipant(task, userId);
   }
 
   private async logActivity(
@@ -1790,6 +1905,28 @@ export class TasksService {
       });
     }
 
+    for (const field of [
+      'location',
+      'bloggerRequirements',
+      'cooperationDetails',
+      'brief',
+      'deliverables',
+    ] as const) {
+      if (
+        dto[field] !== undefined &&
+        this.jsonFieldChanged(task[field], dto[field])
+      ) {
+        changes.push({
+          type: TaskActivityType.FIELD_UPDATED,
+          payload: {
+            field,
+            from: task[field] ?? null,
+            to: (dto[field] ?? null) as Prisma.InputJsonValue,
+          },
+        });
+      }
+    }
+
     if (
       dto.isExecutorApprove !== undefined &&
       dto.isExecutorApprove !== task.isExecutorApprove
@@ -1830,6 +1967,11 @@ export class TasksService {
         'videoCount',
         'urgent',
         'executorId',
+        'location',
+        'bloggerRequirements',
+        'cooperationDetails',
+        'brief',
+        'deliverables',
       ];
 
       for (const field of ownerOnlyFields) {
@@ -1873,6 +2015,8 @@ export class TasksService {
     if (dto.executorId !== undefined) {
       data.executor = { connect: { id: dto.executorId } };
     }
+
+    Object.assign(data, taskJsonFieldsFromDto(dto));
 
     return data;
   }
@@ -1977,7 +2121,10 @@ export class TasksService {
     }
   }
 
-  private assertParticipant(task: Task, userId: string) {
+  private assertParticipant(
+    task: Pick<Task, 'ownerId' | 'executorId'>,
+    userId: string
+  ) {
     if (
       task.ownerId !== userId &&
       (task.executorId === null || task.executorId !== userId)
@@ -1986,7 +2133,11 @@ export class TasksService {
     }
   }
 
-  private assertCanModifyComment(task: Task, authorId: string, userId: string) {
+  private assertCanModifyComment(
+    task: Pick<Task, 'ownerId'>,
+    authorId: string,
+    userId: string
+  ) {
     if (task.ownerId === userId) {
       return;
     }
@@ -2084,6 +2235,15 @@ export class TasksService {
       urgent: task.urgent,
       isExecutorApprove: task.isExecutorApprove ?? null,
       isCompanyAction: task.isCompanyAction,
+      location: this.mapTaskLocation(task.location),
+      bloggerRequirements: this.mapTaskBloggerRequirements(
+        task.bloggerRequirements
+      ),
+      cooperationDetails: this.mapTaskCooperationDetails(
+        task.cooperationDetails
+      ),
+      brief: this.mapTaskBrief(task.brief),
+      deliverables: this.mapTaskDeliverables(task.deliverables),
       createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString(),
       ...(options.includePost &&
@@ -2103,23 +2263,53 @@ export class TasksService {
       }),
       ...(options.includeOwner &&
         'owner' in task && {
-        owner: {
-          id: task.owner.id,
-          avatar: task.owner.avatar ?? undefined,
-          creatorProfile: task.owner.creatorProfile
-            ? {
-              name: task.owner.creatorProfile.name,
-              lastName: task.owner.creatorProfile.lastName,
-            }
-            : undefined,
-          companyProfile: task.owner.companyProfile
-            ? {
-              companyName: task.owner.companyProfile.companyName,
-            }
-            : undefined,
-        },
+        owner: mapOwnerWithStats(task.owner),
       }),
     };
+  }
+
+  private mapTaskLocation(
+    value: Prisma.JsonValue | null
+  ): TaskResponseDto['location'] {
+    const record = jsonToRecord(value);
+    return record ? (record as TaskResponseDto['location']) : null;
+  }
+
+  private mapTaskBloggerRequirements(
+    value: Prisma.JsonValue | null
+  ): TaskResponseDto['bloggerRequirements'] {
+    const record = jsonToRecord(value);
+    return record
+      ? (record as TaskResponseDto['bloggerRequirements'])
+      : null;
+  }
+
+  private mapTaskCooperationDetails(
+    value: Prisma.JsonValue | null
+  ): TaskResponseDto['cooperationDetails'] {
+    const record = jsonToRecord(value);
+    return record
+      ? (record as TaskResponseDto['cooperationDetails'])
+      : null;
+  }
+
+  private mapTaskBrief(value: Prisma.JsonValue | null): TaskResponseDto['brief'] {
+    const record = jsonToRecord(value);
+    return record ? (record as TaskResponseDto['brief']) : null;
+  }
+
+  private mapTaskDeliverables(
+    value: Prisma.JsonValue | null
+  ): TaskResponseDto['deliverables'] {
+    const items = jsonToArray(value);
+    return items ? (items as unknown as TaskResponseDto['deliverables']) : null;
+  }
+
+  private jsonFieldChanged(
+    current: Prisma.JsonValue | null,
+    next: unknown
+  ): boolean {
+    return JSON.stringify(current ?? null) !== JSON.stringify(next ?? null);
   }
 
   private toActivityResponse(activity: {
@@ -2184,21 +2374,27 @@ export class TasksService {
     };
   }
 
-  private toCommentResponse(comment: {
-    id: string;
-    taskId: string;
-    authorId: string;
-    content: string;
-    createdAt: Date;
-    updatedAt: Date;
-    media?: {
+  private toCommentResponse(
+    comment: {
       id: string;
-      url: string;
-      key: string;
-      size: string;
-      mimeType: string;
-    }[];
-  }): TaskCommentResponseDto {
+      taskId: string;
+      authorId: string;
+      content: string;
+      createdAt: Date;
+      updatedAt: Date;
+      editedAt?: Date | null;
+      media?: {
+        id: string;
+        url: string;
+        key: string;
+        size: string;
+        mimeType: string;
+      }[];
+    },
+    viewerId: string,
+    viewerLastReadAt: Date | null,
+    peerLastReadAt: Date | null
+  ): TaskCommentResponseDto {
     return {
       id: comment.id,
       taskId: comment.taskId,
@@ -2213,6 +2409,105 @@ export class TasksService {
       })),
       createdAt: comment.createdAt.toISOString(),
       updatedAt: comment.updatedAt.toISOString(),
+      editedAt: comment.editedAt?.toISOString() ?? null,
+      isRead: isCommentRead(
+        comment,
+        viewerId,
+        viewerLastReadAt,
+        peerLastReadAt
+      ),
     };
+  }
+
+  private async getTaskCommentReadState(
+    task: Pick<Task, 'id' | 'ownerId' | 'executorId'>,
+    userId: string
+  ): Promise<{
+    viewerLastReadAt: Date | null;
+    peerLastReadAt: Date | null;
+  }> {
+    this.assertParticipant(task, userId);
+
+    const peerId = this.resolveOtherParticipantId(task, userId);
+    const userIds = peerId ? [userId, peerId] : [userId];
+
+    const states = await this.prisma.taskCommentReadState.findMany({
+      where: {
+        taskId: task.id,
+        userId: { in: userIds },
+      },
+      select: { userId: true, lastReadAt: true },
+    });
+
+    const viewer = states.find(state => state.userId === userId);
+    const peer = peerId
+      ? states.find(state => state.userId === peerId)
+      : undefined;
+
+    return {
+      viewerLastReadAt: viewer?.lastReadAt ?? null,
+      peerLastReadAt: peer?.lastReadAt ?? null,
+    };
+  }
+
+  private async mapCommentsWithReadState(
+    viewerId: string,
+    comments: Array<{
+      id: string;
+      taskId: string;
+      authorId: string;
+      content: string;
+      createdAt: Date;
+      updatedAt: Date;
+      editedAt?: Date | null;
+      media?: {
+        id: string;
+        url: string;
+        key: string;
+        size: string;
+        mimeType: string;
+      }[];
+    }>
+  ): Promise<TaskCommentResponseDto[]> {
+    if (comments.length === 0) {
+      return [];
+    }
+
+    const taskIds = [...new Set(comments.map(comment => comment.taskId))];
+    const tasks = await this.prisma.task.findMany({
+      where: { id: { in: taskIds } },
+      select: { id: true, ownerId: true, executorId: true },
+    });
+    const tasksById = new Map(tasks.map(task => [task.id, task]));
+
+    const readStates = await this.prisma.taskCommentReadState.findMany({
+      where: { taskId: { in: taskIds } },
+      select: { taskId: true, userId: true, lastReadAt: true },
+    });
+
+    const readStateKey = (taskId: string, userId: string) =>
+      `${taskId}:${userId}`;
+    const lastReadByKey = new Map(
+      readStates.map(state => [
+        readStateKey(state.taskId, state.userId),
+        state.lastReadAt,
+      ])
+    );
+
+    return comments.map(comment => {
+      const task = tasksById.get(comment.taskId);
+      const peerId = task
+        ? this.resolveOtherParticipantId(task, viewerId)
+        : null;
+
+      return this.toCommentResponse(
+        comment,
+        viewerId,
+        lastReadByKey.get(readStateKey(comment.taskId, viewerId)) ?? null,
+        peerId
+          ? (lastReadByKey.get(readStateKey(comment.taskId, peerId)) ?? null)
+          : null
+      );
+    });
   }
 }

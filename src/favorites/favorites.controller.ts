@@ -27,6 +27,7 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { EmailConfirmedGuard } from '../auth/guards/email-confirmed.guard';
 import { AddFavoriteDto } from './dto/add-favorite.dto';
 import { CreateFavoriteGroupDto } from './dto/create-favorite-group.dto';
 import { FavoriteGroupResponseDto } from './dto/favorite-group-response.dto';
@@ -62,6 +63,7 @@ export class FavoritesController {
   }
 
   @Post('groups')
+  @UseGuards(EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Создать группу избранного',
     description: 'Например: «спорт». Имя уникально в рамках профиля.',
@@ -81,6 +83,7 @@ export class FavoritesController {
   }
 
   @Patch('groups/:id')
+  @UseGuards(EmailConfirmedGuard)
   @ApiOperation({ summary: 'Переименовать группу' })
   @ApiOkResponse({ type: FavoriteGroupResponseDto })
   @ApiNotFoundResponse({ description: 'Группа не найдена' })
@@ -97,6 +100,7 @@ export class FavoritesController {
 
   @Delete('groups/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Удалить группу',
     description: 'Посты из группы остаются в избранном без группы.',
@@ -127,6 +131,7 @@ export class FavoritesController {
   }
 
   @Post()
+  @UseGuards(EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Добавить в избранное',
     description:
@@ -149,6 +154,7 @@ export class FavoritesController {
   }
 
   @Patch(':postId')
+  @UseGuards(EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Переместить избранный пост в группу',
     description: '`groupId: null` — убрать из группы, оставить в избранном.',
@@ -167,6 +173,7 @@ export class FavoritesController {
 
   @Delete('users/:userId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(EmailConfirmedGuard)
   @ApiOperation({ summary: 'Убрать креатора или компанию из избранного' })
   @ApiNoContentResponse({ description: 'Пользователь убран из избранного' })
   @ApiNotFoundResponse({ description: 'Пользователь не найден в избранном' })
@@ -179,6 +186,7 @@ export class FavoritesController {
 
   @Delete(':postId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(EmailConfirmedGuard)
   @ApiOperation({ summary: 'Убрать пост из избранного' })
   @ApiNoContentResponse({ description: 'Пост убран из избранного' })
   @ApiNotFoundResponse({ description: 'Пост не найден в избранном' })

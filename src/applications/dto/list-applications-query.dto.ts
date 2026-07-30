@@ -22,6 +22,15 @@ export class ListApplicationsQueryDto {
   @IsUUID()
   postId?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Фильтр по соискателю (applicantId). Для `/applications/incoming` — отклики конкретного креатора',
+  })
+  @IsOptional()
+  @IsUUID()
+  userId?: string;
+
   @ApiPropertyOptional({ enum: ApplicationStatus })
   @IsOptional()
   @IsEnum(ApplicationStatus)

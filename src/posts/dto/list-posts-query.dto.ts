@@ -89,6 +89,15 @@ export class ListPostsQueryDto {
   urgent?: boolean;
 
   @ApiPropertyOptional({
+    description:
+      'Фильтр по наличию фото в посте (PostMedia с mimeType image/*). true — только с фото, false — без фото',
+  })
+  @IsOptional()
+  @Transform(transformOptionalBoolean)
+  @IsBoolean()
+  hasPhoto?: boolean;
+
+  @ApiPropertyOptional({
     type: [String],
     description: 'Фильтр по chips (hasSome, через запятую)',
   })

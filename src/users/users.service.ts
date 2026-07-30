@@ -8,10 +8,21 @@ import { UserProfileFields } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { Person, PersonPatch } from './dto/person.dto';
 import { UpdateUserDto } from './dto/update.dto';
+import {
+  mapUserPublicStats,
+  userStatsCountSelect,
+} from './user-stats.util';
 
 const userWithProfileInclude = {
   creatorProfile: true,
   companyProfile: true,
+} as const;
+
+const userWithPublicStatsInclude = {
+  ...userWithProfileInclude,
+  _count: {
+    select: userStatsCountSelect,
+  },
 } as const;
 
 const PERSON_KEYS = [
@@ -52,8 +63,47 @@ export class UsersService {
   findById(id: string) {
     return this.prisma.user.findUnique({
       where: { id },
-      include: userWithProfileInclude,
+      include: {
+        ...userWithProfileInclude,
+      },
     });
+  }
+
+  async findPublicById(
+    id: string,
+    viewerAccountId: string,
+    viewerUserId: string
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: userWithPublicStatsInclude,
+    });
+
+    if (!user) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+
+    const membership =
+      viewerUserId === id
+        ? { id: 'self' }
+        : await this.prisma.accountMembership.findUnique({
+          where: {
+            accountId_userId: {
+              accountId: viewerAccountId,
+              userId: id,
+            },
+          },
+          select: { id: true },
+        });
+
+    const { email, isEmailConfirmed, _count, ...publicUser } = user;
+    const stats = mapUserPublicStats(_count);
+
+    if (membership) {
+      return { ...publicUser, ...stats, isEmailConfirmed, email };
+    }
+
+    return { ...publicUser, ...stats, email };
   }
 
   createCreator(data: CreateCreatorData) {
@@ -115,6 +165,7 @@ export class UsersService {
       companyName,
       creatorProfile,
       companyProfile,
+      email,
       ...profileFields
     } = data;
 
@@ -135,25 +186,45 @@ export class UsersService {
       profileFields.person
     );
 
+    const emailChanged =
+      email !== undefined &&
+      email.trim().toLowerCase() !== (user.email ?? '').trim().toLowerCase();
+
     const resolvedFields: UserProfileFields & { banner?: string | null } = {
       ...profileFields,
       ...(mergedPerson !== undefined && { person: mergedPerson }),
+      ...(email !== undefined && { email: email.trim() }),
     };
 
     if (user.role === Role.CREATOR) {
-      return this.updateCreator(userId, {
-        ...resolvedFields,
-        name: name !== undefined ? name : creatorProfile?.name,
-        lastName: lastName !== undefined ? lastName : creatorProfile?.lastName,
-      });
+      return this.updateUser(
+        userId,
+        resolvedFields,
+        {
+          creatorProfile: this.pickPresent({
+            name: name !== undefined ? name : creatorProfile?.name,
+            lastName:
+              lastName !== undefined ? lastName : creatorProfile?.lastName,
+          }),
+        },
+        emailChanged
+      );
     }
 
     if (user.role === Role.COMPANY) {
-      return this.updateCompany(userId, {
-        ...resolvedFields,
-        companyName:
-          companyName !== undefined ? companyName : companyProfile?.companyName,
-      });
+      return this.updateUser(
+        userId,
+        resolvedFields,
+        {
+          companyProfile: this.pickPresent({
+            companyName:
+              companyName !== undefined
+                ? companyName
+                : companyProfile?.companyName,
+          }),
+        },
+        emailChanged
+      );
     }
 
     return this.prisma.user.update({
@@ -163,6 +234,7 @@ export class UsersService {
         ...(resolvedFields.banner !== undefined && {
           banner: resolvedFields.banner,
         }),
+        ...(emailChanged && { isEmailConfirmed: false }),
       },
       include: userWithProfileInclude,
     });
@@ -174,13 +246,15 @@ export class UsersService {
     nested?: {
       creatorProfile?: Partial<{ name: string; lastName: string }>;
       companyProfile?: Partial<{ companyName: string }>;
-    }
+    },
+    resetEmailConfirmed = false
   ) {
     const { creatorProfile, companyProfile } = nested ?? {};
 
     const userData = {
       ...this.mapProfileFields(fields),
       ...(fields.banner !== undefined && { banner: fields.banner }),
+      ...(resetEmailConfirmed && { isEmailConfirmed: false }),
       ...(this.hasFields(creatorProfile) && {
         creatorProfile: { update: creatorProfile },
       }),
@@ -276,6 +350,7 @@ export class UsersService {
       avatar: fields.avatar,
       bio: fields.bio,
       aboutMe: fields.aboutMe,
+      email: fields.email,
     });
   }
 }

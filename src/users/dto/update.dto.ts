@@ -2,6 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsEmail,
   IsObject,
   IsOptional,
   IsString,
@@ -121,6 +122,15 @@ export class UpdateUserDto {
   @IsString()
   @IsUrl()
   banner?: string | null;
+
+  @ApiPropertyOptional({
+    example: 'user@example.com',
+    description: 'Email профиля. При смене сбрасывается подтверждение почты',
+  })
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(255)
+  email?: string;
 
   @ApiPropertyOptional({ type: UpdateCreatorProfileDto })
   @IsOptional()

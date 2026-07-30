@@ -20,6 +20,18 @@ export class ApplicationOwnerDto {
   @ApiPropertyOptional({ example: 'https://example.com/avatar.jpg' })
   avatar?: string;
 
+  @ApiProperty({
+    description: 'Сколько пользователей добавили владельца в избранное',
+    example: 12,
+  })
+  followers: number;
+
+  @ApiProperty({
+    description: 'Кол-во завершённых задач (как владелец или исполнитель)',
+    example: 5,
+  })
+  completedTasksCount: number;
+
   @ApiPropertyOptional({ type: ApplicationCreatorProfileDto })
   creatorProfile?: ApplicationCreatorProfileDto;
 

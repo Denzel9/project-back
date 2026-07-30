@@ -12,6 +12,12 @@ export class ChatConversationResponse {
   @ApiProperty({ type: ChatMessageResponse, nullable: true })
   lastMessage: ChatMessageResponse | null;
 
+  @ApiProperty({
+    description: 'Количество непрочитанных входящих сообщений',
+    example: 3,
+  })
+  unreadCount: number;
+
   @ApiProperty({ format: 'date-time' })
   updatedAt: Date;
 }

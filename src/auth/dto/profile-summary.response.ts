@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { MembershipRole, Role } from '@prisma/client';
+import { MembershipRole, PrimeStatus, Role } from '@prisma/client';
 
 export class ProfileSummaryResponse {
   @ApiProperty({ format: 'uuid' })
@@ -22,6 +22,16 @@ export class ProfileSummaryResponse {
 
   @ApiProperty()
   isActive: boolean;
+
+  @ApiProperty({
+    description: 'Профиль проверен платформой (бейдж верификации)',
+  })
+  isVerified: boolean;
+
+  @ApiProperty({
+    description: 'Email профиля (User.email) подтверждён',
+  })
+  isEmailConfirmed: boolean;
 }
 
 export class AuthSessionUserResponse {
@@ -33,4 +43,29 @@ export class AuthSessionUserResponse {
 
   @ApiProperty({ enum: MembershipRole })
   membershipRole: MembershipRole;
+
+  @ApiProperty({
+    description: 'Профиль проверен платформой (бейдж верификации)',
+  })
+  isVerified: boolean;
+
+  @ApiProperty({
+    description: 'Email профиля (User.email) подтверждён',
+  })
+  isEmailConfirmed: boolean;
+
+  @ApiProperty({
+    description: 'Активна ли Prime-подписка текущего профиля (User)',
+  })
+  isPrime: boolean;
+
+  @ApiProperty({ enum: PrimeStatus })
+  primeStatus: PrimeStatus;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Дата окончания Prime (ISO). null — без срока или нет подписки',
+  })
+  primeExpiresAt: string | null;
 }

@@ -15,7 +15,7 @@ import {
   IsString,
   ValidateNested,
 } from 'class-validator';
-import { ApplicationOwnerDto } from 'src/applications/dto/application-owner.dto';
+import { ApplicationOwnerDto } from '../../applications/dto/application-owner.dto';
 import { BloggerRequirementsDto } from './blogger-requirements.dto';
 import { CooperationDetailsDto } from './cooperation-details.dto';
 import { PostBriefDto } from './post-brief.dto';

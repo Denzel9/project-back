@@ -55,7 +55,24 @@ export const userResponseSchema = {
         location: { type: 'string', nullable: true },
         avatar: { type: 'string', nullable: true },
         bio: { type: 'string', nullable: true },
-        followers: { type: 'number', example: 0 },
+        isVerified: {
+          type: 'boolean',
+          description: 'Профиль проверен платформой',
+        },
+        followers: {
+          type: 'number',
+          description:
+            'Сколько пользователей добавили этого пользователя в избранное',
+        },
+        completedTasksCount: {
+          type: 'number',
+          description:
+            'Кол-во завершённых задач (как владелец или исполнитель)',
+        },
+        isEmailConfirmed: {
+          type: 'boolean',
+          description: 'Email профиля (User.email) подтверждён',
+        },
         aboutMe: { type: 'string', nullable: true },
         name: { type: 'string' },
         lastName: { type: 'string' },

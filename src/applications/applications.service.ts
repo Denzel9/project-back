@@ -15,8 +15,6 @@ import {
   Task,
 } from '@prisma/client';
 import { AuthUser } from '../auth/auth.types';
-import { ChatGateway } from '../chat/chat.gateway';
-import { ChatService } from '../chat/chat.service';
 import { buildCalendarDayFilter } from '../common/date/calendar-day-filter';
 import { formatApplicationStatus } from '../notifications/notification-labels.util';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -28,6 +26,10 @@ import { ApplicationResponseDto } from './dto/application-response.dto';
 import { CreateApplicationDto } from './dto/create-application.dto';
 import { ListApplicationsQueryDto } from './dto/list-applications-query.dto';
 import { UpdateApplicationStatusDto } from './dto/update-application-status.dto';
+import {
+  mapOwnerWithStats,
+  userOwnerWithStatsSelect,
+} from '../users/user-stats.util';
 
 const applicantInclude = {
   creatorProfile: true,
@@ -51,20 +53,7 @@ const applicationInclude = {
         },
       },
       owner: {
-        select: {
-          id: true,
-          creatorProfile: {
-            select: {
-              name: true,
-              lastName: true,
-            },
-          },
-          companyProfile: {
-            select: {
-              companyName: true,
-            },
-          },
-        },
+        select: userOwnerWithStatsSelect,
       },
     },
   },
@@ -104,8 +93,6 @@ export class ApplicationsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly chatService: ChatService,
-    private readonly chatGateway: ChatGateway,
     private readonly tasksService: TasksService,
     private readonly notificationsService: NotificationsService
   ) {}
@@ -131,36 +118,15 @@ export class ApplicationsService {
 
     this.assertCanApply(user, post);
 
-    const chatContent = 'Новый отклик';
-
     try {
-      const { application, conversationId, message } =
-        await this.prisma.$transaction(async tx => {
-          const created = await tx.postApplication.create({
-            data: {
-              postId: dto.postId,
-              applicantId: user.userId,
-              message: dto.message,
-            },
-            include: applicationInclude,
-          });
-
-          const chatResult =
-            await this.chatService.sendApplicationMessageInTransaction(
-              tx,
-              user.userId,
-              post.ownerId,
-              chatContent
-            );
-
-          return {
-            application: created,
-            conversationId: chatResult.conversationId,
-            message: chatResult.message,
-          };
-        });
-
-      this.chatGateway.broadcastMessage(conversationId, message);
+      const application = await this.prisma.postApplication.create({
+        data: {
+          postId: dto.postId,
+          applicantId: user.userId,
+          message: dto.message,
+        },
+        include: applicationInclude,
+      });
 
       await this.notifyPostOwnerAboutApplication(application, user.userId);
 
@@ -201,6 +167,7 @@ export class ApplicationsService {
       {
         post: postFilter,
         ...(query.status !== undefined && { status: query.status }),
+        ...(query.userId !== undefined && { applicantId: query.userId }),
         ...(createdAtFilter !== undefined && { createdAt: createdAtFilter }),
       },
       query,
@@ -242,11 +209,14 @@ export class ApplicationsService {
       }
     }
 
+    const createdAtFilter = buildCalendarDayFilter(query.createdDate);
+
     return this.listApplications(
       {
         postId,
         ...(!isOwner && { applicantId: user.userId }),
         ...(query.status !== undefined && { status: query.status }),
+        ...(createdAtFilter !== undefined && { createdAt: createdAtFilter }),
       },
       query,
       { includeApplicant: isOwner }
@@ -603,16 +573,7 @@ export class ApplicationsService {
           title: application.post.title,
           type: application.post.type,
           ownerId: application.post.owner.id,
-          owner: {
-            id: application.post.owner.id,
-            creatorProfile: {
-              name: application.post.owner.creatorProfile?.name,
-              lastName: application.post.owner.creatorProfile?.lastName,
-            },
-            companyProfile: {
-              companyName: application.post.owner.companyProfile?.companyName,
-            },
-          },
+          owner: mapOwnerWithStats(application.post.owner),
           media: application.post.media.map(media => ({
             id: media.id,
             url: media.url,

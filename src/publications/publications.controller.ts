@@ -9,6 +9,7 @@ import {
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { EmailConfirmedGuard } from '../auth/guards/email-confirmed.guard';
 import { AuthUser } from '../auth/auth.types';
 import { ListPublicationsQueryDto } from './dto/list-publications-query.dto';
 import { PublicationResponseDto } from './dto/publication-response.dto';
@@ -28,7 +29,7 @@ export class PublicationsController {
     description:
       'Публикации по задачам, где пользователь owner или executor. ' +
       'Создаются автоматически при `COMPLETED` задачи. ' +
-      'Фильтры: `role`, `postId`, `taskId`, `q` (title).',
+      'Фильтры: `role`, `postId`, `taskId`, `ownerId`, `executorId`, `q` (title).',
   })
   @ApiOkResponse({ description: 'Список публикаций с пагинацией' })
   list(
@@ -51,6 +52,7 @@ export class PublicationsController {
   }
 
   @Patch(':id')
+  @UseGuards(EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Обновить публикацию',
     description:

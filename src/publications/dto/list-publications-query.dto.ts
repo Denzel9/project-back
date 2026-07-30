@@ -33,6 +33,22 @@ export class ListPublicationsQueryDto {
   @IsUUID()
   taskId?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Фильтр по владельцу публикации (компания)',
+  })
+  @IsOptional()
+  @IsUUID()
+  ownerId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Фильтр по исполнителю публикации (креатор)',
+  })
+  @IsOptional()
+  @IsUUID()
+  executorId?: string;
+
   @ApiPropertyOptional({ description: 'Поиск по title' })
   @IsOptional()
   @Transform(transformTrimmedString)

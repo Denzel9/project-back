@@ -28,6 +28,7 @@ import {
   assertCanViewPost,
   visiblePostTypeForRole,
 } from '../posts/post-visibility.util';
+import { userStatsCountSelect } from '../users/user-stats.util';
 
 const favoriteInclude = {
   post: { include: postWithMediaInclude },
@@ -39,6 +40,9 @@ const favoriteUserInclude = {
     include: {
       creatorProfile: true,
       companyProfile: true,
+      _count: {
+        select: userStatsCountSelect,
+      },
     },
   },
 } satisfies Prisma.FavoriteUserInclude;
@@ -54,6 +58,9 @@ type FavoriteUserWithRelations = Prisma.FavoriteUserGetPayload<{
 const favoriteUserProfileInclude = {
   creatorProfile: true,
   companyProfile: true,
+  _count: {
+    select: userStatsCountSelect,
+  },
 } as const;
 
 @Injectable()

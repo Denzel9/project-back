@@ -1,8 +1,11 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
+  Logger,
   UnauthorizedException,
+  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -11,6 +14,7 @@ import * as bcrypt from 'bcrypt';
 import { MembershipRole, NotificationType, Prisma, Role } from '@prisma/client';
 import { AccountMembershipService } from '../accounts/account-membership.service';
 import { AccountsService } from '../accounts/accounts.service';
+import { PrimeSubscriptionService } from '../billing/prime-subscription.service';
 import { MailService } from '../mail/mail.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -21,6 +25,7 @@ import {
   AuthSessionUser,
   AuthTokens,
   AuthUser,
+  EmailConfirmPayload,
   JwtPayload,
   PasswordResetPayload,
   RefreshJwtPayload,
@@ -35,13 +40,18 @@ import { VerifyPasswordDto } from './dto/verify-password.dto';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { SwitchProfileDto } from './dto/switch-profile.dto';
+import { ConfirmEmailDto } from './dto/confirm-email.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly accountsService: AccountsService,
     private readonly membershipService: AccountMembershipService,
+    @Inject(forwardRef(() => PrimeSubscriptionService))
+    private readonly primeSubscriptionService: PrimeSubscriptionService,
     private readonly invitesService: InvitesService,
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -94,6 +104,12 @@ export class AuthService {
       return { account, user, membership };
     });
 
+    await this.safeSendEmailConfirmation(
+      result.account.email,
+      result.user.id,
+      result.account.id
+    );
+
     return this.buildAuthResponse(
       result.account,
       result.user,
@@ -144,6 +160,12 @@ export class AuthService {
 
       return { account, user, membership };
     });
+
+    await this.safeSendEmailConfirmation(
+      result.account.email,
+      result.user.id,
+      result.account.id
+    );
 
     return this.buildAuthResponse(
       result.account,
@@ -364,11 +386,132 @@ export class AuthService {
       throw new UnauthorizedException('Сессия недействительна');
     }
 
+    const subscription = await this.primeSubscriptionService.getSubscription(
+      authUser.userId
+    );
+
     return {
       id: user.id,
       role: user.role,
       membershipRole: authUser.membershipRole,
+      isVerified: user.isVerified,
+      isEmailConfirmed: user.isEmailConfirmed,
+      isPrime: subscription.isPrime,
+      primeStatus: subscription.status,
+      primeExpiresAt: subscription.expiresAt?.toISOString() ?? null,
     };
+  }
+
+  async sendConfirmEmail(authUser: AuthUser) {
+    const user = await this.usersService.findById(authUser.userId);
+
+    if (!user) {
+      throw new UnauthorizedException('Сессия недействительна');
+    }
+
+    if (user.isEmailConfirmed) {
+      return { message: 'Почта уже подтверждена' };
+    }
+
+    const account = await this.accountsService.findById(authUser.accountId);
+
+    if (!account) {
+      throw new UnauthorizedException('Сессия недействительна');
+    }
+
+    const to = account.email || user.email;
+
+    if (!to) {
+      throw new BadRequestException('У аккаунта не указан email');
+    }
+
+    // Не блокируем HTTP на SMTP (Mailtrap/сеть могут висеть минутами)
+    void this.safeSendEmailConfirmation(to, user.id, account.id);
+
+    return {
+      message: 'Письмо для подтверждения почты отправлено',
+    };
+  }
+
+  async confirmEmail(dto: ConfirmEmailDto) {
+    const { userId } = this.verifyEmailConfirmToken(dto.token);
+    const user = await this.usersService.findById(userId);
+
+    if (!user) {
+      throw new BadRequestException('Недействительный или просроченный токен');
+    }
+
+    if (user.isEmailConfirmed) {
+      return { message: 'Почта уже подтверждена' };
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { isEmailConfirmed: true },
+    });
+
+    return { message: 'Почта успешно подтверждена' };
+  }
+
+  private async safeSendEmailConfirmation(
+    email: string,
+    userId: string,
+    accountId: string
+  ) {
+    try {
+      const token = this.createEmailConfirmToken(userId, accountId);
+      const frontendUrl = this.configService
+        .getOrThrow<string>('FRONTEND_URL')
+        .replace(/\/$/, '');
+      const confirmUrl = `${frontendUrl}/auth/confirm-email?token=${encodeURIComponent(token)}`;
+
+      this.logger.log(`Confirm email link for ${email}: ${confirmUrl}`);
+
+      await this.mailService.sendEmailConfirmationEmail(email, token);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send email confirmation to ${email}`,
+        error instanceof Error ? error.stack : error
+      );
+    }
+  }
+
+  private createEmailConfirmToken(userId: string, accountId: string): string {
+    const payload: EmailConfirmPayload = {
+      sub: userId,
+      accountId,
+      type: 'email-confirm',
+    };
+
+    return this.jwtService.sign(payload, {
+      secret: this.configService.getOrThrow<string>('JWT_EMAIL_CONFIRM_SECRET'),
+      expiresIn: this.configService.getOrThrow<string>(
+        'JWT_EMAIL_CONFIRM_EXPIRES_IN'
+      ) as SignOptions['expiresIn'],
+    });
+  }
+
+  private verifyEmailConfirmToken(token: string): {
+    userId: string;
+    accountId: string;
+  } {
+    try {
+      const payload = this.jwtService.verify<EmailConfirmPayload>(token, {
+        secret: this.configService.getOrThrow<string>(
+          'JWT_EMAIL_CONFIRM_SECRET'
+        ),
+      });
+
+      if (payload.type !== 'email-confirm' || !payload.sub || !payload.accountId) {
+        throw new BadRequestException(
+          'Недействительный или просроченный токен'
+        );
+      }
+
+      return { userId: payload.sub, accountId: payload.accountId };
+    } catch {
+      throw new BadRequestException('Недействительный или просроченный токен');
+    }
   }
 
   private createPasswordResetToken(accountId: string): string {
@@ -423,17 +566,31 @@ export class AuthService {
     }
   }
 
-  private buildAuthResponse(
+  private async buildAuthResponse(
     account: { id: string; email: string },
-    user: { id: string; role: Role },
+    user: {
+      id: string;
+      role: Role;
+      isVerified: boolean;
+      isEmailConfirmed: boolean;
+    },
     membershipRole: MembershipRole,
     rememberMe = false
-  ): AuthResponse {
+  ): Promise<AuthResponse> {
+    const subscription = await this.primeSubscriptionService.getSubscription(
+      user.id
+    );
+
     return {
       user: {
         id: user.id,
         role: user.role,
         membershipRole,
+        isVerified: user.isVerified,
+        isEmailConfirmed: user.isEmailConfirmed,
+        isPrime: subscription.isPrime,
+        primeStatus: subscription.status,
+        primeExpiresAt: subscription.expiresAt?.toISOString() ?? null,
       },
       tokens: this.issueTokens(account, user, membershipRole, rememberMe),
       rememberMe,

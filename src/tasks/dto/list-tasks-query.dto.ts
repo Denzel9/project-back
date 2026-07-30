@@ -43,6 +43,24 @@ export class ListTasksQueryDto {
   @IsEnum(TaskListRole)
   role?: TaskListRole;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Фильтр по владельцу задачи (owner.id). С `role=executor` — задачи у указанного заказчика.',
+  })
+  @IsOptional()
+  @IsUUID()
+  ownerId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Фильтр по исполнителю (executor.id). С `role=owner` — задачи с указанным исполнителем.',
+  })
+  @IsOptional()
+  @IsUUID()
+  executorId?: string;
+
   @ApiPropertyOptional({ enum: TaskStatus })
   @IsOptional()
   @IsEnum(TaskStatus)

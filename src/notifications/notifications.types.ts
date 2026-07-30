@@ -34,5 +34,7 @@ export const EMAIL_ENABLED_NOTIFICATION_TYPES = new Set<NotificationType>([
   NotificationType.TASK_COMMENT_CREATED,
   NotificationType.TASK_MEDIA_ADDED,
   NotificationType.CHAT_MESSAGE,
+  NotificationType.TEAM_INVITE,
   NotificationType.MEMBERSHIP_REVOKED,
+  NotificationType.PUBLICATION_CREATED,
 ]);

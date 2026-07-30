@@ -26,6 +26,7 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { MembershipWriteGuard } from '../auth/guards/membership-write.guard';
+import { EmailConfirmedGuard } from '../auth/guards/email-confirmed.guard';
 import { AuthUser } from '../auth/auth.types';
 import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -63,7 +64,7 @@ export class TasksController {
   @ApiOperation({
     summary: 'Список задач',
     description:
-      'Задачи, где пользователь owner или executor. Фильтры: `postId`, `role`, `status`, `statuses`, `active`, `excludeCompleted`, `isCompanyAction`, `isExecutorApprove` (`true`/`false`/`null`), `unassigned`, `overdue`, `urgent`, `createdDate`, `dateFrom`/`dateTo`, `q`. ' +
+      'Задачи, где пользователь owner или executor. Фильтры: `postId`, `role`, `ownerId`, `executorId`, `status`, `statuses`, `active`, `excludeCompleted`, `isCompanyAction`, `isExecutorApprove` (`true`/`false`/`null`), `unassigned`, `overdue`, `urgent`, `createdDate`, `dateFrom`/`dateTo`, `q`. ' +
       'Создание — автоматически при ACCEPTED отклика или `POST /tasks` вручную (владелец поста). У исполнителя нет блока `post`.',
   })
   @ApiOkResponse({ description: 'Список задач с пагинацией' })
@@ -129,9 +130,9 @@ export class TasksController {
     summary: 'Задачи с комментариями',
     description:
       'Только задачи, где есть хотя бы один комментарий. ' +
-      'По каждой: title, превью последнего комментария, `commentsCount`. ' +
-      '`unreadCount` — если передан `readAfter` (комментарии других после этой даты). ' +
-      'Сортировка по времени последнего комментария. Фильтры: `role`, `postId`, `status`, `q`.',
+      'По каждой: title, превью последнего комментария, `commentsCount`, `unreadCount` ' +
+      '(по lastReadAt текущего пользователя). ' +
+      'Сортировка по времени последнего комментария. Фильтры: `role`, `postId`, `taskId`, `status`, `q`.',
   })
   @ApiOkResponse({ description: 'Список задач с превью комментариев' })
   listTasksWithComments(
@@ -180,12 +181,13 @@ export class TasksController {
   }
 
   @Post()
-  @UseGuards(MembershipWriteGuard)
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Создать задачу вручную',
     description:
       'Только владелец поста. Создаёт задачу без отклика (`applicationId` = null). ' +
-      '`executorId` опционален — можно назначить позже через PATCH.',
+      '`executorId` опционален — можно назначить позже через PATCH. ' +
+      'JSON-поля: `location`, `bloggerRequirements`, `cooperationDetails`, `brief`, `deliverables`.',
   })
   @ApiCreatedResponse({ type: TaskResponseDto })
   @ApiNotFoundResponse({ description: 'Пост или исполнитель не найдены' })
@@ -212,11 +214,11 @@ export class TasksController {
   }
 
   @Patch(':id')
-  @UseGuards(MembershipWriteGuard)
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Обновить задачу',
     description:
-      'owner — все поля (включая `executorId`, `isExecutorApprove`); executor — `status`, `isExecutorApprove` и `isCompanyAction`. `description` — Markdown. VIEWER → 403.',
+      'owner — все поля (включая `executorId`, `isExecutorApprove`, JSON: `location`, `bloggerRequirements`, `cooperationDetails`, `brief`, `deliverables`); executor — `status`, `isExecutorApprove` и `isCompanyAction`. `description` — Markdown. VIEWER → 403.',
   })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiNotFoundResponse({ description: 'Задача не найдена' })
@@ -231,7 +233,7 @@ export class TasksController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UseGuards(MembershipWriteGuard)
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Удалить задачу',
     description:
@@ -328,7 +330,12 @@ export class TasksController {
   }
 
   @Get(':id/comments')
-  @ApiOperation({ summary: 'Комментарии задачи' })
+  @ApiOperation({
+    summary: 'Комментарии задачи',
+    description:
+      'В каждом комментарии: `editedAt`, `isRead`. ' +
+      'По умолчанию `markRead=true` — задача отмечается прочитанной.',
+  })
   @ApiOkResponse({ description: 'Список комментариев с пагинацией' })
   listComments(
     @CurrentUser() user: AuthUser,
@@ -338,13 +345,47 @@ export class TasksController {
     return this.tasksService.listComments(user, id, query);
   }
 
+  @Post(':id/comments/read')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Отметить комментарии задачи прочитанными',
+    description:
+      'Обновляет lastReadAt до времени последнего комментария. ' +
+      'Собеседник получит событие comments_read по WebSocket `/task-comments`.',
+  })
+  @ApiOkResponse({
+    description: 'Комментарии отмечены прочитанными',
+    schema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', format: 'uuid' },
+        readAt: { type: 'string', format: 'date-time' },
+      },
+    },
+  })
+  @ApiForbiddenResponse({ description: 'Нет доступа к задаче' })
+  async markCommentsRead(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string
+  ) {
+    const readAt = await this.tasksService.markTaskCommentsAsRead(
+      id,
+      user.userId
+    );
+
+    return {
+      taskId: id,
+      readAt: readAt.toISOString(),
+    };
+  }
+
   @Post(':id/comments')
-  @UseGuards(MembershipWriteGuard)
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Добавить комментарий',
     description:
       'Текст и/или media[] после `POST /media/upload?taskId={id}&forComment=true`. ' +
-      'Нужен content или media.',
+      'Нужен content или media. Участники получат событие `comment` по WebSocket.',
   })
   @ApiCreatedResponse({ type: TaskCommentResponseDto })
   createComment(
@@ -356,10 +397,12 @@ export class TasksController {
   }
 
   @Patch(':id/comments/:commentId')
-  @UseGuards(MembershipWriteGuard)
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Редактировать комментарий',
-    description: 'owner — любой; executor — только свой',
+    description:
+      'Меняет только текст. Пустой текст допустим, если есть media[]. ' +
+      'owner — любой; executor — только свой. Событие `comment_edited` по WebSocket.',
   })
   @ApiOkResponse({ type: TaskCommentResponseDto })
   updateComment(
@@ -373,10 +416,11 @@ export class TasksController {
 
   @Delete(':id/comments/:commentId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UseGuards(MembershipWriteGuard)
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Удалить комментарий',
-    description: 'owner — любой; executor — только свой',
+    description:
+      'owner — любой; executor — только свой. Событие `comment_deleted` по WebSocket.',
   })
   @ApiNoContentResponse({ description: 'Комментарий удалён' })
   deleteComment(

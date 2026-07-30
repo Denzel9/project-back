@@ -16,8 +16,22 @@ export class FavoriteUserProfileDto {
   @ApiPropertyOptional({ nullable: true })
   bio: string | null;
 
-  @ApiProperty()
+  @ApiProperty({
+    description: 'Профиль проверен платформой (бейдж верификации)',
+  })
+  isVerified: boolean;
+
+  @ApiProperty({
+    description: 'Сколько пользователей добавили этого пользователя в избранное',
+    example: 12,
+  })
   followers: number;
+
+  @ApiProperty({
+    description: 'Кол-во завершённых задач (как владелец или исполнитель)',
+    example: 5,
+  })
+  completedTasksCount: number;
 
   @ApiPropertyOptional({ nullable: true })
   location: string | null;

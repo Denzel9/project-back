@@ -9,6 +9,8 @@ import { MembershipRole, NotificationType, Prisma, Role } from '@prisma/client';
 import { AuthUser } from '../auth/auth.types';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { UserConfigService } from '../user-config/user-config.service';
+import { ChatEmailThrottleService } from './chat-email-throttle.service';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
 import {
   NotificationActorDto,
@@ -32,40 +34,104 @@ export class NotificationsService {
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
     private readonly configService: ConfigService,
-    private readonly notificationsGateway: NotificationsGateway
+    private readonly notificationsGateway: NotificationsGateway,
+    private readonly userConfigService: UserConfigService,
+    private readonly chatEmailThrottle: ChatEmailThrottleService
   ) {}
 
-  async notify(input: NotifyInput): Promise<NotificationResponseDto> {
-    const notification = await this.prisma.notification.create({
-      data: {
-        recipientId: input.recipientId,
-        actorId: input.actorId ?? null,
-        type: input.type,
-        title: input.title,
-        body: input.body ?? null,
-        payload: input.payload as Prisma.InputJsonValue,
-      },
-      include: notificationInclude,
-    });
-
-    const unreadCount = await this.countUnread(input.recipientId);
-    const response = this.toResponse(notification);
-
-    this.notificationsGateway.broadcastNotification(
+  async notify(input: NotifyInput): Promise<NotificationResponseDto | null> {
+    const inAppEnabled = await this.userConfigService.isInAppEnabled(
       input.recipientId,
-      response,
-      unreadCount
+      input.type
     );
+
+    let response: NotificationResponseDto | null = null;
+
+    if (inAppEnabled) {
+      const notification = await this.prisma.notification.create({
+        data: {
+          recipientId: input.recipientId,
+          actorId: input.actorId ?? null,
+          type: input.type,
+          title: input.title,
+          body: input.body ?? null,
+          payload: input.payload as Prisma.InputJsonValue,
+        },
+        include: notificationInclude,
+      });
+
+      const unreadCount = await this.countUnread(input.recipientId);
+      response = this.toResponse(notification);
+
+      this.notificationsGateway.broadcastNotification(
+        input.recipientId,
+        response,
+        unreadCount
+      );
+    }
 
     const shouldSendEmail =
       input.sendEmail !== false &&
-      EMAIL_ENABLED_NOTIFICATION_TYPES.has(input.type);
+      EMAIL_ENABLED_NOTIFICATION_TYPES.has(input.type) &&
+      (await this.userConfigService.isEmailEnabled(
+        input.recipientId,
+        input.type
+      ));
 
     if (shouldSendEmail) {
-      await this.sendEmailNotification(input.recipientId, input);
+      const emailInput = await this.prepareEmailInput(input);
+      if (emailInput) {
+        await this.sendEmailNotification(input.recipientId, emailInput);
+      }
     }
 
     return response;
+  }
+
+  /**
+   * CHAT_MESSAGE: email только если offline + прошло окно throttle.
+   * Остальные типы — без доп. ограничений.
+   * Возвращает null, если письмо слать не нужно.
+   */
+  private async prepareEmailInput(
+    input: NotifyInput
+  ): Promise<NotifyInput | null> {
+    if (input.type !== NotificationType.CHAT_MESSAGE) {
+      return input;
+    }
+
+    if (this.notificationsGateway.isUserConnected(input.recipientId)) {
+      return null;
+    }
+
+    const conversationId =
+      input.payload.conversationId ??
+      (input.payload.entityType === 'conversation'
+        ? input.payload.entityId
+        : undefined);
+
+    if (!conversationId) {
+      return input;
+    }
+
+    const decision = this.chatEmailThrottle.decide(
+      input.recipientId,
+      conversationId
+    );
+
+    if (!decision.send) {
+      return null;
+    }
+
+    if (decision.messageCount > 1) {
+      return {
+        ...input,
+        title: 'Новые сообщения в чате',
+        body: `У вас ${decision.messageCount} новых сообщений в чате`,
+      };
+    }
+
+    return input;
   }
 
   async list(user: AuthUser, query: ListNotificationsQueryDto) {

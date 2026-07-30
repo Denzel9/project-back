@@ -1,4 +1,4 @@
-import { MembershipRole, Role } from '@prisma/client';
+import { MembershipRole, PrimeStatus, Role } from '@prisma/client';
 import { ContactItem } from '../users/dto/contact-item.dto';
 import { Person } from '../users/dto/person.dto';
 
@@ -26,6 +26,12 @@ export type PasswordResetPayload = {
   type: 'password-reset';
 };
 
+export type EmailConfirmPayload = {
+  sub: string;
+  accountId: string;
+  type: 'email-confirm';
+};
+
 export type AuthTokens = {
   accessToken: string;
   refreshToken: string;
@@ -48,7 +54,8 @@ export type SafeUser = {
   location: string | null;
   avatar: string | null;
   bio: string | null;
-  followers: number;
+  isVerified: boolean;
+  isEmailConfirmed: boolean;
   aboutMe: string | null;
   name?: string;
   lastName?: string;
@@ -63,12 +70,18 @@ export type UserProfileFields = {
   avatar?: string | null;
   bio?: string | null;
   aboutMe?: string | null;
+  email?: string | null;
 };
 
 export type AuthSessionUser = {
   id: string;
   role: Role;
   membershipRole: MembershipRole;
+  isVerified: boolean;
+  isEmailConfirmed: boolean;
+  isPrime: boolean;
+  primeStatus: PrimeStatus;
+  primeExpiresAt: string | null;
 };
 
 export type AuthResponse = {

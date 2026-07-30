@@ -1,9 +1,11 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { Role, Prisma, NotificationType } from '@prisma/client';
 import { StorageService } from '../media/storage.service';
@@ -19,10 +21,13 @@ import {
   ChatPeerDto,
 } from './chat.types';
 import { SearchMessagesQueryDto } from './dto/search-messages-query.dto';
+import { ListConversationsQueryDto } from './dto/list-conversations-query.dto';
 import {
   AttachmentTypeFilter,
   ListAttachmentsQueryDto,
 } from './dto/list-attachments-query.dto';
+import { countUnreadMessages, isMessageRead } from './chat-read.util';
+import { ChatGateway } from './chat.gateway';
 
 const userWithProfileInclude = {
   creatorProfile: true,
@@ -39,18 +44,96 @@ type UserWithProfile = Awaited<ReturnType<UsersService['findById']>>;
 
 type PrismaTx = Prisma.TransactionClient;
 
+const buildConversationSearchWhere = (
+  userId: string,
+  q: string
+): Prisma.ConversationWhereInput => {
+  const tokens = q
+    .split(/\s+/)
+    .map(token => token.trim())
+    .filter(Boolean);
+
+  const peerNameMatchers = tokens.map(
+    (token): Prisma.ConversationWhereInput => ({
+      participants: {
+        some: {
+          userId: { not: userId },
+          user: {
+            OR: [
+              {
+                creatorProfile: {
+                  name: { contains: token, mode: 'insensitive' },
+                },
+              },
+              {
+                creatorProfile: {
+                  lastName: { contains: token, mode: 'insensitive' },
+                },
+              },
+              {
+                companyProfile: {
+                  companyName: { contains: token, mode: 'insensitive' },
+                },
+              },
+            ],
+          },
+        },
+      },
+    })
+  );
+
+  return {
+    OR: [
+      {
+        messages: {
+          some: {
+            content: { contains: q, mode: 'insensitive' },
+          },
+        },
+      },
+      ...(peerNameMatchers.length > 0
+        ? [{ AND: peerNameMatchers }]
+        : []),
+    ],
+  };
+};
+
 @Injectable()
 export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
     private readonly storageService: StorageService,
-    private readonly notificationsService: NotificationsService
+    private readonly notificationsService: NotificationsService,
+    @Inject(forwardRef(() => ChatGateway))
+    private readonly chatGateway: ChatGateway
   ) {}
 
-  async listConversations(userId: string): Promise<ChatConversationDto[]> {
+  async listConversations(
+    userId: string,
+    query: ListConversationsQueryDto = {}
+  ): Promise<ChatConversationDto[]> {
+    const conversationAnd: Prisma.ConversationWhereInput[] = [];
+
+    if (query.peerId) {
+      conversationAnd.push({
+        participants: { some: { userId: query.peerId } },
+      });
+    }
+
+    if (query.q) {
+      conversationAnd.push(buildConversationSearchWhere(userId, query.q));
+    }
+
+    const where: Prisma.ConversationParticipantWhereInput = {
+      userId,
+      ...(conversationAnd.length > 0 && {
+        conversation: { AND: conversationAnd },
+      }),
+    };
+
     const participations = await this.prisma.conversationParticipant.findMany({
-      where: { userId },
+      where,
       include: {
         conversation: {
           include: {
@@ -76,24 +159,36 @@ export class ChatService {
       },
     });
 
-    return participations.map(({ conversation }) => {
-      const peerParticipant = conversation.participants.find(
-        participant => participant.userId !== userId
-      );
+    return Promise.all(
+      participations.map(async ({ lastReadAt, conversation }) => {
+        const peerParticipant = conversation.participants.find(
+          participant => participant.userId !== userId
+        );
 
-      if (!peerParticipant) {
-        throw new NotFoundException('Собеседник не найден');
-      }
+        if (!peerParticipant) {
+          throw new NotFoundException('Собеседник не найден');
+        }
 
-      const lastMessage = conversation.messages[0];
+        const peerLastReadAt = peerParticipant.lastReadAt;
+        const lastMessage = conversation.messages[0];
+        const unreadCount = await countUnreadMessages(
+          this.prisma,
+          conversation.id,
+          userId,
+          lastReadAt
+        );
 
-      return {
-        id: conversation.id,
-        peer: this.mapPeer(peerParticipant.user),
-        lastMessage: lastMessage ? this.mapMessage(lastMessage) : null,
-        updatedAt: conversation.updatedAt,
-      };
-    });
+        return {
+          id: conversation.id,
+          peer: this.mapPeer(peerParticipant.user),
+          lastMessage: lastMessage
+            ? this.mapMessage(lastMessage, userId, lastReadAt, peerLastReadAt)
+            : null,
+          unreadCount,
+          updatedAt: conversation.updatedAt,
+        };
+      })
+    );
   }
 
   async findOrCreateConversation(
@@ -167,14 +262,23 @@ export class ChatService {
     conversationId: string,
     userId: string,
     cursor?: string,
-    limit = 50
+    limit = 50,
+    markRead?: boolean
   ): Promise<ChatMessageDto[]> {
     await this.assertParticipant(conversationId, userId);
 
+    const shouldMarkRead = markRead ?? !cursor;
+    let readState = await this.getConversationReadState(conversationId, userId);
+
+    if (shouldMarkRead) {
+      const readAt = await this.markConversationAsRead(conversationId, userId);
+      readState = { ...readState, viewerLastReadAt: readAt };
+    }
+
     const cursorMessage = cursor
       ? await this.prisma.message.findUnique({
-          where: { id: cursor },
-        })
+        where: { id: cursor },
+      })
       : null;
 
     if (
@@ -189,14 +293,14 @@ export class ChatService {
         conversationId,
         ...(cursorMessage
           ? {
-              OR: [
-                { createdAt: { lt: cursorMessage.createdAt } },
-                {
-                  createdAt: cursorMessage.createdAt,
-                  id: { lt: cursorMessage.id },
-                },
-              ],
-            }
+            OR: [
+              { createdAt: { lt: cursorMessage.createdAt } },
+              {
+                createdAt: cursorMessage.createdAt,
+                id: { lt: cursorMessage.id },
+              },
+            ],
+          }
           : {}),
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -204,7 +308,49 @@ export class ChatService {
       include: messageWithMediaInclude,
     });
 
-    return messages.reverse().map(message => this.mapMessage(message));
+    return messages
+      .reverse()
+      .map(message =>
+        this.mapMessage(
+          message,
+          userId,
+          readState.viewerLastReadAt,
+          readState.peerLastReadAt
+        )
+      );
+  }
+
+  async markConversationAsRead(
+    conversationId: string,
+    userId: string
+  ): Promise<Date> {
+    await this.assertParticipant(conversationId, userId);
+
+    const latestMessage = await this.prisma.message.findFirst({
+      where: { conversationId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { createdAt: true },
+    });
+
+    const readAt = latestMessage?.createdAt ?? new Date();
+
+    await this.prisma.conversationParticipant.update({
+      where: {
+        conversationId_userId: {
+          conversationId,
+          userId,
+        },
+      },
+      data: { lastReadAt: readAt },
+    });
+
+    this.chatGateway.broadcastMessagesRead(conversationId, {
+      conversationId,
+      userId,
+      readAt: readAt.toISOString(),
+    });
+
+    return readAt;
   }
 
   async searchMessages(
@@ -218,6 +364,11 @@ export class ChatService {
     limit: number;
   }> {
     await this.assertParticipant(conversationId, userId);
+
+    const readState = await this.getConversationReadState(
+      conversationId,
+      userId
+    );
 
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -240,7 +391,14 @@ export class ChatService {
     ]);
 
     return {
-      items: messages.map(message => this.mapMessage(message)),
+      items: messages.map(message =>
+        this.mapMessage(
+          message,
+          userId,
+          readState.viewerLastReadAt,
+          readState.peerLastReadAt
+        )
+      ),
       total,
       page,
       limit,
@@ -359,11 +517,152 @@ export class ChatService {
     });
   }
 
+  async removeMessage(
+    conversationId: string,
+    userId: string,
+    messageId: string
+  ): Promise<{ conversationId: string; messageId: string }> {
+    await this.assertParticipant(conversationId, userId);
+
+    const message = await this.prisma.message.findFirst({
+      where: { id: messageId, conversationId },
+      include: { media: true },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Сообщение не найдено');
+    }
+
+    if (message.senderId !== userId) {
+      throw new ForbiddenException('Недостаточно прав для удаления сообщения');
+    }
+
+    for (const item of message.media) {
+      try {
+        await this.storageService.deleteObject(item.key);
+      } catch {
+        throw new InternalServerErrorException('Не удалось удалить файл');
+      }
+    }
+
+    await this.prisma.$transaction(async tx => {
+      await tx.message.delete({
+        where: { id: messageId },
+      });
+
+      const latestMessage = await tx.message.findFirst({
+        where: { conversationId },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: { createdAt: true },
+      });
+
+      await tx.conversation.update({
+        where: { id: conversationId },
+        data: {
+          updatedAt: latestMessage?.createdAt ?? new Date(),
+        },
+      });
+    });
+
+    const payload = { conversationId, messageId };
+
+    this.chatGateway.broadcastMessageDeleted(conversationId, payload);
+
+    return payload;
+  }
+
+  async updateMessage(
+    conversationId: string,
+    userId: string,
+    messageId: string,
+    content: string
+  ): Promise<ChatMessageDto> {
+    await this.assertParticipant(conversationId, userId);
+
+    const existing = await this.prisma.message.findFirst({
+      where: { id: messageId, conversationId },
+      include: messageWithMediaInclude,
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Сообщение не найдено');
+    }
+
+    if (existing.senderId !== userId) {
+      throw new ForbiddenException('Недостаточно прав для редактирования сообщения');
+    }
+
+    const trimmedContent = content.trim();
+
+    if (!trimmedContent && existing.media.length === 0) {
+      throw new BadRequestException('Сообщение не может быть пустым');
+    }
+
+    if (trimmedContent === existing.content.trim()) {
+      const readState = await this.getConversationReadState(
+        conversationId,
+        userId
+      );
+
+      return this.mapMessage(
+        existing,
+        userId,
+        readState.viewerLastReadAt,
+        readState.peerLastReadAt
+      );
+    }
+
+    const editedAt = new Date();
+
+    const updated = await this.prisma.$transaction(async tx => {
+      const message = await tx.message.update({
+        where: { id: messageId },
+        data: {
+          content: trimmedContent,
+          editedAt,
+        },
+        include: messageWithMediaInclude,
+      });
+
+      const latestMessage = await tx.message.findFirst({
+        where: { conversationId },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: { id: true },
+      });
+
+      if (latestMessage?.id === messageId) {
+        await tx.conversation.update({
+          where: { id: conversationId },
+          data: { updatedAt: editedAt },
+        });
+      }
+
+      return message;
+    });
+
+    const readState = await this.getConversationReadState(
+      conversationId,
+      userId
+    );
+
+    const response = this.mapMessage(
+      updated,
+      userId,
+      readState.viewerLastReadAt,
+      readState.peerLastReadAt
+    );
+
+    this.chatGateway.broadcastMessageEdited(conversationId, response);
+
+    return response;
+  }
+
   async createMessage(
     conversationId: string,
     senderId: string,
     content = '',
-    media: ChatMessageMediaInput[] = []
+    media: ChatMessageMediaInput[] = [],
+    isRedirected = false
   ): Promise<ChatMessageDto> {
     const trimmedContent = content.trim();
     const normalizedMedia = media ?? [];
@@ -389,13 +688,24 @@ export class ChatService {
         conversationId,
         senderId,
         trimmedContent,
-        normalizedMedia
+        normalizedMedia,
+        isRedirected
       )
     );
 
     await this.notifyRecipientAboutMessage(conversationId, senderId, message);
 
-    return this.mapMessage(message);
+    const readState = await this.getConversationReadState(
+      conversationId,
+      senderId
+    );
+
+    return this.mapMessage(
+      message,
+      senderId,
+      readState.viewerLastReadAt,
+      readState.peerLastReadAt
+    );
   }
 
   private async notifyRecipientAboutMessage(
@@ -445,77 +755,13 @@ export class ChatService {
     });
   }
 
-  async sendApplicationMessageInTransaction(
-    tx: PrismaTx,
-    applicantId: string,
-    postOwnerId: string,
-    content: string
-  ): Promise<{ conversationId: string; message: ChatMessageDto }> {
-    if (applicantId === postOwnerId) {
-      throw new BadRequestException('Нельзя создать диалог с самим собой');
-    }
-
-    const [currentUser, recipient] = await Promise.all([
-      this.usersService.findById(applicantId),
-      this.usersService.findById(postOwnerId),
-    ]);
-
-    if (!currentUser || !recipient) {
-      throw new NotFoundException('Пользователь не найден');
-    }
-
-    const conversationId = await this.findOrCreateConversationIdInTransaction(
-      tx,
-      applicantId,
-      postOwnerId
-    );
-    const message = await this.createMessageInTransaction(
-      tx,
-      conversationId,
-      applicantId,
-      content
-    );
-
-    return { conversationId, message };
-  }
-
-  private async findOrCreateConversationIdInTransaction(
-    tx: PrismaTx,
-    userId: string,
-    recipientId: string
-  ): Promise<string> {
-    const existing = await tx.conversation.findFirst({
-      where: {
-        AND: [
-          { participants: { some: { userId } } },
-          { participants: { some: { userId: recipientId } } },
-        ],
-      },
-      select: { id: true },
-    });
-
-    if (existing) {
-      return existing.id;
-    }
-
-    const created = await tx.conversation.create({
-      data: {
-        participants: {
-          create: [{ userId }, { userId: recipientId }],
-        },
-      },
-      select: { id: true },
-    });
-
-    return created.id;
-  }
-
   private async createMessageInTransaction(
     tx: PrismaTx,
     conversationId: string,
     senderId: string,
     content: string,
-    media: ChatMessageMediaInput[] = []
+    media: ChatMessageMediaInput[] = [],
+    isRedirected = false
   ) {
     const trimmedContent = content.trim();
     const normalizedMedia = media ?? [];
@@ -538,6 +784,7 @@ export class ChatService {
         conversationId,
         senderId,
         content: trimmedContent,
+        isRedirected,
         ...(normalizedMedia.length > 0 && {
           media: {
             create: normalizedMedia.map((item, index) => ({
@@ -579,12 +826,13 @@ export class ChatService {
     }
   }
 
-  private mapConversation(
+  private async mapConversation(
     conversation: {
       id: string;
       updatedAt: Date;
       participants: Array<{
         userId: string;
+        lastReadAt: Date | null;
         user: NonNullable<UserWithProfile>;
       }>;
       messages: Array<{
@@ -602,21 +850,35 @@ export class ChatService {
       }>;
     },
     userId: string
-  ): ChatConversationDto {
+  ): Promise<ChatConversationDto> {
+    const viewerParticipant = conversation.participants.find(
+      participant => participant.userId === userId
+    );
     const peerParticipant = conversation.participants.find(
       participant => participant.userId !== userId
     );
 
-    if (!peerParticipant) {
+    if (!peerParticipant || !viewerParticipant) {
       throw new NotFoundException('Собеседник не найден');
     }
 
     const lastMessage = conversation.messages[0];
+    const viewerLastReadAt = viewerParticipant.lastReadAt;
+    const peerLastReadAt = peerParticipant.lastReadAt;
+    const unreadCount = await countUnreadMessages(
+      this.prisma,
+      conversation.id,
+      userId,
+      viewerLastReadAt
+    );
 
     return {
       id: conversation.id,
       peer: this.mapPeer(peerParticipant.user),
-      lastMessage: lastMessage ? this.mapMessage(lastMessage) : null,
+      lastMessage: lastMessage
+        ? this.mapMessage(lastMessage, userId, viewerLastReadAt, peerLastReadAt)
+        : null,
+      unreadCount,
       updatedAt: conversation.updatedAt,
     };
   }
@@ -648,19 +910,26 @@ export class ChatService {
     };
   }
 
-  private mapMessage(message: {
-    id: string;
-    conversationId: string;
-    senderId: string;
-    content: string;
-    createdAt: Date;
-    media?: Array<{
-      url: string;
-      key: string;
-      size: string;
-      mimeType: string;
-    }>;
-  }): ChatMessageDto {
+  private mapMessage(
+    message: {
+      id: string;
+      conversationId: string;
+      senderId: string;
+      content: string;
+      createdAt: Date;
+      editedAt?: Date | null;
+      isRedirected?: boolean;
+      media?: Array<{
+        url: string;
+        key: string;
+        size: string;
+        mimeType: string;
+      }>;
+    },
+    viewerId: string,
+    viewerLastReadAt: Date | null,
+    peerLastReadAt: Date | null
+  ): ChatMessageDto {
     return {
       id: message.id,
       conversationId: message.conversationId,
@@ -673,6 +942,43 @@ export class ChatService {
         mimeType: item.mimeType,
       })),
       createdAt: message.createdAt,
+      editedAt: message.editedAt ?? null,
+      isRedirected: message.isRedirected ?? false,
+      isRead: isMessageRead(
+        message,
+        viewerId,
+        viewerLastReadAt,
+        peerLastReadAt
+      ),
+    };
+  }
+
+  private async getConversationReadState(
+    conversationId: string,
+    userId: string
+  ): Promise<{
+    viewerLastReadAt: Date | null;
+    peerLastReadAt: Date | null;
+  }> {
+    const participants = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId },
+      select: { userId: true, lastReadAt: true },
+    });
+
+    const viewer = participants.find(
+      participant => participant.userId === userId
+    );
+    const peer = participants.find(
+      participant => participant.userId !== userId
+    );
+
+    if (!viewer) {
+      throw new ForbiddenException('Нет доступа к этому диалогу');
+    }
+
+    return {
+      viewerLastReadAt: viewer.lastReadAt,
+      peerLastReadAt: peer?.lastReadAt ?? null,
     };
   }
 

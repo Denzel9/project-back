@@ -2,7 +2,6 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskStatus } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
-  IsDateString,
   IsEnum,
   IsInt,
   IsOptional,
@@ -30,6 +29,14 @@ export class ListTasksWithCommentsQueryDto {
   @IsUUID()
   postId?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Фильтр по конкретной задаче',
+  })
+  @IsOptional()
+  @IsUUID()
+  taskId?: string;
+
   @ApiPropertyOptional({ enum: TaskStatus })
   @IsOptional()
   @IsEnum(TaskStatus)
@@ -44,16 +51,6 @@ export class ListTasksWithCommentsQueryDto {
   @IsString()
   @MinLength(1)
   q?: string;
-
-  @ApiPropertyOptional({
-    format: 'date-time',
-    description:
-      'Метка «прочитано до». Если передана — в ответе будет `unreadCount`: ' +
-      'комментарии других участников, созданные позже этой даты.',
-  })
-  @IsOptional()
-  @IsDateString()
-  readAfter?: string;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()

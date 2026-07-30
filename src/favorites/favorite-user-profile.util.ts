@@ -1,6 +1,10 @@
 import { Prisma, Role } from '@prisma/client';
 import { ContactItem } from '../users/dto/contact-item.dto';
 import { Person } from '../users/dto/person.dto';
+import {
+  mapUserPublicStats,
+  type UserStatsCount,
+} from '../users/user-stats.util';
 import { FavoriteUserProfileDto } from './dto/favorite-user-response.dto';
 
 const PERSON_KEYS = [
@@ -16,6 +20,13 @@ type UserWithProfiles = Prisma.UserGetPayload<{
   include: {
     creatorProfile: true;
     companyProfile: true;
+    _count: {
+      select: {
+        favoritedByUsers: true;
+        ownedTasks: true;
+        executedTasks: true;
+      };
+    };
   };
 }>;
 
@@ -52,7 +63,8 @@ export function mapFavoriteUserProfile(
     role: user.role,
     avatar: user.avatar,
     bio: user.bio,
-    followers: user.followers,
+    isVerified: user.isVerified,
+    ...mapUserPublicStats(user._count as UserStatsCount),
     location: user.location,
     aboutMe: user.aboutMe,
     banner: user.banner,

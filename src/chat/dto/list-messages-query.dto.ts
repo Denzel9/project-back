@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { transformOptionalBoolean } from '../../common/query/query-param.transforms';
 
 export class ListMessagesQueryDto {
   @ApiPropertyOptional({
@@ -24,4 +25,14 @@ export class ListMessagesQueryDto {
   @Min(1)
   @Max(100)
   limit?: number = 50;
+
+  @ApiPropertyOptional({
+    default: true,
+    description:
+      'Отметить диалог прочитанным (обновляет lastReadAt). По умолчанию true без cursor, false при cursor',
+  })
+  @IsOptional()
+  @Transform(transformOptionalBoolean)
+  @IsBoolean()
+  markRead?: boolean;
 }

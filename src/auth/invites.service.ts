@@ -113,7 +113,6 @@ export class InvitesService {
             role: invite.role,
           },
         },
-        sendEmail: false,
       });
     }
 

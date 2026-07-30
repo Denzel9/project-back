@@ -26,16 +26,21 @@ export class UsersController {
   @ApiOperation({
     summary: 'Получить профиль по id',
     description:
-      'Публичные данные User: avatar, bio, creatorProfile/companyProfile и т.д. ' +
-      'Email не возвращается (он хранится в Account). Доступен любому авторизованному пользователю.',
+      'Публичные данные User: avatar, bio, isVerified, creatorProfile/companyProfile и т.д. ' +
+      'Email не возвращается (он хранится в Account). isEmailConfirmed виден только владельцу профиля. ' +
+      'Доступен любому авторизованному пользователю.',
   })
   @ApiOkResponse({
     schema: userResponseSchema,
     description: 'Данные профиля',
   })
   @ApiNotFoundResponse({ description: 'Пользователь не найден' })
-  async getProfile(@Param('id') id: string) {
-    return this.usersService.findById(id);
+  async getProfile(@Param('id') id: string, @CurrentUser() viewer: AuthUser) {
+    return this.usersService.findPublicById(
+      id,
+      viewer.accountId,
+      viewer.userId
+    );
   }
 
   @Patch('update')

@@ -19,10 +19,17 @@ import { ListPublicationsQueryDto } from './dto/list-publications-query.dto';
 import { PublicationListRole } from './dto/publication-list-role.enum';
 import { PublicationResponseDto } from './dto/publication-response.dto';
 import { UpdatePublicationDto } from './dto/update-publication.dto';
+import {
+  mapOwnerWithStats,
+  userStatsCountSelect,
+} from '../users/user-stats.util';
 
 const participantUserInclude = {
   creatorProfile: true,
   companyProfile: true,
+  _count: {
+    select: userStatsCountSelect,
+  },
 } satisfies Prisma.UserInclude;
 
 export const publicationInclude = {
@@ -123,7 +130,6 @@ export class PublicationsService {
             mediaCount: publication.media.length,
           },
         },
-        sendEmail: false,
       });
     }
   }
@@ -137,6 +143,8 @@ export class PublicationsService {
       ...this.buildParticipantWhere(user.userId, query.role),
       ...(query.postId !== undefined && { postId: query.postId }),
       ...(query.taskId !== undefined && { taskId: query.taskId }),
+      ...(query.ownerId !== undefined && { ownerId: query.ownerId }),
+      ...(query.executorId !== undefined && { executorId: query.executorId }),
       ...(query.q !== undefined && {
         title: { contains: query.q, mode: 'insensitive' },
       }),
@@ -294,21 +302,7 @@ export class PublicationsService {
   }
 
   private mapOwner(user: PublicationWithRelations['owner']): ApplicationOwnerDto {
-    return {
-      id: user.id,
-      avatar: user.avatar ?? undefined,
-      ...(user.creatorProfile && {
-        creatorProfile: {
-          name: user.creatorProfile.name,
-          lastName: user.creatorProfile.lastName,
-        },
-      }),
-      ...(user.companyProfile && {
-        companyProfile: {
-          companyName: user.companyProfile.companyName,
-        },
-      }),
-    };
+    return mapOwnerWithStats(user);
   }
 
   private mapExecutor(

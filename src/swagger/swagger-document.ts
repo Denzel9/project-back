@@ -56,9 +56,9 @@ Backend для marketplace creator ↔ company. Документация для 
 5. \`DELETE /favorites/users/:userId\` — убрать креатора/компанию из избранного.
 
 ### Отклики на посты
-1. \`POST /applications\` — отклик (postId + message); на приватный пост откликнуться нельзя; создаёт сообщение в чате с владельцем поста; владельцу — in-app уведомление + email.
+1. \`POST /applications\` — отклик (postId + message); на приватный пост откликнуться нельзя; владельцу — in-app уведомление + email.
 2. \`GET /applications/mine\` — мои отклики; \`?type=\`, \`?q=\`, \`?status=\`.
-3. \`GET /applications/incoming\` — входящие на мои посты; \`?status=\`, \`?createdDate=YYYY-MM-DD\`, \`?q=\` (название поста), \`?postId=\`, \`?type=\`.
+3. \`GET /applications/incoming\` — входящие на мои посты; \`?status=\`, \`?createdDate=YYYY-MM-DD\`, \`?q=\` (название поста), \`?postId=\`, \`?userId=\` (соискатель), \`?type=\`.
 4. \`GET /posts/:id/applications\` — отклики на конкретный пост (владелец).
 5. \`PATCH /applications/:id/status\` — ACCEPTED создаёт задачу; REJECTED / VIEWED (владелец).
 
@@ -67,6 +67,7 @@ Backend для marketplace creator ↔ company. Документация для 
 2. \`GET /partners/tasks/customers\` — **CREATOR**: уникальные компании-заказчики из задач (те же фильтры).
 3. \`GET /partners/applications/applicants\` — **COMPANY**: креаторы, откликавшиеся на посты (\`q\`, \`postId\`, \`userId\`, \`status\`/\`statuses\`, даты, \`sort\`).
 4. \`GET /partners/applications/companies\` — **CREATOR**: компании, на посты которых откликался креатор (те же фильтры).
+5. Item: профиль + \`interactionsCount\`, \`lastInteractionAt\`, \`publicationsCount\` (без \`bio\`).
 
 ### Задачи
 1. Создаются автоматически при \`PATCH /applications/:id/status\` → ACCEPTED (\`applicationId\` заполнен).
@@ -74,7 +75,7 @@ Backend для marketplace creator ↔ company. Документация для 
 2a. \`GET /tasks/pending-approval\` — задачи исполнителя с \`isExecutorApprove: null\` (те же фильтры, кроме \`role\`).
 2b. \`GET /tasks/activities\` — лента активностей по всем доступным задачам (\`?type=\`, \`?role=owner|executor\`, \`?taskId=\`).
 2c. \`GET /tasks/comments\` — лента комментариев по всем доступным задачам (\`?role=owner|executor\`, \`?taskId=\`, \`?q=\`).
-2d. \`GET /tasks/with-comments\` — задачи с комментариями: превью последнего, \`commentsCount\`, опционально \`unreadCount\` при \`readAfter\`.
+2d. \`GET /tasks/with-comments\` — задачи с комментариями: превью последнего, \`commentsCount\`, \`unreadCount\` (по lastReadAt).
 2e. \`GET /tasks/calendar\` — компактный список для календаря (id, даты, urgent, finalDate, title, owner, executor). Фильтры: \`dateFrom\`/\`dateTo\` + \`dateField=createdAt|updatedAt|finalDate\`, \`urgent\`, \`ownerId\`, \`executorId\`, \`role\`.
 2f. \`GET /tasks/stats\` — счётчики для дашборда: \`awaitingAction\`, \`awaitingConfirmation\`, \`unassigned\`, \`overdue\`, \`urgent\`, \`underReview\`, \`cancelled\`. Фильтры: \`role\`, \`postId\`.
 3. \`POST /tasks\` — создать задачу вручную (владелец поста: \`postId\`, опционально \`executorId\`). Без отклика; \`applicationId\` = null. Исполнителя можно назначить позже через \`PATCH /tasks/:id\`.
@@ -82,12 +83,12 @@ Backend для marketplace creator ↔ company. Документация для 
 5. \`PATCH /tasks/:id\` — owner: все поля (включая \`executorId\`); executor: только status. \`description\` — Markdown (хранится как строка).
 6. \`DELETE /tasks/:id\` — удалить задачу (только owner поста).
 7. Медиа задачи: \`POST /media/upload?taskId=\` (main), \`?taskId=&kind=report\` (отчёт), \`GET /tasks/:id/attachments\` (фильтры kind, type).
-8. Комментарии: \`GET/POST /tasks/:id/comments\`, \`GET .../comments/search?q=\`, \`GET .../comments/attachments\`, \`PATCH/DELETE .../comments/:commentId\`. Вложения в комментарий: \`POST /media/upload?taskId=&forComment=true\`.
+8. Комментарии: \`GET/POST /tasks/:id/comments\`, \`POST .../comments/read\`, \`GET .../comments/search?q=\`, \`GET .../comments/attachments\`, \`PATCH/DELETE .../comments/:commentId\`. Поля: \`editedAt\`, \`isRead\`. Вложения: \`POST /media/upload?taskId=&forComment=true\`. Realtime — WebSocket \`/task-comments\`.
 9. При переходе задачи в \`COMPLETED\` автоматически создаётся публикация (снимок \`reportMedia\` и метаданных задачи). См. раздел «Публикации».
 
 ### Публикации
 1. Создаются **автоматически** при \`PATCH /tasks/:id\` → \`status: COMPLETED\` (снимок \`reportMedia\` и полей задачи). Ручного \`POST /publications\` нет.
-2. \`GET /publications\` — список, где пользователь owner или executor (\`?role=owner|executor\`, \`?postId=\`, \`?taskId=\`, \`?q=\` по title, пагинация).
+2. \`GET /publications\` — список, где пользователь owner или executor (\`?role=owner|executor\`, \`?postId=\`, \`?taskId=\`, \`?ownerId=\`, \`?executorId=\`, \`?q=\` по title, пагинация).
 3. \`GET /publications/:id\` — детали + \`media[]\` + \`owner\` / \`executor\`.
 4. \`PATCH /publications/:id\` — участники задачи: \`title\`, \`description\`, \`externalUrl\`, \`platform\`.
 
@@ -108,9 +109,18 @@ Backend для marketplace creator ↔ company. Документация для 
 3. \`PATCH /notifications/:id/read\` — пометить одно прочитанным.
 4. \`PATCH /notifications/read-all\` — прочитать все.
 5. WebSocket \`/notifications\`: при connect — комната \`user:{userId}\`; событие \`notification\` с телом уведомления и \`unreadCount\`.
-6. Email для критичных событий (отклики, задачи, чат, отзыв доступа). \`TEAM_INVITE\` — только специализированное invite-письмо + in-app при наличии аккаунта.
+6. Email через \`notify\` для всех типов уведомлений (отклики, задачи, чат, invite, публикации, отзыв доступа). \`TEAM_INVITE\` дополнительно шлёт специализированное invite-письмо со ссылкой.
+7. Уведомления по типам: \`GET/PATCH /config\` → \`inAppNotificationTypes\` и \`emailNotificationTypes\` (whitelist; по умолчанию все типы).
+8. \`CHAT_MESSAGE\` → email только если тип в email-whitelist, пользователь **offline** (нет WS \`/notifications\`) и не чаще 1 раза за 10 мин на диалог (throttle + дайджест). Окно: env \`CHAT_EMAIL_THROTTLE_MS\`.
 
 Триггеры: новый/изменённый/отозванный отклик; создание/статус/исполнитель/комментарий/отчёт задачи; публикация по завершённой задаче; сообщение в чате; отзыв membership.
+
+### Конфиг профиля
+1. \`GET /config\` — конфиг активного User (lazy create с дефолтами).
+2. \`PATCH /config\` — partial: \`inAppNotificationTypes\` / \`emailNotificationTypes\` (массивы \`NotificationType\`; пустой — канал выключен) и/или настройки дашборда CRM:
+   - \`dashboardTiles\` — массив \`DashboardTileType\` в порядке отображения;
+   - \`dashboardShowTasks\` / \`dashboardShowActivity\` / \`dashboardShowComments\` — видимость блоков;
+   - \`dashboardShowCalendar\` / \`dashboardShowChats\` — persist only (без виджетов на дашборде пока).
 
 ### Сброс и проверка пароля
 1. \`POST /auth/recovery-password\` — письмо на email Account.
@@ -122,8 +132,22 @@ Backend для marketplace creator ↔ company. Документация для 
 
 - URL: \`http://localhost:3010/chat\`, \`withCredentials: true\`.
 - \`join_conversation\` → \`{ conversationId }\`
-- \`send_message\` → \`{ conversationId, content?, media? }\`
-- Ответ: \`message\`, ошибки: \`error\`
+- \`send_message\` → \`{ conversationId, content?, media?, isRedirected? }\` (isRedirected: true при пересылке)
+- \`edit_message\` → \`{ conversationId, messageId, content }\`
+- \`delete_message\` → \`{ conversationId, messageId }\`
+- \`mark_read\` → \`{ conversationId }\`
+- Ответ: \`message\`, \`message_edited\`, \`message_deleted\`, \`messages_read\`, ошибки: \`error\`
+
+## WebSocket /task-comments
+
+- URL: \`http://localhost:3010/task-comments\`, \`withCredentials: true\` (auth как у \`/chat\`).
+- \`join_task\` → \`{ taskId }\`
+- \`send_comment\` → \`{ taskId, content?, media? }\`
+- \`edit_comment\` → \`{ taskId, commentId, content }\`
+- \`delete_comment\` → \`{ taskId, commentId }\`
+- \`mark_comments_read\` → \`{ taskId }\`
+- Ответ: \`comment\`, \`comment_edited\`, \`comment_deleted\` \`{ taskId, commentId }\`, \`comments_read\` \`{ taskId, userId, readAt }\`, ошибки: \`error\`
+- REST-мутации комментариев тоже бродкастят эти события в комнату \`task:{taskId}\`.
 
 ## WebSocket /notifications
 
@@ -171,7 +195,7 @@ export function createSwaggerConfig() {
     )
     .addTag(
       'tasks',
-      'Задачи: автосоздание при ACCEPTED, owner/executor, комментарии'
+      'Задачи: автосоздание при ACCEPTED, owner/executor, комментарии (REST + WebSocket /task-comments)'
     )
     .addTag(
       'partners',
@@ -184,6 +208,10 @@ export function createSwaggerConfig() {
     .addTag(
       'publications',
       'Публикации по завершённым задачам: автосоздание, снимок reportMedia, доступ owner/executor'
+    )
+    .addTag(
+      'config',
+      'Настройки профиля: уведомления и дашборд CRM (расширяемый UserConfig)'
     )
     .addCookieAuth('access-token')
     .build();

@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { transformOptionalBoolean } from '../../common/query/query-param.transforms';
 
 export class ListTaskCommentsQueryDto {
   @ApiPropertyOptional({ default: 1, minimum: 1 })
@@ -17,4 +18,14 @@ export class ListTaskCommentsQueryDto {
   @Min(1)
   @Max(100)
   limit?: number = 20;
+
+  @ApiPropertyOptional({
+    default: true,
+    description:
+      'Отметить комментарии задачи прочитанными (обновляет lastReadAt). По умолчанию true',
+  })
+  @IsOptional()
+  @Transform(transformOptionalBoolean)
+  @IsBoolean()
+  markRead?: boolean;
 }

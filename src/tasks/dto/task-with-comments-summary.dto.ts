@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class TaskLastCommentPreviewDto {
   @ApiProperty({
@@ -29,10 +29,10 @@ export class TaskWithCommentsSummaryDto {
   @ApiProperty()
   commentsCount: number;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     description:
-      'Число комментариев от других участников после `readAfter`. ' +
-      'Поле есть только если передан query-параметр `readAfter`.',
+      'Число непрочитанных комментариев от других участников ' +
+      '(createdAt > lastReadAt текущего пользователя)',
   })
-  unreadCount?: number;
+  unreadCount: number;
 }

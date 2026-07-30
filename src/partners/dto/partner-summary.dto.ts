@@ -11,11 +11,10 @@ export class PartnerSummaryDto {
   @ApiPropertyOptional({ nullable: true })
   avatar: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  bio: string | null;
-
-  @ApiProperty()
-  followers: number;
+  @ApiProperty({
+    description: 'Профиль проверен платформой (бейдж верификации)',
+  })
+  isVerified: boolean;
 
   @ApiPropertyOptional({ description: 'Только для CREATOR' })
   name?: string;
@@ -25,6 +24,12 @@ export class PartnerSummaryDto {
 
   @ApiPropertyOptional({ description: 'Только для COMPANY' })
   companyName?: string;
+
+  @ApiProperty({
+    description:
+      'Число публикаций пользователя (как owner или executor)',
+  })
+  publicationsCount: number;
 
   @ApiProperty({
     description: 'Количество связанных задач или откликов с учётом фильтров',

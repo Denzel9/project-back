@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN "isVerified" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "User" ADD COLUMN "isEmailConfirmed" BOOLEAN NOT NULL DEFAULT false;

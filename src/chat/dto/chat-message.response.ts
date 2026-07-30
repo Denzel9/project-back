@@ -34,4 +34,23 @@ export class ChatMessageResponse {
 
   @ApiProperty({ format: 'date-time' })
   createdAt: Date;
+
+  @ApiProperty({
+    format: 'date-time',
+    nullable: true,
+    description: 'Время последнего редактирования; null — не редактировалось',
+  })
+  editedAt: Date | null;
+
+  @ApiProperty({
+    description: 'Сообщение переслано из другого диалога',
+    example: false,
+  })
+  isRedirected: boolean;
+
+  @ApiProperty({
+    description:
+      'Для входящих — прочитано вами; для исходящих — прочитано собеседником',
+  })
+  isRead: boolean;
 }

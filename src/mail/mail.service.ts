@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { buildPasswordResetEmail } from './templates/password-reset';
+import { buildEmailConfirmEmail } from './templates/email-confirm';
 import { buildAccountInviteEmail } from './templates/account-invite';
 import {
   ApplicationReceivedEmailParams,
@@ -20,16 +21,35 @@ import {
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private transporter: Transporter;
+  private transporter: Transporter | null = null;
+  private readonly smtpEnabled: boolean;
 
   constructor(private readonly configService: ConfigService) {
+    this.smtpEnabled =
+      this.configService.get<string>('SMTP_ENABLED') !== 'false';
+
+    if (!this.smtpEnabled) {
+      this.logger.warn(
+        'SMTP_ENABLED=false — письма не отправляются, содержимое пишется в лог'
+      );
+      return;
+    }
+
     const smtpUser = this.configService.get<string>('SMTP_USER');
     const smtpPass = this.configService.get<string>('SMTP_PASSWORD');
+    const port = Number(this.configService.getOrThrow<string>('SMTP_PORT'));
+    const secure =
+      this.configService.get<string>('SMTP_SECURE') === 'true' || port === 465;
 
     this.transporter = nodemailer.createTransport({
       host: this.configService.getOrThrow<string>('SMTP_HOST'),
-      port: Number(this.configService.getOrThrow<string>('SMTP_PORT')),
-      secure: this.configService.get<string>('SMTP_SECURE') === 'true',
+      port,
+      secure,
+      requireTLS: !secure && port === 587,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
+      tls: { rejectUnauthorized: false },
       ...(smtpUser && smtpPass
         ? { auth: { user: smtpUser, pass: smtpPass } }
         : {}),
@@ -42,6 +62,16 @@ export class MailService {
       .replace(/\/$/, '');
     const resetUrl = `${frontendUrl}/auth?token=${encodeURIComponent(token)}`;
     const { subject, text, html } = buildPasswordResetEmail(resetUrl);
+
+    await this.sendMail({ to, subject, text, html });
+  }
+
+  async sendEmailConfirmationEmail(to: string, token: string): Promise<void> {
+    const frontendUrl = this.configService
+      .getOrThrow<string>('FRONTEND_URL')
+      .replace(/\/$/, '');
+    const confirmUrl = `${frontendUrl}/auth/confirm-email?token=${encodeURIComponent(token)}`;
+    const { subject, text, html } = buildEmailConfirmEmail(confirmUrl);
 
     await this.sendMail({ to, subject, text, html });
   }
@@ -82,16 +112,31 @@ export class MailService {
     text: string;
     html: string;
   }): Promise<void> {
+    if (!this.smtpEnabled || !this.transporter) {
+      this.logger.warn(
+        `[SMTP dry-run] to=${options.to} subject="${options.subject}"\n${options.text}`
+      );
+      return;
+    }
+
     const from = this.configService.getOrThrow<string>('SMTP_FROM');
+    const sendTimeoutMs = 12_000;
 
     try {
-      await this.transporter.sendMail({
-        from,
-        to: options.to,
-        subject: options.subject,
-        text: options.text,
-        html: options.html,
-      });
+      await Promise.race([
+        this.transporter.sendMail({
+          from,
+          to: options.to,
+          subject: options.subject,
+          text: options.text,
+          html: options.html,
+        }),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`SMTP timeout after ${sendTimeoutMs}ms`));
+          }, sendTimeoutMs);
+        }),
+      ]);
     } catch (error) {
       this.logger.error('Failed to send email', error);
       throw new InternalServerErrorException('Не удалось отправить письмо');

@@ -20,6 +20,8 @@ export type ProfileSummary = {
   avatar: string | null;
   membershipRole: MembershipRole;
   membershipId: string;
+  isVerified: boolean;
+  isEmailConfirmed: boolean;
 };
 
 @Injectable()
@@ -50,6 +52,8 @@ export class AccountMembershipService {
       membershipRole: membership.role,
       membershipId: membership.id,
       isActive: membership.userId === activeUserId,
+      isVerified: membership.user.isVerified,
+      isEmailConfirmed: membership.user.isEmailConfirmed,
     }));
   }
 

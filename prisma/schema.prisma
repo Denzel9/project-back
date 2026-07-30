@@ -143,6 +143,23 @@ enum PublicationStatus {
   PUBLISHED
 }
 
+enum DashboardTileType {
+  PENDING_ACTION
+  PENDING_EXECUTOR_ASSIGN
+  NO_EXECUTOR_ASSIGN
+  OVERDUE
+  URGENT
+  CHECKING
+  CANCELLED
+}
+
+enum PrimeStatus {
+  NONE
+  ACTIVE
+  EXPIRED
+  CANCELED
+}
+
 model Account {
   id          String              @id @default(uuid())
   email       String              @unique
@@ -188,6 +205,9 @@ model User {
   id                       String                    @id @default(uuid())
   email                    String
   role                     Role
+  primeStatus              PrimeStatus               @default(NONE)
+  primeExpiresAt           DateTime?
+  primeStartedAt           DateTime?
   creatorProfile           CreatorProfile?
   companyProfile           CompanyProfile?
   memberships              AccountMembership[]
@@ -202,7 +222,8 @@ model User {
   location                 String?
   avatar                   String?
   bio                      String?
-  followers                Int                       @default(0)
+  isVerified               Boolean                   @default(false)
+  isEmailConfirmed         Boolean                   @default(false)
   aboutMe                  String?
   banner                   String?
   posts                    Post[]
@@ -214,11 +235,29 @@ model User {
   ownedTasks               Task[]                    @relation("OwnedTasks")
   executedTasks            Task[]                    @relation("ExecutedTasks")
   taskComments             TaskComment[]
+  taskCommentReadStates    TaskCommentReadState[]
   taskActivities           TaskActivity[]
   notifications            Notification[]
   sentNotifications        Notification[]            @relation("NotificationActor")
   ownedPublications        Publication[]             @relation("OwnedPublications")
   executedPublications     Publication[]             @relation("ExecutedPublications")
+  config                   UserConfig?
+}
+
+model UserConfig {
+  id                     String              @id @default(uuid())
+  userId                 String              @unique
+  user                   User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inAppNotificationTypes NotificationType[]
+  emailNotificationTypes NotificationType[]
+  dashboardTiles         DashboardTileType[]
+  dashboardShowTasks     Boolean             @default(true)
+  dashboardShowActivity  Boolean             @default(true)
+  dashboardShowComments  Boolean             @default(true)
+  dashboardShowCalendar  Boolean             @default(true)
+  dashboardShowChats     Boolean             @default(true)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
 }
 
 model Notification {
@@ -250,6 +289,7 @@ model ConversationParticipant {
   id             String       @id @default(uuid())
   conversationId String
   userId         String
+  lastReadAt     DateTime?
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -262,6 +302,8 @@ model Message {
   conversationId String
   senderId       String
   content        String
+  editedAt       DateTime?
+  isRedirected   Boolean        @default(false)
   createdAt      DateTime       @default(now())
   conversation   Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender         User           @relation(fields: [senderId], references: [id], onDelete: Cascade)
@@ -412,35 +454,36 @@ model PostApplication {
 }
 
 model Task {
-  id                String           @id @default(uuid())
-  applicationId     String?          @unique
-  application       PostApplication? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  postId            String
-  post              Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
-  ownerId           String
-  owner             User             @relation("OwnedTasks", fields: [ownerId], references: [id], onDelete: Cascade)
-  executorId        String?
-  executor          User?            @relation("ExecutedTasks", fields: [executorId], references: [id], onDelete: Cascade)
-  status            TaskStatus       @default(PREPARING)
-  title             String?
-  description       String           @default("")
-  finalDate         DateTime?
-  photoCount        String           @default("0")
-  videoCount        String           @default("0")
-  urgent            Boolean          @default(false)
-  isExecutorApprove Boolean?
-  isCompanyAction   Boolean          @default(true)
-  location          Json?
+  id                  String                 @id @default(uuid())
+  applicationId       String?                @unique
+  application         PostApplication?       @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  postId              String
+  post                Post                   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  ownerId             String
+  owner               User                   @relation("OwnedTasks", fields: [ownerId], references: [id], onDelete: Cascade)
+  executorId          String?
+  executor            User?                  @relation("ExecutedTasks", fields: [executorId], references: [id], onDelete: Cascade)
+  status              TaskStatus             @default(PREPARING)
+  title               String?
+  description         String                 @default("")
+  finalDate           DateTime?
+  photoCount          String                 @default("0")
+  videoCount          String                 @default("0")
+  urgent              Boolean                @default(false)
+  isExecutorApprove   Boolean?
+  isCompanyAction     Boolean                @default(true)
+  location            Json?
   bloggerRequirements Json?
   cooperationDetails  Json?
   brief               Json?
   deliverables        Json?
-  media             TaskMedia[]
-  comments          TaskComment[]
-  activities        TaskActivity[]
-  publication       Publication?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  media               TaskMedia[]
+  comments            TaskComment[]
+  commentReadStates   TaskCommentReadState[]
+  activities          TaskActivity[]
+  publication         Publication?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
 
   @@index([ownerId])
   @@index([executorId])
@@ -455,11 +498,23 @@ model TaskComment {
   authorId  String
   author    User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
   content   String
+  editedAt  DateTime?
   media     TaskCommentMedia[]
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
 
   @@index([taskId])
+}
+
+model TaskCommentReadState {
+  taskId     String
+  userId     String
+  lastReadAt DateTime?
+  task       Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
+  @@index([userId])
 }
 
 model TaskCommentMedia {

@@ -23,6 +23,7 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { EmailConfirmedGuard } from '../auth/guards/email-confirmed.guard';
 import { ApplicationResponseDto } from './dto/application-response.dto';
 import { CreateApplicationDto } from './dto/create-application.dto';
 import { ListApplicationsQueryDto } from './dto/list-applications-query.dto';
@@ -37,12 +38,12 @@ export class ApplicationsController {
   constructor(private readonly applicationsService: ApplicationsService) {}
 
   @Post()
+  @UseGuards(EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Откликнуться на пост',
     description:
       'Один отклик на пост. Нельзя откликнуться на свой или архивный пост. ' +
-      'ACCEPTED создаёт задачу. Создаёт сообщение «Новый отклик» в диалоге с владельцем поста. ' +
-      'Владельцу поста отправляется email на Account OWNER.',
+      'ACCEPTED создаёт задачу. Владельцу поста отправляется in-app уведомление и email.',
   })
   @ApiCreatedResponse({ type: ApplicationResponseDto })
   @ApiNotFoundResponse({ description: 'Пост не найден' })
@@ -73,7 +74,7 @@ export class ApplicationsController {
     summary: 'Входящие отклики на мои посты',
     description:
       'Все отклики на посты активного профиля (владелец). ' +
-      'Фильтры: `postId`, `status`, `createdDate` (YYYY-MM-DD, UTC), `type` (CREATOR / COMPANY). ' +
+      'Фильтры: `postId`, `userId` (соискатель), `status`, `createdDate` (YYYY-MM-DD, UTC), `type` (CREATOR / COMPANY). ' +
       'Поиск: `q` — по названию поста. Содержит данные поста и соискателя (applicant).',
   })
   @ApiOkResponse({ description: 'Список входящих откликов с пагинацией' })
@@ -85,6 +86,7 @@ export class ApplicationsController {
   }
 
   @Patch(':id/withdraw')
+  @UseGuards(EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Отозвать отклик',
     description: 'Только соискатель. Статусы NEW и VIEWED → WITHDRAWN.',
@@ -101,6 +103,7 @@ export class ApplicationsController {
   }
 
   @Patch(':id/status')
+  @UseGuards(EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Изменить статус отклика',
     description:

@@ -4,9 +4,10 @@ paths:
     get:
       operationId: UsersController_getProfile
       summary: Получить профиль по id
-      description: "Публичные данные User: avatar, bio, creatorProfile/companyProfile
-        и т.д. Email не возвращается (он хранится в Account). Доступен любому
-        авторизованному пользователю."
+      description: "Публичные данные User: avatar, bio, isVerified,
+        creatorProfile/companyProfile и т.д. Email не возвращается (он хранится
+        в Account). isEmailConfirmed виден только владельцу профиля. Доступен
+        любому авторизованному пользователю."
       parameters:
         - name: id
           required: true
@@ -110,6 +111,12 @@ paths:
                       followers:
                         type: number
                         example: 0
+                      isVerified:
+                        type: boolean
+                        description: Профиль проверен платформой
+                      isEmailConfirmed:
+                        type: boolean
+                        description: Email профиля (User.email) подтверждён
                       aboutMe:
                         type: string
                         nullable: true
@@ -241,6 +248,12 @@ paths:
                       followers:
                         type: number
                         example: 0
+                      isVerified:
+                        type: boolean
+                        description: Профиль проверен платформой
+                      isEmailConfirmed:
+                        type: boolean
+                        description: Email профиля (User.email) подтверждён
                       aboutMe:
                         type: string
                         nullable: true
@@ -653,6 +666,49 @@ paths:
           description: Уведомление не найдено
       tags: *a4
       security: *a5
+  /config:
+    get:
+      operationId: UserConfigController_get
+      summary: Конфиг активного профиля
+      description: Создаётся с дефолтами при первом запросе. `inAppNotificationTypes`
+        — whitelist in-app; `emailNotificationTypes` — whitelist email.
+      parameters: []
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserConfigResponseDto"
+      tags: &a6
+        - config
+      security: &a7
+        - access-token: []
+    patch:
+      operationId: UserConfigController_update
+      summary: Обновить конфиг
+      description: "Можно передать `inAppNotificationTypes` и/или
+        `emailNotificationTypes` (полная замена массива). Пустой массив
+        отключает канал для всех типов. Для CHAT_MESSAGE email дополнительно:
+        только offline + throttle."
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserConfigDto"
+      responses:
+        "200":
+          description: ""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserConfigResponseDto"
+        "400":
+          description: Не передано ни одного поля
+      tags: *a6
+      security: *a7
   /chat/conversations:
     get:
       operationId: ChatController_listConversations
@@ -670,9 +726,9 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ChatConversationResponse"
-      tags: &a6
+      tags: &a8
         - chat
-      security: &a7
+      security: &a9
         - access-token: []
     post:
       operationId: ChatController_createConversation
@@ -697,8 +753,8 @@ paths:
           description: Нельзя создать диалог с самим собой
         "404":
           description: Получатель не найден
-      tags: *a6
-      security: *a7
+      tags: *a8
+      security: *a9
   /chat/conversations/{id}/messages/search:
     get:
       operationId: ChatController_searchMessages
@@ -742,8 +798,8 @@ paths:
                 $ref: "#/components/schemas/SearchMessagesResponse"
         "403":
           description: Нет доступа к диалогу
-      tags: *a6
-      security: *a7
+      tags: *a8
+      security: *a9
   /chat/conversations/{id}/messages:
     get:
       operationId: ChatController_listMessages
@@ -784,8 +840,8 @@ paths:
                   $ref: "#/components/schemas/ChatMessageResponse"
         "403":
           description: Нет доступа к диалогу
-      tags: *a6
-      security: *a7
+      tags: *a8
+      security: *a9
   /chat/conversations/{id}/attachments:
     get:
       operationId: ChatController_listAttachments
@@ -834,8 +890,8 @@ paths:
                 $ref: "#/components/schemas/ListAttachmentsResponse"
         "403":
           description: Нет доступа к диалогу
-      tags: *a6
-      security: *a7
+      tags: *a8
+      security: *a9
   /creator/profile:
     get:
       operationId: CreatorController_getProfile
@@ -957,9 +1013,9 @@ paths:
             задачи или не участник диалога)
         "404":
           description: Пост или задача не найдены
-      tags: &a8
+      tags: &a10
         - media
-      security: &a9
+      security: &a11
         - access-token: []
   /media/{mediaId}:
     delete:
@@ -1001,8 +1057,8 @@ paths:
           description: Недостаточно прав
         "404":
           description: Медиа, пост, задача или диалог не найдены
-      tags: *a8
-      security: *a9
+      tags: *a10
+      security: *a11
   /posts:
     post:
       operationId: PostsController_create
@@ -1027,9 +1083,9 @@ paths:
                 $ref: "#/components/schemas/PostResponseDto"
         "403":
           description: Недостаточно прав (роль VIEWER)
-      tags: &a10
+      tags: &a12
         - posts
-      security: &a11
+      security: &a13
         - access-token: []
     get:
       operationId: PostsController_list
@@ -1386,8 +1442,8 @@ paths:
       responses:
         "200":
           description: Список постов с пагинацией
-      tags: *a10
-      security: *a11
+      tags: *a12
+      security: *a13
   /posts/{id}/applications:
     get:
       operationId: PostsController_listApplications
@@ -1465,8 +1521,8 @@ paths:
           description: Нет доступа к откликам на этот пост
         "404":
           description: Пост не найден
-      tags: *a10
-      security: *a11
+      tags: *a12
+      security: *a13
   /posts/{id}:
     get:
       operationId: PostsController_findById
@@ -1491,8 +1547,8 @@ paths:
           description: Пост недоступен для вашей роли
         "404":
           description: Пост не найден
-      tags: *a10
-      security: *a11
+      tags: *a12
+      security: *a13
     patch:
       operationId: PostsController_update
       summary: Обновить пост
@@ -1521,8 +1577,8 @@ paths:
           description: Недостаточно прав (не владелец или VIEWER)
         "404":
           description: Пост не найден
-      tags: *a10
-      security: *a11
+      tags: *a12
+      security: *a13
     delete:
       operationId: PostsController_remove
       summary: Удалить пост
@@ -1540,8 +1596,8 @@ paths:
           description: Недостаточно прав (не владелец или VIEWER)
         "404":
           description: Пост не найден
-      tags: *a10
-      security: *a11
+      tags: *a12
+      security: *a13
   /applications:
     post:
       operationId: ApplicationsController_create
@@ -1569,9 +1625,9 @@ paths:
           description: Пост не найден
         "409":
           description: Уже откликались на этот пост
-      tags: &a12
+      tags: &a14
         - applications
-      security: &a13
+      security: &a15
         - access-token: []
   /applications/mine:
     get:
@@ -1642,8 +1698,8 @@ paths:
       responses:
         "200":
           description: Список откликов с пагинацией
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
   /applications/incoming:
     get:
       operationId: ApplicationsController_listIncoming
@@ -1714,8 +1770,8 @@ paths:
       responses:
         "200":
           description: Список входящих откликов с пагинацией
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
   /applications/{id}/withdraw:
     patch:
       operationId: ApplicationsController_withdraw
@@ -1740,8 +1796,8 @@ paths:
           description: Не ваш отклик
         "404":
           description: Отклик не найден
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
   /applications/{id}/status:
     patch:
       operationId: ApplicationsController_updateStatus
@@ -1773,8 +1829,8 @@ paths:
           description: Не владелец поста
         "404":
           description: Отклик не найден
-      tags: *a12
-      security: *a13
+      tags: *a14
+      security: *a15
   /tasks:
     get:
       operationId: TasksController_list
@@ -1933,9 +1989,9 @@ paths:
       responses:
         "200":
           description: Список задач с пагинацией
-      tags: &a14
+      tags: &a16
         - tasks
-      security: &a15
+      security: &a17
         - access-token: []
     post:
       operationId: TasksController_create
@@ -1962,8 +2018,8 @@ paths:
           description: Не владелец поста или VIEWER
         "404":
           description: Пост или исполнитель не найдены
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
   /tasks/pending-approval:
     get:
       operationId: TasksController_listPendingApproval
@@ -2119,8 +2175,8 @@ paths:
       responses:
         "200":
           description: Список задач с пагинацией
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
   /tasks/activities:
     get:
       operationId: TasksController_listAllActivities
@@ -2178,8 +2234,8 @@ paths:
           description: Нет доступа к задаче (при taskId)
         "404":
           description: Задача не найдена (при указанном taskId)
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
   /tasks/comments:
     get:
       operationId: TasksController_listAllComments
@@ -2234,8 +2290,8 @@ paths:
           description: Нет доступа к задаче (при taskId)
         "404":
           description: Задача не найдена (при указанном taskId)
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
   /tasks/with-comments:
     get:
       operationId: TasksController_listTasksWithComments
@@ -2309,8 +2365,8 @@ paths:
       responses:
         "200":
           description: Список задач с превью комментариев
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
   /tasks/calendar:
     get:
       operationId: TasksController_listCalendar
@@ -2399,8 +2455,8 @@ paths:
       responses:
         "200":
           description: Список задач для календаря с пагинацией
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
   /tasks/stats:
     get:
       operationId: TasksController_getStats
@@ -2437,8 +2493,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskStatsResponseDto"
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
   /tasks/{id}:
     get:
       operationId: TasksController_findById
@@ -2462,14 +2518,15 @@ paths:
           description: Нет доступа
         "404":
           description: Задача не найдена
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
     patch:
       operationId: TasksController_update
       summary: Обновить задачу
-      description: owner — все поля (включая `executorId`, `isExecutorApprove`);
-        executor — `status`, `isExecutorApprove` и `isCompanyAction`.
-        `description` — Markdown. VIEWER → 403.
+      description: "owner — все поля (включая `executorId`, `isExecutorApprove`, JSON:
+        `location`, `bloggerRequirements`, `cooperationDetails`, `brief`,
+        `deliverables`); executor — `status`, `isExecutorApprove` и
+        `isCompanyAction`. `description` — Markdown. VIEWER → 403."
       parameters:
         - name: id
           required: true
@@ -2493,8 +2550,8 @@ paths:
           description: Нет доступа или недопустимые поля
         "404":
           description: Задача не найдена
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
     delete:
       operationId: TasksController_remove
       summary: Удалить задачу
@@ -2513,8 +2570,8 @@ paths:
           description: Не владелец поста или VIEWER
         "404":
           description: Задача не найдена
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
   /tasks/{id}/activities:
     get:
       operationId: TasksController_listActivities
@@ -2560,8 +2617,8 @@ paths:
           description: Нет доступа
         "404":
           description: Задача не найдена
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
   /tasks/{id}/attachments:
     get:
       operationId: TasksController_listAttachments
@@ -2620,8 +2677,8 @@ paths:
           description: Нет доступа
         "404":
           description: Задача не найдена
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
   /tasks/{id}/comments/search:
     get:
       operationId: TasksController_searchComments
@@ -2667,8 +2724,8 @@ paths:
           description: Нет доступа
         "404":
           description: Задача не найдена
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
   /tasks/{id}/comments/attachments:
     get:
       operationId: TasksController_listCommentAttachments
@@ -2718,8 +2775,8 @@ paths:
           description: Нет доступа
         "404":
           description: Задача не найдена
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
   /tasks/{id}/comments:
     get:
       operationId: TasksController_listComments
@@ -2748,8 +2805,8 @@ paths:
       responses:
         "200":
           description: Список комментариев с пагинацией
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
     post:
       operationId: TasksController_createComment
       summary: Добавить комментарий
@@ -2774,8 +2831,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskCommentResponseDto"
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
   /tasks/{id}/comments/{commentId}:
     patch:
       operationId: TasksController_updateComment
@@ -2805,8 +2862,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskCommentResponseDto"
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
     delete:
       operationId: TasksController_deleteComment
       summary: Удалить комментарий
@@ -2825,8 +2882,8 @@ paths:
       responses:
         "204":
           description: Комментарий удалён
-      tags: *a14
-      security: *a15
+      tags: *a16
+      security: *a17
   /publications:
     get:
       operationId: PublicationsController_list
@@ -2880,9 +2937,9 @@ paths:
       responses:
         "200":
           description: Список публикаций с пагинацией
-      tags: &a16
+      tags: &a18
         - publications
-      security: &a17
+      security: &a19
         - access-token: []
   /publications/{id}:
     get:
@@ -2905,8 +2962,8 @@ paths:
           description: Нет доступа
         "404":
           description: Публикация не найдена
-      tags: *a16
-      security: *a17
+      tags: *a18
+      security: *a19
     patch:
       operationId: PublicationsController_update
       summary: Обновить публикацию
@@ -2935,8 +2992,8 @@ paths:
           description: Нет доступа
         "404":
           description: Публикация не найдена
-      tags: *a16
-      security: *a17
+      tags: *a18
+      security: *a19
   /favorites/groups:
     get:
       operationId: FavoritesController_listGroups
@@ -2952,9 +3009,9 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/FavoriteGroupResponseDto"
-      tags: &a18
+      tags: &a20
         - favorites
-      security: &a19
+      security: &a21
         - access-token: []
     post:
       operationId: FavoritesController_createGroup
@@ -2976,8 +3033,8 @@ paths:
                 $ref: "#/components/schemas/FavoriteGroupResponseDto"
         "409":
           description: Группа с таким названием уже существует
-      tags: *a18
-      security: *a19
+      tags: *a20
+      security: *a21
   /favorites/groups/{id}:
     patch:
       operationId: FavoritesController_updateGroup
@@ -3005,8 +3062,8 @@ paths:
           description: Группа не найдена
         "409":
           description: Группа с таким названием уже существует
-      tags: *a18
-      security: *a19
+      tags: *a20
+      security: *a21
     delete:
       operationId: FavoritesController_deleteGroup
       summary: Удалить группу
@@ -3022,8 +3079,8 @@ paths:
           description: Группа удалена
         "404":
           description: Группа не найдена
-      tags: *a18
-      security: *a19
+      tags: *a20
+      security: *a21
   /favorites:
     get:
       operationId: FavoritesController_listFavorites
@@ -3084,8 +3141,8 @@ paths:
       responses:
         "200":
           description: Избранное с пагинацией
-      tags: *a18
-      security: *a19
+      tags: *a20
+      security: *a21
     post:
       operationId: FavoritesController_addFavorite
       summary: Добавить в избранное
@@ -3109,8 +3166,8 @@ paths:
                   - $ref: "#/components/schemas/FavoriteUserItemResponseDto"
         "404":
           description: Пост, пользователь или группа не найдены
-      tags: *a18
-      security: *a19
+      tags: *a20
+      security: *a21
   /favorites/{postId}:
     patch:
       operationId: FavoritesController_moveFavorite
@@ -3137,8 +3194,8 @@ paths:
                 $ref: "#/components/schemas/FavoriteResponseDto"
         "404":
           description: Пост не найден в избранном или группа не найдена
-      tags: *a18
-      security: *a19
+      tags: *a20
+      security: *a21
     delete:
       operationId: FavoritesController_removeFavorite
       summary: Убрать пост из избранного
@@ -3153,8 +3210,8 @@ paths:
           description: Пост убран из избранного
         "404":
           description: Пост не найден в избранном
-      tags: *a18
-      security: *a19
+      tags: *a20
+      security: *a21
   /favorites/users/{userId}:
     delete:
       operationId: FavoritesController_removeFavoriteUser
@@ -3170,8 +3227,8 @@ paths:
           description: Пользователь убран из избранного
         "404":
           description: Пользователь не найден в избранном
-      tags: *a18
-      security: *a19
+      tags: *a20
+      security: *a21
   /partners/tasks/executors:
     get:
       operationId: PartnersController_listTaskExecutors
@@ -3287,9 +3344,9 @@ paths:
           description: Список исполнителей с пагинацией
         "403":
           description: Доступно только для роли COMPANY
-      tags: &a20
+      tags: &a22
         - partners
-      security: &a21
+      security: &a23
         - access-token: []
   /partners/tasks/customers:
     get:
@@ -3405,8 +3462,8 @@ paths:
           description: Список заказчиков с пагинацией
         "403":
           description: Доступно только для роли CREATOR
-      tags: *a20
-      security: *a21
+      tags: *a22
+      security: *a23
   /partners/applications/applicants:
     get:
       operationId: PartnersController_listApplicationApplicants
@@ -3499,8 +3556,8 @@ paths:
           description: Список соискателей с пагинацией
         "403":
           description: Доступно только для роли COMPANY
-      tags: *a20
-      security: *a21
+      tags: *a22
+      security: *a23
   /partners/applications/companies:
     get:
       operationId: PartnersController_listApplicationCompanies
@@ -3593,8 +3650,8 @@ paths:
           description: Список компаний с пагинацией
         "403":
           description: Доступно только для роли CREATOR
-      tags: *a20
-      security: *a21
+      tags: *a22
+      security: *a23
 info:
   title: Project Back API
   description: >-
@@ -3857,14 +3914,29 @@ info:
     5. WebSocket `/notifications`: при connect — комната `user:{userId}`;
     событие `notification` с телом уведомления и `unreadCount`.
 
-    6. Email для критичных событий (отклики, задачи, чат, отзыв доступа).
-    `TEAM_INVITE` — только специализированное invite-письмо + in-app при наличии
-    аккаунта.
+    6. Email через `notify` для всех типов уведомлений (отклики, задачи, чат,
+    invite, публикации, отзыв доступа). `TEAM_INVITE` дополнительно шлёт
+    специализированное invite-письмо со ссылкой.
+
+    7. Уведомления по типам: `GET/PATCH /config` → `inAppNotificationTypes` и
+    `emailNotificationTypes` (whitelist; по умолчанию все типы).
+
+    8. `CHAT_MESSAGE` → email только если тип в email-whitelist, пользователь
+    **offline** (нет WS `/notifications`) и не чаще 1 раза за 10 мин на диалог
+    (throttle + дайджест). Окно: env `CHAT_EMAIL_THROTTLE_MS`.
 
 
     Триггеры: новый/изменённый/отозванный отклик;
     создание/статус/исполнитель/комментарий/отчёт задачи; публикация по
     завершённой задаче; сообщение в чате; отзыв membership.
+
+
+    ### Конфиг профиля
+
+    1. `GET /config` — конфиг активного User (lazy create с дефолтами).
+
+    2. `PATCH /config` — `inAppNotificationTypes` и/или `emailNotificationTypes`
+    (массивы `NotificationType`). Пустой массив — канал выключен.
 
 
     ### Сброс и проверка пароля
@@ -3933,6 +4005,8 @@ tags:
   - name: publications
     description: "Публикации по завершённым задачам: автосоздание, снимок
       reportMedia, доступ owner/executor"
+  - name: config
+    description: "Настройки профиля: in-app уведомления (расширяемый UserConfig)"
 servers:
   - url: http://localhost:3010
     description: Локальная разработка
@@ -4137,10 +4211,18 @@ components:
             - ADMIN
             - EDITOR
             - VIEWER
+        isVerified:
+          type: boolean
+          description: Профиль проверен платформой (бейдж верификации)
+        isEmailConfirmed:
+          type: boolean
+          description: Email профиля (User.email) подтверждён
       required:
         - id
         - role
         - membershipRole
+        - isVerified
+        - isEmailConfirmed
     RegisterCompanyDto:
       type: object
       properties:
@@ -4224,6 +4306,12 @@ components:
           format: uuid
         isActive:
           type: boolean
+        isVerified:
+          type: boolean
+          description: Профиль проверен платформой (бейдж верификации)
+        isEmailConfirmed:
+          type: boolean
+          description: Email профиля (User.email) подтверждён
       required:
         - userId
         - role
@@ -4232,6 +4320,8 @@ components:
         - membershipRole
         - membershipId
         - isActive
+        - isVerified
+        - isEmailConfirmed
     SwitchProfileDto:
       type: object
       properties:
@@ -4390,6 +4480,106 @@ components:
         - title
         - payload
         - createdAt
+    UserConfigResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        inAppNotificationTypes:
+          type: array
+          description: Whitelist типов in-app уведомлений (inbox + WebSocket). Пустой
+            массив — все in-app выключены.
+          items:
+            type: string
+            enum:
+              - APPLICATION_NEW
+              - APPLICATION_STATUS_CHANGED
+              - APPLICATION_WITHDRAWN
+              - TASK_CREATED
+              - TASK_STATUS_CHANGED
+              - TASK_EXECUTOR_ASSIGNED
+              - TASK_COMMENT_CREATED
+              - TASK_MEDIA_ADDED
+              - CHAT_MESSAGE
+              - TEAM_INVITE
+              - MEMBERSHIP_REVOKED
+              - PUBLICATION_CREATED
+        emailNotificationTypes:
+          type: array
+          description: "Whitelist типов email-уведомлений. Пустой массив — все email
+            выключены. Для CHAT_MESSAGE дополнительно: только offline +
+            throttle."
+          items:
+            type: string
+            enum:
+              - APPLICATION_NEW
+              - APPLICATION_STATUS_CHANGED
+              - APPLICATION_WITHDRAWN
+              - TASK_CREATED
+              - TASK_STATUS_CHANGED
+              - TASK_EXECUTOR_ASSIGNED
+              - TASK_COMMENT_CREATED
+              - TASK_MEDIA_ADDED
+              - CHAT_MESSAGE
+              - TEAM_INVITE
+              - MEMBERSHIP_REVOKED
+              - PUBLICATION_CREATED
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - inAppNotificationTypes
+        - emailNotificationTypes
+        - createdAt
+        - updatedAt
+    UpdateUserConfigDto:
+      type: object
+      properties:
+        inAppNotificationTypes:
+          type: array
+          description: Полная замена whitelist in-app. Пустой массив — отключить все in-app.
+          items:
+            type: string
+            enum:
+              - APPLICATION_NEW
+              - APPLICATION_STATUS_CHANGED
+              - APPLICATION_WITHDRAWN
+              - TASK_CREATED
+              - TASK_STATUS_CHANGED
+              - TASK_EXECUTOR_ASSIGNED
+              - TASK_COMMENT_CREATED
+              - TASK_MEDIA_ADDED
+              - CHAT_MESSAGE
+              - TEAM_INVITE
+              - MEMBERSHIP_REVOKED
+              - PUBLICATION_CREATED
+        emailNotificationTypes:
+          type: array
+          description: Полная замена whitelist email. Пустой массив — отключить все email.
+          items:
+            type: string
+            enum:
+              - APPLICATION_NEW
+              - APPLICATION_STATUS_CHANGED
+              - APPLICATION_WITHDRAWN
+              - TASK_CREATED
+              - TASK_STATUS_CHANGED
+              - TASK_EXECUTOR_ASSIGNED
+              - TASK_COMMENT_CREATED
+              - TASK_MEDIA_ADDED
+              - CHAT_MESSAGE
+              - TEAM_INVITE
+              - MEMBERSHIP_REVOKED
+              - PUBLICATION_CREATED
     ChatPeerResponse:
       type: object
       properties:
@@ -4747,12 +4937,12 @@ components:
           type: string
           example: Заголовок поста
         permissions:
-          default: &a22 []
+          default: &a24 []
           type: array
           items:
             type: string
         chips:
-          default: &a23 []
+          default: &a25 []
           type: array
           items:
             type: string
@@ -4764,7 +4954,7 @@ components:
           type: boolean
           default: false
         keyWords:
-          default: &a24 []
+          default: &a26 []
           type: array
           items:
             type: string
@@ -4772,14 +4962,14 @@ components:
           type: boolean
           default: false
         categories:
-          default: &a25 []
+          default: &a27 []
           type: array
           items:
             type: string
         platforms:
           type: array
-          default: &a26 []
-          items: &a27
+          default: &a28 []
+          items: &a29
             type: string
             enum:
               - INSTAGRAM
@@ -4790,8 +4980,8 @@ components:
               - OTHER
         placementFormats:
           type: array
-          default: &a28 []
-          items: &a29
+          default: &a30 []
+          items: &a31
             type: string
             enum:
               - POST
@@ -4801,7 +4991,7 @@ components:
               - INTEGRATION
               - LIVE
         niche:
-          default: &a30 []
+          default: &a32 []
           type: array
           items:
             type: string
@@ -4812,7 +5002,7 @@ components:
           format: date-time
         workFormat:
           type: string
-          enum: &a31
+          enum: &a33
             - REMOTE
             - ON_SITE
             - HYBRID
@@ -4825,7 +5015,7 @@ components:
         brief:
           $ref: "#/components/schemas/PostBriefDto"
         tags:
-          default: &a32 []
+          default: &a34 []
           type: array
           items:
             type: string
@@ -5030,12 +5220,12 @@ components:
           type: string
           example: Заголовок поста
         permissions:
-          default: *a22
+          default: *a24
           type: array
           items:
             type: string
         chips:
-          default: *a23
+          default: *a25
           type: array
           items:
             type: string
@@ -5047,7 +5237,7 @@ components:
           type: boolean
           default: false
         keyWords:
-          default: *a24
+          default: *a26
           type: array
           items:
             type: string
@@ -5055,20 +5245,20 @@ components:
           type: boolean
           default: false
         categories:
-          default: *a25
+          default: *a27
           type: array
           items:
             type: string
         platforms:
           type: array
-          default: *a26
-          items: *a27
-        placementFormats:
-          type: array
           default: *a28
           items: *a29
-        niche:
+        placementFormats:
+          type: array
           default: *a30
+          items: *a31
+        niche:
+          default: *a32
           type: array
           items:
             type: string
@@ -5079,7 +5269,7 @@ components:
           format: date-time
         workFormat:
           type: string
-          enum: *a31
+          enum: *a33
         location:
           $ref: "#/components/schemas/PostLocationDto"
         bloggerRequirements:
@@ -5089,7 +5279,7 @@ components:
         brief:
           $ref: "#/components/schemas/PostBriefDto"
         tags:
-          default: *a32
+          default: *a34
           type: array
           items:
             type: string
@@ -5426,6 +5616,27 @@ components:
           nullable: true
         isCompanyAction:
           type: boolean
+        location:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/PostLocationDto"
+        bloggerRequirements:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/BloggerRequirementsDto"
+        cooperationDetails:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/CooperationDetailsDto"
+        brief:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/PostBriefDto"
+        deliverables:
+          nullable: true
+          type: array
+          items:
+            $ref: "#/components/schemas/PostDeliverableDto"
         createdAt:
           type: string
           format: date-time
@@ -5498,6 +5709,27 @@ components:
           description: Одобрение задачи исполнителем
         isCompanyAction:
           type: boolean
+        location:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/PostLocationDto"
+        bloggerRequirements:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/BloggerRequirementsDto"
+        cooperationDetails:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/CooperationDetailsDto"
+        brief:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/PostBriefDto"
+        deliverables:
+          nullable: true
+          type: array
+          items:
+            $ref: "#/components/schemas/PostDeliverableDto"
     TaskAttachmentResponseDto:
       type: object
       properties:
@@ -5889,6 +6121,9 @@ components:
           nullable: true
         followers:
           type: number
+        isVerified:
+          type: boolean
+          description: Профиль проверен платформой (бейдж верификации)
         location:
           type: string
           nullable: true
@@ -5917,6 +6152,7 @@ components:
         - id
         - role
         - followers
+        - isVerified
     FavoriteUserItemResponseDto:
       type: object
       properties:

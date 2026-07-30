@@ -16,6 +16,9 @@ import { TasksModule } from './tasks/tasks.module';
 import { PartnersModule } from './partners/partners.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PublicationsModule } from './publications/publications.module';
+import { UserConfigModule } from './user-config/user-config.module';
+import { GeoModule } from './geo/geo.module';
+import { BillingModule } from './billing/billing.module';
 
 @Module({
   imports: [
@@ -34,6 +37,9 @@ import { PublicationsModule } from './publications/publications.module';
     PartnersModule,
     NotificationsModule,
     PublicationsModule,
+    UserConfigModule,
+    GeoModule,
+    BillingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

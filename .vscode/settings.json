@@ -1,4 +1,5 @@
 {
   "prisma.pinToPrisma6": true,
+  "prisma.hidePrisma6Prompts": true,
   "postman.settings.dotenv-detection-notification-visibility": false
 }

@@ -1,9 +1,13 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -11,7 +15,9 @@ import {
 import {
   ApiCookieAuth,
   ApiCreatedResponse,
+  ApiBadRequestResponse,
   ApiForbiddenResponse,
+  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -19,16 +25,20 @@ import {
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { MembershipWriteGuard } from '../auth/guards/membership-write.guard';
+import { EmailConfirmedGuard } from '../auth/guards/email-confirmed.guard';
 import { AuthUser } from '../auth/auth.types';
 import { ChatService } from './chat.service';
 import { ChatConversationResponse } from './dto/chat-conversation.response';
 import { ChatMessageResponse } from './dto/chat-message.response';
 import { CreateConversationDto } from './dto/create-conversation.dto';
+import { ListConversationsQueryDto } from './dto/list-conversations-query.dto';
 import { ListMessagesQueryDto } from './dto/list-messages-query.dto';
 import { SearchMessagesQueryDto } from './dto/search-messages-query.dto';
 import { SearchMessagesResponse } from './dto/search-messages-response.dto';
 import { ListAttachmentsQueryDto } from './dto/list-attachments-query.dto';
 import { ListAttachmentsResponse } from './dto/list-attachments-response.dto';
+import { UpdateChatMessageDto } from './dto/update-message.dto';
 
 @ApiTags('chat')
 @ApiCookieAuth('access-token')
@@ -41,7 +51,9 @@ export class ChatController {
   @ApiOperation({
     summary: 'Список диалогов',
     description:
-      'Все 1:1 диалоги активного профиля. Для каждого: собеседник (peer), preview последнего сообщения, updatedAt. ' +
+      'Все 1:1 диалоги активного профиля. Для каждого: собеседник (peer), preview последнего сообщения, ' +
+      '`unreadCount` (непрочитанные входящие), updatedAt. ' +
+      'Фильтры: `q` (имя собеседника или текст сообщений), `peerId`. ' +
       'Отправка сообщений в realtime — WebSocket /chat (событие send_message).',
   })
   @ApiOkResponse({
@@ -49,11 +61,15 @@ export class ChatController {
     type: ChatConversationResponse,
     isArray: true,
   })
-  listConversations(@CurrentUser() user: AuthUser) {
-    return this.chatService.listConversations(user.userId);
+  listConversations(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListConversationsQueryDto
+  ) {
+    return this.chatService.listConversations(user.userId, query);
   }
 
   @Post('conversations')
+  @UseGuards(EmailConfirmedGuard)
   @ApiOperation({
     summary: 'Начать или открыть диалог',
     description:
@@ -101,7 +117,8 @@ export class ChatController {
     summary: 'История сообщений',
     description:
       'Сообщения диалога с cursor-пагинацией (от новых к старым). ' +
-      'Каждое сообщение содержит media[] (фото/видео). ' +
+      'Каждое сообщение содержит media[] и isRead (для входящих — прочитано вами; для исходящих — собеседником). ' +
+      'Без cursor по умолчанию markRead=true (диалог отмечается прочитанным). ' +
       'cursor — id сообщения, limit по умолчанию 50. Только для участников диалога.',
   })
   @ApiOkResponse({
@@ -119,8 +136,101 @@ export class ChatController {
       conversationId,
       user.userId,
       query.cursor,
-      query.limit
+      query.limit,
+      query.markRead ?? (query.cursor ? false : undefined)
     );
+  }
+
+  @Patch('conversations/:id/messages/:messageId')
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
+  @ApiOperation({
+    summary: 'Редактировать сообщение',
+    description:
+      'Меняет только текст (`content`). Вложения не редактируются. Только отправитель. ' +
+      'Текст может быть пустым, если у сообщения есть media[]. ' +
+      'Участники диалога получат событие message_edited по WebSocket.',
+  })
+  @ApiOkResponse({
+    type: ChatMessageResponse,
+    description: 'Обновлённое сообщение',
+  })
+  @ApiNotFoundResponse({ description: 'Сообщение не найдено' })
+  @ApiForbiddenResponse({
+    description: 'Нет доступа к диалогу или сообщение не ваше',
+  })
+  @ApiBadRequestResponse({ description: 'Пустой текст у сообщения без вложений' })
+  updateMessage(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) conversationId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+    @Body() dto: UpdateChatMessageDto
+  ) {
+    return this.chatService.updateMessage(
+      conversationId,
+      user.userId,
+      messageId,
+      dto.content
+    );
+  }
+
+  @Delete('conversations/:id/messages/:messageId')
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Удалить сообщение',
+    description:
+      'Удаляет сообщение и все его вложения (S3 + БД). Только отправитель. ' +
+      'Участники диалога получат событие message_deleted по WebSocket.',
+  })
+  @ApiNoContentResponse({ description: 'Сообщение удалено' })
+  @ApiNotFoundResponse({ description: 'Сообщение не найдено' })
+  @ApiForbiddenResponse({
+    description: 'Нет доступа к диалогу или сообщение не ваше',
+  })
+  removeMessage(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) conversationId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string
+  ) {
+    return this.chatService.removeMessage(
+      conversationId,
+      user.userId,
+      messageId
+    );
+  }
+
+  @Post('conversations/:id/read')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Отметить диалог прочитанным',
+    description:
+      'Обновляет lastReadAt до времени последнего сообщения. ' +
+      'Собеседник получит событие messages_read по WebSocket.',
+  })
+  @ApiOkResponse({
+    description: 'Диалог отмечен прочитанным',
+    schema: {
+      type: 'object',
+      properties: {
+        conversationId: { type: 'string', format: 'uuid' },
+        readAt: { type: 'string', format: 'date-time' },
+      },
+    },
+  })
+  @ApiForbiddenResponse({ description: 'Нет доступа к диалогу' })
+  async markConversationRead(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) conversationId: string
+  ) {
+    const readAt = await this.chatService.markConversationAsRead(
+      conversationId,
+      user.userId
+    );
+
+    return {
+      conversationId,
+      readAt: readAt.toISOString(),
+    };
   }
 
   @Get('conversations/:id/attachments')

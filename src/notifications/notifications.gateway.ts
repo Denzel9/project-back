@@ -92,6 +92,14 @@ export class NotificationsGateway
     });
   }
 
+  /** Пользователь подключён к namespace `/notifications` (хотя бы одна вкладка). */
+  isUserConnected(userId: string): boolean {
+    const room = this.server?.sockets?.adapter?.rooms?.get(
+      this.getUserRoomName(userId)
+    );
+    return room !== undefined && room.size > 0;
+  }
+
   private getUserRoomName(userId: string): string {
     return `user:${userId}`;
   }

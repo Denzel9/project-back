@@ -2,6 +2,10 @@ import { PaymentTerms, Prisma } from '@prisma/client';
 import { buildCalendarDayFilter } from '../common/date/calendar-day-filter';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
 
+const postPhotoMimeFilter = {
+  mimeType: { startsWith: 'image/' },
+} satisfies Prisma.PostMediaWhereInput;
+
 function paymentTermsBudgetFilters(
   paymentTerms: ListPostsQueryDto['paymentTerms']
 ): Prisma.PostWhereInput[] {
@@ -92,6 +96,12 @@ export function buildPostFieldFilters(
 
   if (query.urgent !== undefined) {
     andFilters.push({ urgent: query.urgent });
+  }
+
+  if (query.hasPhoto === true) {
+    andFilters.push({ media: { some: postPhotoMimeFilter } });
+  } else if (query.hasPhoto === false) {
+    andFilters.push({ media: { none: postPhotoMimeFilter } });
   }
 
   if (query.chips !== undefined) {
