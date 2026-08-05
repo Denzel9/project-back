@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Delete,
   HttpCode,
@@ -31,6 +32,7 @@ import { MembershipWriteGuard } from '../auth/guards/membership-write.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
 import { TaskMediaKind } from '@prisma/client';
+import { CopyTaskMediaToConversationDto } from './dto/copy-task-media-to-conversation.dto';
 import { UploadResponseDto } from './dto/upload-response.dto';
 import {
   isAllowedDocumentMime,
@@ -129,7 +131,7 @@ export class MediaController {
   })
   @ApiForbiddenResponse({
     description:
-      'Недостаточно прав (роль VIEWER, не владелец поста, не участник задачи или не участник диалога)',
+      'Недостаточно прав (не владелец поста, не участник задачи или не участник диалога)',
   })
   @ApiNotFoundResponse({ description: 'Пост или задача не найдены' })
   async upload(
@@ -214,13 +216,48 @@ export class MediaController {
       );
     }
 
-    return this.mediaService.upload(user.userId, file, {
-      ...(postId && { postId }),
-      ...(conversationId && { conversationId }),
-      ...(taskId && { taskId }),
-      ...(forComment && { forComment: true }),
-      ...(taskMediaKind && { taskMediaKind }),
-    });
+    return this.mediaService.upload(
+      user.userId,
+      file,
+      {
+        ...(postId && { postId }),
+        ...(conversationId && { conversationId }),
+        ...(taskId && { taskId }),
+        ...(forComment && { forComment: true }),
+        ...(taskMediaKind && { taskMediaKind }),
+      },
+      user.accountId
+    );
+  }
+
+  @Post('copy-to-conversation')
+  @ApiOperation({
+    summary: 'Скопировать медиа задачи в диалог',
+    description:
+      'Серверное копирование объектов S3 из `tasks/{taskId}/...` в `chats/{conversationId}/...`. ' +
+      'Результат можно сразу передать в `send_message.media[]` (например, вместе с ТЗ). ' +
+      'Нужны права участника задачи и участника диалога.',
+  })
+  @ApiBody({ type: CopyTaskMediaToConversationDto })
+  @ApiCreatedResponse({
+    type: UploadResponseDto,
+    isArray: true,
+    description: 'Скопированные файлы с ключами чата',
+  })
+  @ApiBadRequestResponse({
+    description: 'Некорректные параметры или ключ медиа',
+  })
+  @ApiForbiddenResponse({
+    description: 'Не участник задачи или диалога',
+  })
+  @ApiNotFoundResponse({
+    description: 'Задача, медиа или диалог не найдены',
+  })
+  async copyTaskMediaToConversation(
+    @CurrentUser() user: AuthUser,
+    @Body() body: CopyTaskMediaToConversationDto
+  ): Promise<UploadResponseDto[]> {
+    return this.mediaService.copyTaskMediaToConversation(user.userId, body);
   }
 
   @Delete(':mediaId')
@@ -275,10 +312,15 @@ export class MediaController {
       );
     }
 
-    await this.mediaService.delete(user.userId, mediaId, {
-      ...(postId && { postId }),
-      ...(conversationId && { conversationId }),
-      ...(taskId && { taskId }),
-    });
+    await this.mediaService.delete(
+      user.userId,
+      mediaId,
+      {
+        ...(postId && { postId }),
+        ...(conversationId && { conversationId }),
+        ...(taskId && { taskId }),
+      },
+      user.accountId
+    );
   }
 }

@@ -27,6 +27,14 @@ export class UpdateTaskDto {
 
   @ApiPropertyOptional({
     format: 'uuid',
+    description: 'UUID поста — перенос задачи в другой пост (только владелец)',
+  })
+  @IsOptional()
+  @IsUUID()
+  postId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
     description: 'UUID исполнителя задачи (только владелец поста)',
   })
   @IsOptional()

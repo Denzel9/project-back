@@ -8,6 +8,8 @@ import {
 import { FavoriteUserProfileDto } from './dto/favorite-user-response.dto';
 
 const PERSON_KEYS = [
+  'name',
+  'lastName',
   'height',
   'weight',
   'size',

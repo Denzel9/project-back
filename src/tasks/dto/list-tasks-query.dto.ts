@@ -19,10 +19,16 @@ import {
   transformOptionalBoolean,
   transformOptionalNullableBoolean,
 } from '../../common/query/query-param.transforms';
+import { TaskCalendarDateField } from './task-calendar-date-field.enum';
 
 export enum TaskListRole {
   OWNER = 'owner',
   EXECUTOR = 'executor',
+}
+
+export enum TaskListPersonField {
+  EXECUTOR = 'executor',
+  OWNER = 'owner',
 }
 
 export class ListTasksQueryDto {
@@ -61,6 +67,14 @@ export class ListTasksQueryDto {
   @IsUUID()
   executorId?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Фильтр по конкретной задаче (task.id)',
+  })
+  @IsOptional()
+  @IsUUID()
+  taskId?: string;
+
   @ApiPropertyOptional({ enum: TaskStatus })
   @IsOptional()
   @IsEnum(TaskStatus)
@@ -69,7 +83,7 @@ export class ListTasksQueryDto {
   @ApiPropertyOptional({
     enum: TaskStatus,
     isArray: true,
-    description: 'Несколько статусов через запятую, например `CANCELLED,CANCELLED_EXECUTOR`',
+    description: 'Несколько статусов через запятую, например `ANNULLED,COMPLETED`',
   })
   @IsOptional()
   @Transform(transformCsvArray)
@@ -78,7 +92,7 @@ export class ListTasksQueryDto {
 
   @ApiPropertyOptional({
     description:
-      'Только активные: исключить `COMPLETED`, `CANCELLED`, `CANCELLED_EXECUTOR`. Сочетается с `status`/`statuses` (пересечение).',
+      'Только активные: исключить `COMPLETED`, `ANNULLED`. Сочетается с `status`/`statuses` (пересечение).',
   })
   @IsOptional()
   @Transform(transformOptionalBoolean)
@@ -137,6 +151,24 @@ export class ListTasksQueryDto {
   urgent?: boolean;
 
   @ApiPropertyOptional({
+    description:
+      'Только задачи, где текущий аккаунт указан как ответственный (`assigneeAccountId`).',
+  })
+  @IsOptional()
+  @Transform(transformOptionalBoolean)
+  @IsBoolean()
+  assigneeMine?: boolean;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Фильтр по ответственному: задачи с указанным `assigneeAccountId` (аккаунт менеджера/владельца).',
+  })
+  @IsOptional()
+  @IsUUID()
+  assigneeAccountId?: string;
+
+  @ApiPropertyOptional({
     format: 'date',
     description: 'Фильтр по дате создания задачи (календарный день, UTC)',
     example: '2026-06-14',
@@ -149,8 +181,30 @@ export class ListTasksQueryDto {
 
   @ApiPropertyOptional({
     format: 'date',
+    description: 'Фильтр по дате обновления задачи (календарный день, UTC)',
+    example: '2026-06-14',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'updatedDate должен быть в формате YYYY-MM-DD',
+  })
+  updatedDate?: string;
+
+  @ApiPropertyOptional({
+    format: 'date',
+    description: 'Фильтр по дедлайну задачи (календарный день, UTC)',
+    example: '2026-06-14',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'deadlineDate должен быть в формате YYYY-MM-DD',
+  })
+  deadlineDate?: string;
+
+  @ApiPropertyOptional({
+    format: 'date',
     description:
-      'Начало диапазона по `createdAt` (UTC, включительно). Не сочетается с `createdDate`.',
+      'Начало диапазона (UTC, включительно). Поле задаётся через `dateField` (по умолчанию `createdAt`). Не сочетается с `createdDate`.',
     example: '2026-06-01',
   })
   @IsOptional()
@@ -162,7 +216,7 @@ export class ListTasksQueryDto {
   @ApiPropertyOptional({
     format: 'date',
     description:
-      'Конец диапазона по `createdAt` (UTC, включительно). Можно передать только dateFrom или только dateTo.',
+      'Конец диапазона (UTC, включительно). Можно передать только dateFrom или только dateTo.',
     example: '2026-06-30',
   })
   @IsOptional()
@@ -172,7 +226,32 @@ export class ListTasksQueryDto {
   dateTo?: string;
 
   @ApiPropertyOptional({
-    description: 'Поиск по названию поста или названию компании-автора',
+    enum: TaskCalendarDateField,
+    default: TaskCalendarDateField.CREATED_AT,
+    description:
+      'По какому полю фильтровать `dateFrom` / `dateTo`: `createdAt`, `updatedAt` или `finalDate`.',
+  })
+  @IsOptional()
+  @IsEnum(TaskCalendarDateField)
+  dateField?: TaskCalendarDateField = TaskCalendarDateField.CREATED_AT;
+
+  @ApiPropertyOptional({
+    description:
+      'Смещение таймзоны клиента в минутах, как у `Date#getTimezoneOffset()` ' +
+      '(например, Москва UTC+3 → `-180`). Используется для `createdDate`, ' +
+      '`updatedDate`, `deadlineDate`, `dateFrom`/`dateTo`. Без параметра день считается в UTC.',
+    example: -180,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(-840)
+  @Max(840)
+  tzOffset?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Поиск по названию задачи, названию поста или названию компании-автора',
     example: 'реклама',
   })
   @IsOptional()
@@ -183,6 +262,29 @@ export class ListTasksQueryDto {
   @IsString()
   @MinLength(1)
   q?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Поиск по связанному человеку: исполнитель (`personField=executor`) или заказчик (`personField=owner`)',
+    example: 'иван',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    const trimmed = typeof value === 'string' ? value.trim() : value;
+    return trimmed === '' ? undefined : trimmed;
+  })
+  @IsString()
+  @MinLength(1)
+  personQ?: string;
+
+  @ApiPropertyOptional({
+    enum: TaskListPersonField,
+    description:
+      'Кого искать по `personQ`. По умолчанию: executor при role=owner, иначе owner.',
+  })
+  @IsOptional()
+  @IsEnum(TaskListPersonField)
+  personField?: TaskListPersonField;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()

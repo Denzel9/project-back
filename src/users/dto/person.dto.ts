@@ -2,6 +2,8 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, ValidateIf } from 'class-validator';
 
 export type Person = {
+  name?: string;
+  lastName?: string;
   height?: string;
   weight?: string;
   size?: string;
@@ -11,6 +13,26 @@ export type Person = {
 };
 
 export class PersonDto {
+  @ApiPropertyOptional({
+    example: 'Ivan',
+    description: 'Имя (для менеджера)',
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value != null)
+  @IsString()
+  name?: string | null;
+
+  @ApiPropertyOptional({
+    example: 'Ivanov',
+    description: 'Фамилия (для менеджера)',
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value != null)
+  @IsString()
+  lastName?: string | null;
+
   @ApiPropertyOptional({ example: '180', description: 'Рост', nullable: true })
   @IsOptional()
   @ValidateIf((_, value) => value != null)
@@ -61,6 +83,8 @@ export class PersonDto {
 }
 
 export type PersonPatch = {
+  name?: string | null;
+  lastName?: string | null;
   height?: string | null;
   weight?: string | null;
   size?: string | null;

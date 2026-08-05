@@ -81,7 +81,8 @@ export class CreateTaskDto {
 
   @ApiPropertyOptional({
     nullable: true,
-    description: 'Одобрение задачи исполнителем',
+    description:
+      'Игнорируется при создании: вручную всегда `null`, из принятого отклика — `true`.',
   })
   @IsOptional()
   @ValidateIf((_, value) => value != null)

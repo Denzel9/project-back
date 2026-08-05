@@ -15,8 +15,7 @@ const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   [TaskStatus.CHECKING]: 'на проверке',
   [TaskStatus.REVISION]: 'доработка',
   [TaskStatus.COMPLETED]: 'завершена',
-  [TaskStatus.CANCELLED]: 'отменена',
-  [TaskStatus.CANCELLED_EXECUTOR]: 'отменена исполнителем',
+  [TaskStatus.ANNULLED]: 'аннулирована',
 };
 
 export function formatApplicationStatus(status: ApplicationStatus): string {

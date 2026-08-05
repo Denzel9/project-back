@@ -2,23 +2,20 @@ import { Prisma } from '@prisma/client';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { mapBudgetFromApi } from './post-json.util';
+import { bloggerCoopFieldsFromDto } from './blogger-coop-fields.util';
 
 type PostJsonWriteFields = Pick<
   Prisma.PostCreateInput,
-  | 'budget'
-  | 'deadline'
-  | 'workFormat'
-  | 'location'
-  | 'bloggerRequirements'
-  | 'cooperationDetails'
-  | 'brief'
-  | 'deliverables'
->;
+  'budget' | 'deadline' | 'workFormat' | 'location' | 'brief' | 'deliverables'
+> &
+  ReturnType<typeof bloggerCoopFieldsFromDto>;
 
 export function postJsonFieldsFromDto(
   dto: CreatePostDto | UpdatePostDto
 ): PostJsonWriteFields {
-  const data: PostJsonWriteFields = {};
+  const data: PostJsonWriteFields = {
+    ...bloggerCoopFieldsFromDto(dto),
+  };
 
   if (dto.budget !== undefined) {
     data.budget = mapBudgetFromApi(
@@ -36,16 +33,6 @@ export function postJsonFieldsFromDto(
 
   if (dto.location !== undefined) {
     data.location = dto.location as unknown as Prisma.InputJsonValue;
-  }
-
-  if (dto.bloggerRequirements !== undefined) {
-    data.bloggerRequirements =
-      dto.bloggerRequirements as unknown as Prisma.InputJsonValue;
-  }
-
-  if (dto.cooperationDetails !== undefined) {
-    data.cooperationDetails =
-      dto.cooperationDetails as unknown as Prisma.InputJsonValue;
   }
 
   if (dto.brief !== undefined) {

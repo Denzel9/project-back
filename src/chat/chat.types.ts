@@ -16,6 +16,12 @@ export type ChatMessageDto = {
   id: string;
   conversationId: string;
   senderId: string;
+  /** Account отправителя (логин владельца или менеджера) */
+  actorAccountId: string | null;
+  /** Снимок имени актёра на момент отправки */
+  actorDisplayName: string | null;
+  /** OWNER — основная компания/креатор; MANAGER — менеджер */
+  actorKind: 'OWNER' | 'MANAGER' | null;
   content: string;
   media: ChatMessageMediaDto[];
   createdAt: Date;
@@ -49,6 +55,7 @@ export type ChatConversationDto = {
   peer: ChatPeerDto;
   lastMessage: ChatMessageDto | null;
   unreadCount: number;
+  isPinned: boolean;
   updatedAt: Date;
 };
 

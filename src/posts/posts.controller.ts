@@ -29,6 +29,7 @@ import { MembershipWriteGuard } from '../auth/guards/membership-write.guard';
 import { EmailConfirmedGuard } from '../auth/guards/email-confirmed.guard';
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
+import { PostOptionsResponseDto } from './dto/post-options.dto';
 import { PostResponseDto } from './dto/post-response.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { ApplicationsService } from '../applications/applications.service';
@@ -55,7 +56,7 @@ export class PostsController {
       'Медиа загружаются отдельно: `POST /media/upload?postId={id}`.',
   })
   @ApiCreatedResponse({ type: PostResponseDto, description: 'Созданный пост' })
-  @ApiForbiddenResponse({ description: 'Недостаточно прав (роль VIEWER)' })
+  @ApiForbiddenResponse({ description: 'Недостаточно прав' })
   create(@CurrentUser() user: AuthUser, @Body() dto: CreatePostDto) {
     return this.postsService.create(user, dto);
   }
@@ -79,6 +80,18 @@ export class PostsController {
   @ApiOkResponse({ description: 'Список постов с пагинацией' })
   list(@CurrentUser() user: AuthUser, @Query() query: ListPostsQueryDto) {
     return this.postsService.list(user, query);
+  }
+
+  @Get('options')
+  @ApiOperation({
+    summary: 'Опции своих постов для select',
+    description:
+      'Лёгкий список постов текущего пользователя: только `id` и `title`. ' +
+      'Без пагинации. Архивные посты исключены. Приватные включены.',
+  })
+  @ApiOkResponse({ type: PostOptionsResponseDto })
+  listOptions(@CurrentUser() user: AuthUser) {
+    return this.postsService.listOptions(user);
   }
 
   @Get(':id/applications')
@@ -129,7 +142,7 @@ export class PostsController {
   @ApiOkResponse({ type: PostResponseDto, description: 'Обновлённый пост' })
   @ApiNotFoundResponse({ description: 'Пост не найден' })
   @ApiForbiddenResponse({
-    description: 'Недостаточно прав (не владелец или VIEWER)',
+    description: 'Недостаточно прав (не владелец)',
   })
   update(
     @CurrentUser() user: AuthUser,
@@ -150,7 +163,7 @@ export class PostsController {
   @ApiNoContentResponse({ description: 'Пост удалён' })
   @ApiNotFoundResponse({ description: 'Пост не найден' })
   @ApiForbiddenResponse({
-    description: 'Недостаточно прав (не владелец или VIEWER)',
+    description: 'Недостаточно прав (не владелец)',
   })
   remove(
     @CurrentUser() user: AuthUser,

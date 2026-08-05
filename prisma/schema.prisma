@@ -10,13 +10,17 @@ datasource db {
 enum Role {
   CREATOR
   COMPANY
+  MANAGER
 }
 
 enum MembershipRole {
   OWNER
   ADMIN
-  EDITOR
-  VIEWER
+}
+
+enum MessageActorKind {
+  OWNER
+  MANAGER
 }
 
 enum PostAuthorType {
@@ -108,8 +112,7 @@ enum TaskStatus {
   CHECKING
   REVISION
   COMPLETED
-  CANCELLED
-  CANCELLED_EXECUTOR
+  ANNULLED
 }
 
 enum TaskActivityType {
@@ -117,6 +120,24 @@ enum TaskActivityType {
   FIELD_UPDATED
   MEDIA_ADDED
   MEDIA_REMOVED
+  ANNULMENT_REQUESTED
+  ANNULMENT_CONFIRMED
+  ANNULMENT_REJECTED
+  DEADLINE_EXTENSION_REQUESTED
+  DEADLINE_EXTENSION_CONFIRMED
+  DEADLINE_EXTENSION_REJECTED
+}
+
+enum TaskRequestInitiator {
+  CUSTOMER
+  EXECUTOR
+  MUTUAL
+}
+
+enum TaskRequestStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
 }
 
 enum TaskMediaKind {
@@ -137,6 +158,16 @@ enum NotificationType {
   TEAM_INVITE
   MEMBERSHIP_REVOKED
   PUBLICATION_CREATED
+}
+
+enum MessengerProvider {
+  TELEGRAM
+  MAX
+}
+
+enum MessengerConnectionStatus {
+  ACTIVE
+  REVOKED
 }
 
 enum PublicationStatus {
@@ -161,13 +192,20 @@ enum PrimeStatus {
 }
 
 model Account {
-  id          String              @id @default(uuid())
-  email       String              @unique
-  password    String
-  memberships AccountMembership[]
-  invites     AccountInvite[]
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  id                      String              @id @default(uuid())
+  email                   String              @unique
+  password                String
+  memberships             AccountMembership[]
+  invites                 AccountInvite[]
+  messages                Message[]
+  taskComments            TaskComment[]       @relation("TaskCommentActorAccount")
+  taskActivities          TaskActivity[]      @relation("TaskActivityActorAccount")
+  notifications           Notification[]      @relation("NotificationActorAccount")
+  createdApplications     PostApplication[]   @relation("ApplicationCreatedActorAccount")
+  lastActedApplications   PostApplication[]   @relation("ApplicationLastActorAccount")
+  assignedTasks           Task[]              @relation("TaskAssigneeAccount")
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
 }
 
 model AccountMembership {
@@ -237,44 +275,89 @@ model User {
   taskComments             TaskComment[]
   taskCommentReadStates    TaskCommentReadState[]
   taskActivities           TaskActivity[]
+  annulmentRequestsMade    TaskAnnulmentRequest[]    @relation("AnnulmentRequestedBy")
+  annulmentRequestsResolved TaskAnnulmentRequest[]   @relation("AnnulmentConfirmedBy")
+  deadlineExtensionRequestsMade TaskDeadlineExtensionRequest[] @relation("DeadlineExtensionRequestedBy")
+  deadlineExtensionRequestsResolved TaskDeadlineExtensionRequest[] @relation("DeadlineExtensionConfirmedBy")
   notifications            Notification[]
   sentNotifications        Notification[]            @relation("NotificationActor")
   ownedPublications        Publication[]             @relation("OwnedPublications")
   executedPublications     Publication[]             @relation("ExecutedPublications")
   config                   UserConfig?
+  messengerConnections     MessengerConnection[]
+  messengerLinkTokens      MessengerLinkToken[]
 }
 
 model UserConfig {
-  id                     String              @id @default(uuid())
-  userId                 String              @unique
-  user                   User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  inAppNotificationTypes NotificationType[]
-  emailNotificationTypes NotificationType[]
-  dashboardTiles         DashboardTileType[]
-  dashboardShowTasks     Boolean             @default(true)
-  dashboardShowActivity  Boolean             @default(true)
-  dashboardShowComments  Boolean             @default(true)
-  dashboardShowCalendar  Boolean             @default(true)
-  dashboardShowChats     Boolean             @default(true)
-  createdAt              DateTime            @default(now())
-  updatedAt              DateTime            @updatedAt
+  id                        String              @id @default(uuid())
+  userId                    String              @unique
+  user                      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inAppNotificationTypes    NotificationType[]
+  emailNotificationTypes    NotificationType[]
+  telegramNotificationTypes NotificationType[]
+  maxNotificationTypes      NotificationType[]
+  dashboardTiles            DashboardTileType[]
+  dashboardShowTasks        Boolean             @default(true)
+  dashboardShowActivity     Boolean             @default(true)
+  dashboardShowComments     Boolean             @default(true)
+  dashboardShowCalendar     Boolean             @default(true)
+  dashboardShowChats        Boolean             @default(true)
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+}
+
+model MessengerConnection {
+  id             String                     @id @default(uuid())
+  userId         String
+  user           User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider       MessengerProvider
+  externalUserId String
+  chatId         String
+  username       String?
+  status         MessengerConnectionStatus  @default(ACTIVE)
+  linkedAt       DateTime                   @default(now())
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  @@unique([userId, provider])
+  @@unique([provider, chatId])
+  @@index([userId])
+}
+
+model MessengerLinkToken {
+  id        String            @id @default(uuid())
+  token     String            @unique
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider  MessengerProvider
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime          @default(now())
+
+  @@index([userId, provider])
+  @@index([expiresAt])
 }
 
 model Notification {
-  id          String           @id @default(uuid())
-  recipientId String
-  recipient   User             @relation(fields: [recipientId], references: [id], onDelete: Cascade)
-  actorId     String?
-  actor       User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
-  type        NotificationType
-  title       String
-  body        String?
-  payload     Json
-  readAt      DateTime?
-  createdAt   DateTime         @default(now())
+  id               String            @id @default(uuid())
+  recipientId      String
+  recipient        User              @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  actorId          String?
+  actor            User?             @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorAccountId   String?
+  actorAccount     Account?          @relation("NotificationActorAccount", fields: [actorAccountId], references: [id], onDelete: SetNull)
+  actorDisplayName String?
+  actorKind        MessageActorKind?
+  type             NotificationType
+  title            String
+  body             String?
+  payload          Json
+  readAt           DateTime?
+  createdAt        DateTime          @default(now())
 
   @@index([recipientId, createdAt])
   @@index([recipientId, readAt])
+  @@index([actorAccountId])
 }
 
 model Conversation {
@@ -290,6 +373,8 @@ model ConversationParticipant {
   conversationId String
   userId         String
   lastReadAt     DateTime?
+  isPinned       Boolean      @default(false)
+  pinnedAt       DateTime?
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -298,18 +383,26 @@ model ConversationParticipant {
 }
 
 model Message {
-  id             String         @id @default(uuid())
-  conversationId String
-  senderId       String
-  content        String
-  editedAt       DateTime?
-  isRedirected   Boolean        @default(false)
-  createdAt      DateTime       @default(now())
-  conversation   Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender         User           @relation(fields: [senderId], references: [id], onDelete: Cascade)
-  media          MessageMedia[]
+  id               String            @id @default(uuid())
+  conversationId   String
+  senderId         String
+  /// Account, от имени которого отправили (логин владельца или менеджера)
+  actorAccountId   String?
+  /// Снимок имени актёра на момент отправки
+  actorDisplayName String?
+  /// OWNER — основная компания/креатор; MANAGER — менеджер аккаунта
+  actorKind        MessageActorKind?
+  content          String
+  editedAt         DateTime?
+  isRedirected     Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  conversation     Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender           User              @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  actorAccount     Account?          @relation(fields: [actorAccountId], references: [id], onDelete: SetNull)
+  media            MessageMedia[]
 
   @@index([conversationId, createdAt])
+  @@index([actorAccountId])
 }
 
 model MessageMedia {
@@ -362,8 +455,20 @@ model Post {
   deadline            DateTime?
   workFormat          WorkFormat?
   location            Json?
-  bloggerRequirements Json?
-  cooperationDetails  Json?
+  minFollowers        Int?
+  maxFollowers        Int?
+  minEngagementRate   Float?
+  verifiedAccount     Boolean?
+  experienceWithAds   Boolean?
+  languages           String[]              @default([])
+  contentStyle        ContentStyle[]        @default([])
+  exclusivity         Boolean?
+  exclusivityDays     Int?
+  usageRights         UsageRights?
+  usageDurationDays   Int?
+  requiresMarking     Boolean?
+  requiresContract    Boolean?
+  ndaRequired         Boolean?
   brief               Json?
   deliverables        Json?
   type                PostAuthorType
@@ -372,8 +477,8 @@ model Post {
   applications        PostApplication[]
   tasks               Task[]
   publications        Publication[]
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
 
   @@index([ownerId])
   @@index([isArchived])
@@ -436,21 +541,31 @@ model FavoriteUser {
 }
 
 model PostApplication {
-  id          String            @id @default(uuid())
-  postId      String
-  post        Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
-  applicantId String
-  applicant   User              @relation("PostApplications", fields: [applicantId], references: [id], onDelete: Cascade)
-  message     String
-  status      ApplicationStatus @default(NEW)
-  task        Task?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  id                     String            @id @default(uuid())
+  postId                 String
+  post                   Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
+  applicantId            String
+  applicant              User              @relation("PostApplications", fields: [applicantId], references: [id], onDelete: Cascade)
+  message                String
+  status                 ApplicationStatus @default(NEW)
+  createdActorAccountId  String?
+  createdActorAccount    Account?          @relation("ApplicationCreatedActorAccount", fields: [createdActorAccountId], references: [id], onDelete: SetNull)
+  createdActorDisplayName String?
+  createdActorKind       MessageActorKind?
+  lastActorAccountId     String?
+  lastActorAccount       Account?          @relation("ApplicationLastActorAccount", fields: [lastActorAccountId], references: [id], onDelete: SetNull)
+  lastActorDisplayName   String?
+  lastActorKind          MessageActorKind?
+  task                   Task?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
 
   @@unique([postId, applicantId])
   @@index([postId])
   @@index([applicantId])
   @@index([status])
+  @@index([createdActorAccountId])
+  @@index([lastActorAccountId])
 }
 
 model Task {
@@ -473,14 +588,33 @@ model Task {
   isExecutorApprove   Boolean?
   isCompanyAction     Boolean                @default(true)
   location            Json?
-  bloggerRequirements Json?
-  cooperationDetails  Json?
+  minFollowers        Int?
+  maxFollowers        Int?
+  minEngagementRate   Float?
+  verifiedAccount     Boolean?
+  experienceWithAds   Boolean?
+  languages           String[]               @default([])
+  contentStyle        ContentStyle[]         @default([])
+  exclusivity         Boolean?
+  exclusivityDays     Int?
+  usageRights         UsageRights?
+  usageDurationDays   Int?
+  requiresMarking     Boolean?
+  requiresContract    Boolean?
+  ndaRequired         Boolean?
   brief               Json?
   deliverables        Json?
+  /// Аккаунт ответственного на момент создания (кто создал задачу / принял отклик)
+  assigneeAccountId   String?
+  assigneeAccount     Account?               @relation("TaskAssigneeAccount", fields: [assigneeAccountId], references: [id], onDelete: SetNull)
+  assigneeDisplayName String?
+  assigneeKind        MessageActorKind?
   media               TaskMedia[]
   comments            TaskComment[]
   commentReadStates   TaskCommentReadState[]
   activities          TaskActivity[]
+  annulmentRequests   TaskAnnulmentRequest[]
+  deadlineExtensionRequests TaskDeadlineExtensionRequest[]
   publication         Publication?
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
@@ -489,21 +623,70 @@ model Task {
   @@index([executorId])
   @@index([status])
   @@index([postId])
+  @@index([assigneeAccountId])
+}
+
+model TaskAnnulmentRequest {
+  id             String               @id @default(uuid())
+  taskId         String
+  task           Task                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  reason         String
+  initiator      TaskRequestInitiator
+  status         TaskRequestStatus    @default(PENDING)
+  requestedById  String
+  requestedBy    User                 @relation("AnnulmentRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+  requestedAt    DateTime             @default(now())
+  confirmedById  String?
+  confirmedBy    User?                @relation("AnnulmentConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  confirmedAt    DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@index([taskId])
+  @@index([taskId, status])
+  @@index([requestedById])
+}
+
+model TaskDeadlineExtensionRequest {
+  id                String               @id @default(uuid())
+  taskId            String
+  task              Task                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  reason            String
+  initiator         TaskRequestInitiator
+  status            TaskRequestStatus    @default(PENDING)
+  proposedFinalDate DateTime
+  requestedById     String
+  requestedBy       User                 @relation("DeadlineExtensionRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+  requestedAt       DateTime             @default(now())
+  confirmedById     String?
+  confirmedBy       User?                @relation("DeadlineExtensionConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  confirmedAt       DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([taskId])
+  @@index([taskId, status])
+  @@index([requestedById])
 }
 
 model TaskComment {
-  id        String             @id @default(uuid())
-  taskId    String
-  task      Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  authorId  String
-  author    User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  content   String
-  editedAt  DateTime?
-  media     TaskCommentMedia[]
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
+  id               String             @id @default(uuid())
+  taskId           String
+  task             Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId         String
+  author           User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  actorAccountId   String?
+  actorAccount     Account?           @relation("TaskCommentActorAccount", fields: [actorAccountId], references: [id], onDelete: SetNull)
+  actorDisplayName String?
+  actorKind        MessageActorKind?
+  content          String
+  editedAt         DateTime?
+  media            TaskCommentMedia[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
   @@index([taskId])
+  @@index([actorAccountId])
 }
 
 model TaskCommentReadState {
@@ -548,16 +731,21 @@ model TaskMedia {
 }
 
 model TaskActivity {
-  id        String           @id @default(uuid())
-  taskId    String
-  task      Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  actorId   String
-  actor     User             @relation(fields: [actorId], references: [id], onDelete: Cascade)
-  type      TaskActivityType
-  payload   Json
-  createdAt DateTime         @default(now())
+  id               String            @id @default(uuid())
+  taskId           String
+  task             Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actorId          String
+  actor            User              @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  actorAccountId   String?
+  actorAccount     Account?          @relation("TaskActivityActorAccount", fields: [actorAccountId], references: [id], onDelete: SetNull)
+  actorDisplayName String?
+  actorKind        MessageActorKind?
+  type             TaskActivityType
+  payload          Json
+  createdAt        DateTime          @default(now())
 
   @@index([taskId, createdAt])
+  @@index([actorAccountId])
 }
 
 model Publication {

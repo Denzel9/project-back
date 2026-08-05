@@ -26,6 +26,7 @@ export class UserConfigController {
     description:
       'Создаётся с дефолтами при первом запросе. ' +
       '`inAppNotificationTypes` — whitelist in-app; `emailNotificationTypes` — whitelist email; ' +
+      '`telegramNotificationTypes` / `maxNotificationTypes` — мессенджеры; ' +
       '`dashboardTiles` / `dashboardShow*` — настройки дашборда CRM.',
   })
   @ApiOkResponse({ type: UserConfigResponseDto })
@@ -37,10 +38,11 @@ export class UserConfigController {
   @ApiOperation({
     summary: 'Обновить конфиг',
     description:
-      'Partial update: уведомления (`inAppNotificationTypes`, `emailNotificationTypes`) ' +
+      'Partial update: уведомления (`inAppNotificationTypes`, `emailNotificationTypes`, ' +
+      '`telegramNotificationTypes`, `maxNotificationTypes`) ' +
       'и/или дашборд (`dashboardTiles`, `dashboardShowTasks|Activity|Comments|Calendar|Chats`). ' +
       'Массивы — полная замена. Пустой `dashboardTiles` скрывает все плитки. ' +
-      'Для CHAT_MESSAGE email дополнительно: только offline + throttle.',
+      'Для CHAT_MESSAGE email/мессенджеры дополнительно: только offline + throttle.',
   })
   @ApiOkResponse({ type: UserConfigResponseDto })
   @ApiBadRequestResponse({ description: 'Не передано ни одного поля' })

@@ -69,6 +69,32 @@ export class UpdateUserConfigDto {
   emailNotificationTypes?: NotificationType[];
 
   @ApiPropertyOptional({
+    enum: NotificationType,
+    isArray: true,
+    description:
+      'Полная замена whitelist Telegram. Пустой массив — отключить все Telegram.',
+  })
+  @IsOptional()
+  @Transform(transformNotificationTypes)
+  @IsArray()
+  @ArrayUnique()
+  @IsEnum(NotificationType, { each: true })
+  telegramNotificationTypes?: NotificationType[];
+
+  @ApiPropertyOptional({
+    enum: NotificationType,
+    isArray: true,
+    description:
+      'Полная замена whitelist MAX. Пустой массив — отключить все MAX.',
+  })
+  @IsOptional()
+  @Transform(transformNotificationTypes)
+  @IsArray()
+  @ArrayUnique()
+  @IsEnum(NotificationType, { each: true })
+  maxNotificationTypes?: NotificationType[];
+
+  @ApiPropertyOptional({
     enum: DashboardTileType,
     isArray: true,
     description:

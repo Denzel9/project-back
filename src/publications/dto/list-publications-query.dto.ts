@@ -56,6 +56,16 @@ export class ListPublicationsQueryDto {
   @MinLength(1)
   q?: string;
 
+  @ApiPropertyOptional({
+    description: 'Поиск по имени/фамилии исполнителя',
+    example: 'иван',
+  })
+  @IsOptional()
+  @Transform(transformTrimmedString)
+  @IsString()
+  @MinLength(1)
+  executorQ?: string;
+
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()
   @Type(() => Number)

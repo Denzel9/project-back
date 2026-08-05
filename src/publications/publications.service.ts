@@ -36,6 +36,12 @@ export const publicationInclude = {
   media: {
     orderBy: { sortOrder: 'asc' as const },
   },
+  post: {
+    select: {
+      id: true,
+      title: true,
+    },
+  },
   owner: {
     include: participantUserInclude,
   },
@@ -147,6 +153,22 @@ export class PublicationsService {
       ...(query.executorId !== undefined && { executorId: query.executorId }),
       ...(query.q !== undefined && {
         title: { contains: query.q, mode: 'insensitive' },
+      }),
+      ...(query.executorQ !== undefined && {
+        executor: {
+          OR: [
+            {
+              creatorProfile: {
+                name: { contains: query.executorQ, mode: 'insensitive' },
+              },
+            },
+            {
+              creatorProfile: {
+                lastName: { contains: query.executorQ, mode: 'insensitive' },
+              },
+            },
+          ],
+        },
       }),
     };
 
@@ -265,6 +287,12 @@ export class PublicationsService {
       id: publication.id,
       taskId: publication.taskId,
       postId: publication.postId,
+      post: publication.post
+        ? {
+            id: publication.post.id,
+            title: publication.post.title,
+          }
+        : null,
       title: publication.title,
       description: publication.description,
       externalUrl: publication.externalUrl,

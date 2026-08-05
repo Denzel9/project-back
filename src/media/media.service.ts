@@ -9,6 +9,7 @@ import { ChatService } from '../chat/chat.service';
 import { PostsService } from '../posts/posts.service';
 import { TasksService } from '../tasks/tasks.service';
 import { MIME_TO_EXTENSION } from './media.constants';
+import { CopyTaskMediaKindDto } from './dto/copy-task-media-to-conversation.dto';
 import { UploadResponseDto } from './dto/upload-response.dto';
 import { StorageService } from './storage.service';
 
@@ -26,6 +27,11 @@ export type MediaDeleteTarget = {
   taskId?: string;
 };
 
+const COPY_KIND_MAP: Record<CopyTaskMediaKindDto, TaskMediaKind> = {
+  [CopyTaskMediaKindDto.MAIN]: TaskMediaKind.MAIN,
+  [CopyTaskMediaKindDto.REPORT]: TaskMediaKind.REPORT,
+};
+
 @Injectable()
 export class MediaService {
   constructor(
@@ -38,7 +44,8 @@ export class MediaService {
   async upload(
     userId: string,
     file: Express.Multer.File,
-    target: MediaUploadTarget = {}
+    target: MediaUploadTarget = {},
+    accountId?: string
   ): Promise<UploadResponseDto> {
     const extension = MIME_TO_EXTENSION[file.mimetype];
     const { postId, conversationId, taskId, forComment, taskMediaKind } =
@@ -90,7 +97,8 @@ export class MediaService {
           size: String(file.size),
           mimeType: file.mimetype,
         },
-        taskMediaKind ?? TaskMediaKind.MAIN
+        taskMediaKind ?? TaskMediaKind.MAIN,
+        accountId
       );
     }
 
@@ -102,10 +110,72 @@ export class MediaService {
     };
   }
 
+  async copyTaskMediaToConversation(
+    userId: string,
+    params: {
+      taskId: string;
+      conversationId: string;
+      kind?: CopyTaskMediaKindDto;
+      mediaIds?: string[];
+    }
+  ): Promise<UploadResponseDto[]> {
+    const { taskId, conversationId, mediaIds } = params;
+    const kind = COPY_KIND_MAP[params.kind ?? CopyTaskMediaKindDto.MAIN];
+
+    await this.chatService.assertParticipant(conversationId, userId);
+
+    const items = await this.tasksService.listMediaForCopy(userId, taskId, {
+      kind,
+      mediaIds,
+    });
+
+    if (!items.length) {
+      return [];
+    }
+
+    const results: UploadResponseDto[] = [];
+
+    for (const item of items) {
+      if (!item.key.startsWith(`tasks/${taskId}/`)) {
+        throw new BadRequestException('Недопустимый ключ медиа задачи');
+      }
+
+      const extension =
+        MIME_TO_EXTENSION[item.mimeType] ??
+        item.key.split('.').pop()?.toLowerCase() ??
+        'bin';
+      const destKey = `chats/${conversationId}/${randomUUID()}.${extension}`;
+
+      try {
+        await this.storageService.copyObject(
+          item.key,
+          destKey,
+          item.mimeType
+        );
+      } catch {
+        throw new InternalServerErrorException(
+          'Не удалось скопировать медиа в диалог'
+        );
+      }
+
+      const size = Number(item.size);
+
+      results.push({
+        url: this.storageService.getPublicUrl(destKey),
+        key: destKey,
+        mimeType: item.mimeType,
+        size: Number.isFinite(size) ? size : 0,
+      });
+    }
+
+    return results;
+  }
+
   async delete(
     userId: string,
     mediaId: string,
-    target: MediaDeleteTarget
+    target: MediaDeleteTarget,
+    accountId?: string
   ): Promise<void> {
     const { postId, conversationId, taskId } = target;
 
@@ -115,7 +185,7 @@ export class MediaService {
     }
 
     if (taskId) {
-      await this.tasksService.removeMedia(userId, taskId, mediaId);
+      await this.tasksService.removeMedia(userId, taskId, mediaId, accountId);
       return;
     }
 

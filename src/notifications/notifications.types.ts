@@ -4,6 +4,12 @@ import { NotificationPayload } from './notification-payload.types';
 export type NotifyInput = {
   recipientId: string;
   actorId?: string | null;
+  /** Account-level actor snapshot (manager vs owner) */
+  actor?: {
+    accountId: string;
+    displayName: string;
+    kind: 'OWNER' | 'MANAGER';
+  } | null;
   type: NotificationType;
   title: string;
   body?: string | null;

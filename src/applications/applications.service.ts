@@ -15,12 +15,14 @@ import {
   Task,
 } from '@prisma/client';
 import { AuthUser } from '../auth/auth.types';
+import { ActorAttributionService } from '../accounts/actor-attribution.service';
 import { buildCalendarDayFilter } from '../common/date/calendar-day-filter';
 import { formatApplicationStatus } from '../notifications/notification-labels.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TasksService } from '../tasks/tasks.service';
 import { canViewPost } from '../posts/post-visibility.util';
+import { assertMarketplaceTrader } from '../auth/utils/marketplace-participant.util';
 import { ApplicationApplicantDto } from './dto/application-applicant.dto';
 import { ApplicationResponseDto } from './dto/application-response.dto';
 import { CreateApplicationDto } from './dto/create-application.dto';
@@ -94,7 +96,8 @@ export class ApplicationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tasksService: TasksService,
-    private readonly notificationsService: NotificationsService
+    private readonly notificationsService: NotificationsService,
+    private readonly actorAttribution: ActorAttributionService
   ) {}
 
   async create(
@@ -118,17 +121,32 @@ export class ApplicationsService {
 
     this.assertCanApply(user, post);
 
+    const actor = await this.actorAttribution.resolve(
+      user.accountId,
+      user.userId
+    );
+
     try {
       const application = await this.prisma.postApplication.create({
         data: {
           postId: dto.postId,
           applicantId: user.userId,
           message: dto.message,
+          createdActorAccountId: actor.accountId,
+          createdActorDisplayName: actor.displayName,
+          createdActorKind: actor.kind,
+          lastActorAccountId: actor.accountId,
+          lastActorDisplayName: actor.displayName,
+          lastActorKind: actor.kind,
         },
         include: applicationInclude,
       });
 
-      await this.notifyPostOwnerAboutApplication(application, user.userId);
+      await this.notifyPostOwnerAboutApplication(
+        application,
+        user.userId,
+        actor
+      );
 
       return this.mapApplication(application, { includePost: true });
     } catch (error) {
@@ -141,6 +159,27 @@ export class ApplicationsService {
 
       throw error;
     }
+  }
+
+  async getStats(user: AuthUser) {
+    const [incomingNew, mineActive] = await Promise.all([
+      this.prisma.postApplication.count({
+        where: {
+          status: ApplicationStatus.NEW,
+          post: { ownerId: user.userId },
+        },
+      }),
+      this.prisma.postApplication.count({
+        where: {
+          applicantId: user.userId,
+          status: {
+            in: [ApplicationStatus.NEW, ApplicationStatus.VIEWED],
+          },
+        },
+      }),
+    ]);
+
+    return { incomingNew, mineActive };
   }
 
   async listMine(user: AuthUser, query: ListApplicationsQueryDto) {
@@ -233,15 +272,26 @@ export class ApplicationsService {
       throw new BadRequestException('Нельзя отозвать отклик в текущем статусе');
     }
 
+    const actor = await this.actorAttribution.resolve(
+      user.accountId,
+      user.userId
+    );
+
     const updated = await this.prisma.postApplication.update({
       where: { id },
-      data: { status: ApplicationStatus.WITHDRAWN },
+      data: {
+        status: ApplicationStatus.WITHDRAWN,
+        lastActorAccountId: actor.accountId,
+        lastActorDisplayName: actor.displayName,
+        lastActorKind: actor.kind,
+      },
       include: applicationInclude,
     });
 
     await this.notificationsService.notify({
       recipientId: updated.post.ownerId,
       actorId: user.userId,
+      actor,
       type: NotificationType.APPLICATION_WITHDRAWN,
       title: `Отклик отозван: «${updated.post.title}»`,
       body: `${this.getApplicantDisplayName(updated.applicant)} отозвал отклик`,
@@ -290,18 +340,28 @@ export class ApplicationsService {
     }
 
     let createdTask: Task | null = null;
+    const actor = await this.actorAttribution.resolve(
+      user.accountId,
+      user.userId
+    );
 
     const updated = await this.prisma.$transaction(async tx => {
       const application = await tx.postApplication.update({
         where: { id },
-        data: { status: dto.status },
+        data: {
+          status: dto.status,
+          lastActorAccountId: actor.accountId,
+          lastActorDisplayName: actor.displayName,
+          lastActorKind: actor.kind,
+        },
         include: applicationInclude,
       });
 
       if (dto.status === ApplicationStatus.ACCEPTED) {
         createdTask = await this.tasksService.createFromAcceptedApplication(
           tx,
-          id
+          id,
+          actor
         );
       }
 
@@ -311,6 +371,7 @@ export class ApplicationsService {
     await this.notificationsService.notify({
       recipientId: updated.applicantId,
       actorId: user.userId,
+      actor,
       type: NotificationType.APPLICATION_STATUS_CHANGED,
       title: `Статус отклика: ${formatApplicationStatus(updated.status)}`,
       body: `Пост «${updated.post.title}»`,
@@ -330,6 +391,7 @@ export class ApplicationsService {
       await this.notificationsService.notify({
         recipientId: createdTask.executorId!,
         actorId: user.userId,
+        actor,
         type: NotificationType.TASK_CREATED,
         title: `Создана задача по посту «${updated.post.title}»`,
         body: 'Вы назначены исполнителем',
@@ -472,6 +534,8 @@ export class ApplicationsService {
       isPrivate: boolean;
     }
   ) {
+    assertMarketplaceTrader(user.role);
+
     if (post.ownerId === user.userId) {
       throw new BadRequestException('Нельзя откликнуться на свой пост');
     }
@@ -491,12 +555,14 @@ export class ApplicationsService {
 
   private async notifyPostOwnerAboutApplication(
     application: ApplicationWithRelations,
-    actorId: string
+    actorId: string,
+    actor?: { accountId: string; displayName: string; kind: 'OWNER' | 'MANAGER' }
   ) {
     try {
       await this.notificationsService.notify({
         recipientId: application.post.ownerId,
         actorId,
+        actor,
         type: NotificationType.APPLICATION_NEW,
         title: `Новый отклик на «${application.post.title}»`,
         body: `${this.getApplicantDisplayName(application.applicant)}: ${application.message}`,
@@ -567,6 +633,12 @@ export class ApplicationsService {
       status: application.status,
       createdAt: application.createdAt.toISOString(),
       updatedAt: application.updatedAt.toISOString(),
+      createdActorAccountId: application.createdActorAccountId ?? null,
+      createdActorDisplayName: application.createdActorDisplayName ?? null,
+      createdActorKind: application.createdActorKind ?? null,
+      lastActorAccountId: application.lastActorAccountId ?? null,
+      lastActorDisplayName: application.lastActorDisplayName ?? null,
+      lastActorKind: application.lastActorKind ?? null,
       ...(options.includePost && {
         post: {
           id: application.post.id,

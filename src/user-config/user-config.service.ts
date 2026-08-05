@@ -8,6 +8,8 @@ import {
   DEFAULT_DASHBOARD_TILES,
   DEFAULT_EMAIL_NOTIFICATION_TYPES,
   DEFAULT_IN_APP_NOTIFICATION_TYPES,
+  DEFAULT_MAX_NOTIFICATION_TYPES,
+  DEFAULT_TELEGRAM_NOTIFICATION_TYPES,
 } from './user-config.defaults';
 
 @Injectable()
@@ -26,6 +28,8 @@ export class UserConfigService {
     if (
       dto.inAppNotificationTypes === undefined &&
       dto.emailNotificationTypes === undefined &&
+      dto.telegramNotificationTypes === undefined &&
+      dto.maxNotificationTypes === undefined &&
       dto.dashboardTiles === undefined &&
       dto.dashboardShowTasks === undefined &&
       dto.dashboardShowActivity === undefined &&
@@ -48,6 +52,12 @@ export class UserConfigService {
         }),
         ...(dto.emailNotificationTypes !== undefined && {
           emailNotificationTypes: dto.emailNotificationTypes,
+        }),
+        ...(dto.telegramNotificationTypes !== undefined && {
+          telegramNotificationTypes: dto.telegramNotificationTypes,
+        }),
+        ...(dto.maxNotificationTypes !== undefined && {
+          maxNotificationTypes: dto.maxNotificationTypes,
         }),
         ...(dto.dashboardTiles !== undefined && {
           dashboardTiles: dto.dashboardTiles,
@@ -113,6 +123,38 @@ export class UserConfigService {
     return config.emailNotificationTypes.includes(type);
   }
 
+  async isTelegramEnabled(
+    userId: string,
+    type: NotificationType
+  ): Promise<boolean> {
+    const config = await this.prisma.userConfig.findUnique({
+      where: { userId },
+      select: { telegramNotificationTypes: true },
+    });
+
+    if (!config) {
+      return DEFAULT_TELEGRAM_NOTIFICATION_TYPES.includes(type);
+    }
+
+    return config.telegramNotificationTypes.includes(type);
+  }
+
+  async isMaxEnabled(
+    userId: string,
+    type: NotificationType
+  ): Promise<boolean> {
+    const config = await this.prisma.userConfig.findUnique({
+      where: { userId },
+      select: { maxNotificationTypes: true },
+    });
+
+    if (!config) {
+      return DEFAULT_MAX_NOTIFICATION_TYPES.includes(type);
+    }
+
+    return config.maxNotificationTypes.includes(type);
+  }
+
   private async ensureConfig(userId: string): Promise<UserConfig> {
     const existing = await this.prisma.userConfig.findUnique({
       where: { userId },
@@ -127,6 +169,8 @@ export class UserConfigService {
         userId,
         inAppNotificationTypes: DEFAULT_IN_APP_NOTIFICATION_TYPES,
         emailNotificationTypes: DEFAULT_EMAIL_NOTIFICATION_TYPES,
+        telegramNotificationTypes: DEFAULT_TELEGRAM_NOTIFICATION_TYPES,
+        maxNotificationTypes: DEFAULT_MAX_NOTIFICATION_TYPES,
         dashboardTiles: DEFAULT_DASHBOARD_TILES,
       },
     });
@@ -138,6 +182,8 @@ export class UserConfigService {
       userId: config.userId,
       inAppNotificationTypes: config.inAppNotificationTypes,
       emailNotificationTypes: config.emailNotificationTypes,
+      telegramNotificationTypes: config.telegramNotificationTypes,
+      maxNotificationTypes: config.maxNotificationTypes,
       dashboardTiles: config.dashboardTiles,
       dashboardShowTasks: config.dashboardShowTasks,
       dashboardShowActivity: config.dashboardShowActivity,

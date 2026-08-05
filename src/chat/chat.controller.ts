@@ -31,6 +31,7 @@ import { AuthUser } from '../auth/auth.types';
 import { ChatService } from './chat.service';
 import { ChatConversationResponse } from './dto/chat-conversation.response';
 import { ChatMessageResponse } from './dto/chat-message.response';
+import { ChatUnreadCountDto } from './dto/chat-unread-count.dto';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { ListConversationsQueryDto } from './dto/list-conversations-query.dto';
 import { ListMessagesQueryDto } from './dto/list-messages-query.dto';
@@ -39,6 +40,7 @@ import { SearchMessagesResponse } from './dto/search-messages-response.dto';
 import { ListAttachmentsQueryDto } from './dto/list-attachments-query.dto';
 import { ListAttachmentsResponse } from './dto/list-attachments-response.dto';
 import { UpdateChatMessageDto } from './dto/update-message.dto';
+import { UpdateConversationDto } from './dto/update-conversation.dto';
 
 @ApiTags('chat')
 @ApiCookieAuth('access-token')
@@ -47,12 +49,25 @@ import { UpdateChatMessageDto } from './dto/update-message.dto';
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
+  @Get('unread-count')
+  @ApiOperation({
+    summary: 'Сумма непрочитанных входящих сообщений',
+    description:
+      'Суммарный unreadCount по всем диалогам активного профиля ' +
+      '(та же логика, что per-conversation unreadCount в списке диалогов).',
+  })
+  @ApiOkResponse({ type: ChatUnreadCountDto })
+  getUnreadCount(@CurrentUser() user: AuthUser) {
+    return this.chatService.getUnreadCount(user.userId);
+  }
+
   @Get('conversations')
   @ApiOperation({
     summary: 'Список диалогов',
     description:
       'Все 1:1 диалоги активного профиля. Для каждого: собеседник (peer), preview последнего сообщения, ' +
-      '`unreadCount` (непрочитанные входящие), updatedAt. ' +
+      '`unreadCount` (непрочитанные входящие), `isPinned`, updatedAt. ' +
+      'Порядок: закреплённые, затем непрочитанные по updatedAt. ' +
       'Фильтры: `q` (имя собеседника или текст сообщений), `peerId`. ' +
       'Отправка сообщений в realtime — WebSocket /chat (событие send_message).',
   })
@@ -89,6 +104,30 @@ export class ChatController {
     return this.chatService.findOrCreateConversation(
       user.userId,
       dto.recipientId
+    );
+  }
+
+  @Patch('conversations/:id')
+  @ApiOperation({
+    summary: 'Закрепить или открепить диалог',
+    description:
+      'Персональное закрепление для текущего пользователя. ' +
+      'Закреплённые диалоги отображаются выше в списке контактов.',
+  })
+  @ApiOkResponse({
+    description: 'Обновлённый диалог',
+    type: ChatConversationResponse,
+  })
+  @ApiForbiddenResponse({ description: 'Нет доступа к диалогу' })
+  updateConversation(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) conversationId: string,
+    @Body() dto: UpdateConversationDto
+  ) {
+    return this.chatService.updateConversationPin(
+      conversationId,
+      user.userId,
+      dto.isPinned
     );
   }
 

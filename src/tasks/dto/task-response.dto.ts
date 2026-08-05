@@ -7,6 +7,8 @@ import { PostDeliverableDto } from '../../posts/dto/post-deliverable.dto';
 import { PostLocationDto } from '../../posts/dto/post-location.dto';
 import { TaskCommentMediaDto } from './task-comment-media.dto';
 import { TaskMediaDto } from './task-media.dto';
+import { TaskAnnulmentDto } from './task-annulment.dto';
+import { TaskDeadlineExtensionDto } from './task-deadline-extension.dto';
 
 export class TaskCommentResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -42,6 +44,15 @@ export class TaskCommentResponseDto {
       'Прочитанность: для входящих — зритель прочитал; для исходящих — собеседник прочитал',
   })
   isRead: boolean;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  actorAccountId: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  actorDisplayName: string | null;
+
+  @ApiPropertyOptional({ enum: ['OWNER', 'MANAGER'], nullable: true })
+  actorKind: 'OWNER' | 'MANAGER' | null;
 }
 
 export class TaskResponseDto {
@@ -50,6 +61,9 @@ export class TaskResponseDto {
 
   @ApiProperty({ format: 'uuid', nullable: true })
   applicationId: string | null;
+
+  @ApiProperty({ format: 'uuid' })
+  postId: string;
 
   @ApiProperty({ format: 'uuid', nullable: true })
   executorId: string | null;
@@ -114,6 +128,52 @@ export class TaskResponseDto {
 
   @ApiPropertyOptional({ type: [PostDeliverableDto], nullable: true })
   deliverables?: PostDeliverableDto[] | null;
+
+  @ApiPropertyOptional({
+    type: TaskAnnulmentDto,
+    nullable: true,
+    description: 'Текущий PENDING-запрос на аннулирование (если есть)',
+  })
+  annulment?: TaskAnnulmentDto | null;
+
+  @ApiPropertyOptional({
+    type: [TaskAnnulmentDto],
+    description: 'История запросов на аннулирование',
+  })
+  annulments?: TaskAnnulmentDto[];
+
+  @ApiPropertyOptional({
+    type: TaskDeadlineExtensionDto,
+    nullable: true,
+    description: 'Текущий PENDING-запрос на перенос дедлайна (если есть)',
+  })
+  deadlineExtension?: TaskDeadlineExtensionDto | null;
+
+  @ApiPropertyOptional({
+    type: [TaskDeadlineExtensionDto],
+    description: 'История запросов на перенос дедлайна',
+  })
+  deadlineExtensions?: TaskDeadlineExtensionDto[];
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Account ответственного (кто создал задачу / принял отклик)',
+  })
+  assigneeAccountId: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Снимок имени ответственного на момент создания',
+  })
+  assigneeDisplayName: string | null;
+
+  @ApiPropertyOptional({
+    enum: ['OWNER', 'MANAGER'],
+    nullable: true,
+    description: 'OWNER — владелец профиля, MANAGER — менеджер аккаунта',
+  })
+  assigneeKind: 'OWNER' | 'MANAGER' | null;
 
   @ApiProperty({ format: 'date-time' })
   createdAt: string;

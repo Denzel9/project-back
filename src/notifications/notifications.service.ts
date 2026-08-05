@@ -5,8 +5,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { MembershipRole, NotificationType, Prisma, Role } from '@prisma/client';
+import {
+  MembershipRole,
+  MessengerProvider,
+  NotificationType,
+  Prisma,
+  Role,
+} from '@prisma/client';
 import { AuthUser } from '../auth/auth.types';
+import { MessengerDeliveryService } from '../integrations/messenger-delivery.service';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserConfigService } from '../user-config/user-config.service';
@@ -36,7 +43,8 @@ export class NotificationsService {
     private readonly configService: ConfigService,
     private readonly notificationsGateway: NotificationsGateway,
     private readonly userConfigService: UserConfigService,
-    private readonly chatEmailThrottle: ChatEmailThrottleService
+    private readonly chatEmailThrottle: ChatEmailThrottleService,
+    private readonly messengerDelivery: MessengerDeliveryService
   ) {}
 
   async notify(input: NotifyInput): Promise<NotificationResponseDto | null> {
@@ -52,6 +60,11 @@ export class NotificationsService {
         data: {
           recipientId: input.recipientId,
           actorId: input.actorId ?? null,
+          ...(input.actor && {
+            actorAccountId: input.actor.accountId,
+            actorDisplayName: input.actor.displayName,
+            actorKind: input.actor.kind,
+          }),
           type: input.type,
           title: input.title,
           body: input.body ?? null,
@@ -84,6 +97,8 @@ export class NotificationsService {
         await this.sendEmailNotification(input.recipientId, emailInput);
       }
     }
+
+    await this.sendMessengerNotifications(input);
 
     return response;
   }
@@ -218,6 +233,72 @@ export class NotificationsService {
     });
   }
 
+  private async sendMessengerNotifications(input: NotifyInput): Promise<void> {
+    if (!EMAIL_ENABLED_NOTIFICATION_TYPES.has(input.type)) {
+      return;
+    }
+
+    const messengerInput = await this.prepareEmailInput(input);
+    if (!messengerInput) {
+      return;
+    }
+
+    const text = this.buildMessengerText(messengerInput);
+    const providers: {
+      provider: MessengerProvider;
+      enabled: (userId: string, type: NotificationType) => Promise<boolean>;
+    }[] = [
+      {
+        provider: MessengerProvider.TELEGRAM,
+        enabled: (userId, type) =>
+          this.userConfigService.isTelegramEnabled(userId, type),
+      },
+      {
+        provider: MessengerProvider.MAX,
+        enabled: (userId, type) =>
+          this.userConfigService.isMaxEnabled(userId, type),
+      },
+    ];
+
+    for (const item of providers) {
+      try {
+        const allowed = await item.enabled(
+          messengerInput.recipientId,
+          messengerInput.type
+        );
+        if (!allowed) {
+          continue;
+        }
+
+        await this.messengerDelivery.sendToUser({
+          userId: messengerInput.recipientId,
+          provider: item.provider,
+          text,
+        });
+      } catch (error) {
+        this.logger.error(
+          `Не удалось отправить ${item.provider}-уведомление (${messengerInput.type})`,
+          error
+        );
+      }
+    }
+  }
+
+  private buildMessengerText(input: NotifyInput): string {
+    const frontendUrl = this.configService
+      .getOrThrow<string>('FRONTEND_URL')
+      .replace(/\/$/, '');
+    const actionUrl = buildNotificationActionUrl(frontendUrl, input.payload);
+    const parts = [input.title];
+
+    if (input.body) {
+      parts.push(input.body);
+    }
+
+    parts.push(actionUrl);
+    return parts.join('\n\n');
+  }
+
   private async sendEmailNotification(
     recipientId: string,
     input: NotifyInput
@@ -282,6 +363,9 @@ export class NotificationsService {
       actor: notification.actor
         ? this.mapActor(notification.actor)
         : null,
+      actorAccountId: notification.actorAccountId ?? null,
+      actorDisplayName: notification.actorDisplayName ?? null,
+      actorKind: notification.actorKind ?? null,
     };
   }
 

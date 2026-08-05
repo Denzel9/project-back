@@ -19,6 +19,7 @@ import { PublicationsModule } from './publications/publications.module';
 import { UserConfigModule } from './user-config/user-config.module';
 import { GeoModule } from './geo/geo.module';
 import { BillingModule } from './billing/billing.module';
+import { IntegrationsModule } from './integrations/integrations.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { BillingModule } from './billing/billing.module';
     UserConfigModule,
     GeoModule,
     BillingModule,
+    IntegrationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

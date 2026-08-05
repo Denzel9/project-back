@@ -34,6 +34,7 @@ import { InvitesService } from './invites.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
 import { RegisterCreatorDto } from './dto/register-creator.dto';
+import { RegisterManagerDto } from './dto/register-manager.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyPasswordDto } from './dto/verify-password.dto';
@@ -147,6 +148,54 @@ export class AuthService {
               companyName: dto.companyName,
             },
           },
+        },
+      });
+
+      const membership = await tx.accountMembership.create({
+        data: {
+          accountId: account.id,
+          userId: user.id,
+          role: MembershipRole.OWNER,
+        },
+      });
+
+      return { account, user, membership };
+    });
+
+    await this.safeSendEmailConfirmation(
+      result.account.email,
+      result.user.id,
+      result.account.id
+    );
+
+    return this.buildAuthResponse(
+      result.account,
+      result.user,
+      result.membership.role,
+      true
+    );
+  }
+
+  async registerManager(dto: RegisterManagerDto) {
+    await this.accountsService.ensureEmailAvailable(dto.email);
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+
+    const result = await this.prisma.$transaction(async tx => {
+      const account = await tx.account.create({
+        data: {
+          email: dto.email,
+          password: passwordHash,
+        },
+      });
+
+      const user = await tx.user.create({
+        data: {
+          email: dto.email,
+          role: Role.MANAGER,
+          person: {
+            name: dto.name,
+            lastName: dto.lastName,
+          } as Prisma.InputJsonValue,
         },
       });
 
@@ -302,6 +351,13 @@ export class AuthService {
     );
   }
 
+  async listProfileMembers(authUser: AuthUser) {
+    return this.membershipService.listProfileMembers(
+      authUser.accountId,
+      authUser.userId
+    );
+  }
+
   async switchProfile(
     authUser: AuthUser,
     dto: SwitchProfileDto,
@@ -365,6 +421,8 @@ export class AuthService {
 
   private getProfileDisplayName(user: {
     role: Role;
+    email?: string;
+    person?: unknown;
     creatorProfile: { name: string; lastName: string } | null;
     companyProfile: { companyName: string } | null;
   }): string {
@@ -376,7 +434,27 @@ export class AuthService {
       return user.companyProfile.companyName;
     }
 
+    if (user.role === Role.MANAGER) {
+      const fromPerson = this.getPersonFullName(user.person);
+      if (fromPerson) return fromPerson;
+      return user.email ?? 'Менеджер';
+    }
+
     return user.role;
+  }
+
+  private getPersonFullName(person: unknown): string | null {
+    if (!person || typeof person !== 'object' || Array.isArray(person)) {
+      return null;
+    }
+
+    const record = person as Record<string, unknown>;
+    const name = typeof record.name === 'string' ? record.name.trim() : '';
+    const lastName =
+      typeof record.lastName === 'string' ? record.lastName.trim() : '';
+    const fullName = `${name} ${lastName}`.trim();
+
+    return fullName || null;
   }
 
   async getProfile(authUser: AuthUser): Promise<AuthSessionUser> {
@@ -392,6 +470,7 @@ export class AuthService {
 
     return {
       id: user.id,
+      accountId: authUser.accountId,
       role: user.role,
       membershipRole: authUser.membershipRole,
       isVerified: user.isVerified,
@@ -584,6 +663,7 @@ export class AuthService {
     return {
       user: {
         id: user.id,
+        accountId: account.id,
         role: user.role,
         membershipRole,
         isVerified: user.isVerified,

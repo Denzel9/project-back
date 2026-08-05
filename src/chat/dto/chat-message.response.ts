@@ -10,6 +10,26 @@ export class ChatMessageResponse {
   @ApiProperty({ format: 'uuid' })
   senderId: string;
 
+  @ApiProperty({
+    format: 'uuid',
+    nullable: true,
+    description: 'Account отправителя (владелец или менеджер)',
+  })
+  actorAccountId: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Имя актёра на момент отправки (ФИО менеджера или название компании)',
+  })
+  actorDisplayName: string | null;
+
+  @ApiProperty({
+    enum: ['OWNER', 'MANAGER'],
+    nullable: true,
+    description: 'OWNER — основная компания/креатор; MANAGER — менеджер',
+  })
+  actorKind: 'OWNER' | 'MANAGER' | null;
+
   @ApiProperty({ example: 'Hello!' })
   content: string;
 

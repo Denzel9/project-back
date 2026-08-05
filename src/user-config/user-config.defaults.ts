@@ -21,6 +21,15 @@ export const DEFAULT_EMAIL_NOTIFICATION_TYPES: NotificationType[] = [
   ...DEFAULT_IN_APP_NOTIFICATION_TYPES,
 ];
 
+/** Дефолт для Telegram / MAX — как email */
+export const DEFAULT_TELEGRAM_NOTIFICATION_TYPES: NotificationType[] = [
+  ...DEFAULT_EMAIL_NOTIFICATION_TYPES,
+];
+
+export const DEFAULT_MAX_NOTIFICATION_TYPES: NotificationType[] = [
+  ...DEFAULT_EMAIL_NOTIFICATION_TYPES,
+];
+
 /** Плитки дашборда по умолчанию: оба role-specific варианта (каталог роли отфильтрует) */
 export const DEFAULT_DASHBOARD_TILES: DashboardTileType[] = [
   DashboardTileType.PENDING_ACTION,

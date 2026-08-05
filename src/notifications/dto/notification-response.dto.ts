@@ -46,6 +46,25 @@ export class NotificationResponseDto {
 
   @ApiPropertyOptional({ type: NotificationActorDto, nullable: true })
   actor: NotificationActorDto | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Account актёра (владелец или менеджер)',
+  })
+  actorAccountId: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Снимок имени актёра',
+  })
+  actorDisplayName: string | null;
+
+  @ApiPropertyOptional({
+    enum: ['OWNER', 'MANAGER'],
+    nullable: true,
+  })
+  actorKind: 'OWNER' | 'MANAGER' | null;
 }
 
 export class NotificationUnreadCountDto {

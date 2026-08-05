@@ -14,11 +14,17 @@ import {
   Task,
   TaskActivityType,
   TaskMediaKind,
+  TaskRequestInitiator,
+  TaskRequestStatus,
   TaskStatus,
   NotificationType,
 } from '@prisma/client';
 import { ApplicationApplicantDto } from '../applications/dto/application-applicant.dto';
 import { AuthUser } from '../auth/auth.types';
+import {
+  ActorAttributionService,
+  type ActorSnapshot,
+} from '../accounts/actor-attribution.service';
 import {
   mapOwnerWithStats,
   userOwnerWithStatsSelect,
@@ -27,6 +33,10 @@ import {
   buildCalendarDayFilter,
   buildCalendarDateRangeFilter,
 } from '../common/date/calendar-day-filter';
+import {
+  buildCompanyNameSearch,
+  buildCreatorNameSearch,
+} from '../partners/partner-filters.util';
 import { StorageService } from '../media/storage.service';
 import { ALLOWED_DOCUMENT_MIME_TYPES } from '../media/media.constants';
 import { formatTaskStatus } from '../notifications/notification-labels.util';
@@ -52,7 +62,7 @@ import {
 import { TaskAttachmentResponseDto } from './dto/task-attachment-response.dto';
 import { SearchTaskCommentsQueryDto } from './dto/search-task-comments-query.dto';
 import { TaskCommentAttachmentResponseDto } from './dto/task-comment-attachment-response.dto';
-import { ListTasksQueryDto, TaskListRole } from './dto/list-tasks-query.dto';
+import { ListTasksQueryDto, TaskListPersonField, TaskListRole } from './dto/list-tasks-query.dto';
 import { ListTasksCalendarQueryDto } from './dto/list-tasks-calendar-query.dto';
 import { ListTaskStatsQueryDto } from './dto/list-task-stats-query.dto';
 import { TaskStatsResponseDto } from './dto/task-stats-response.dto';
@@ -62,6 +72,17 @@ import {
   TaskCalendarParticipantDto,
 } from './dto/task-calendar-item.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
+import {
+  RequestTaskAnnulmentDto,
+  TaskAnnulmentDto,
+  TaskAnnulmentInitiator,
+  TaskAnnulmentStatus,
+} from './dto/task-annulment.dto';
+import {
+  RequestTaskDeadlineExtensionDto,
+  TaskDeadlineExtensionDto,
+  TaskDeadlineExtensionStatus,
+} from './dto/task-deadline-extension.dto';
 import { TaskActivityResponseDto } from './dto/task-activity-response.dto';
 import {
   TaskCommentResponseDto,
@@ -70,6 +91,7 @@ import {
 import { UpdateTaskCommentDto } from './dto/update-task-comment.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { TaskWithCommentsSummaryDto } from './dto/task-with-comments-summary.dto';
+import type { TaskWithCommentsRecipientDto } from './dto/task-with-comments-summary.dto';
 import {
   buildCommentPreview,
   resolveTaskTitle,
@@ -81,18 +103,27 @@ import {
 import { TaskCommentsGateway } from './task-comments.gateway';
 import { taskJsonFieldsFromDto } from './task-json-fields.util';
 import { jsonToArray, jsonToRecord } from '../posts/post-json.util';
+import {
+  columnsToBloggerRequirements,
+  columnsToCooperationDetails,
+} from '../posts/blogger-coop-fields.util';
 
 type PrismaTx = Prisma.TransactionClient;
 
 const TERMINAL_TASK_STATUSES: TaskStatus[] = [
   TaskStatus.COMPLETED,
-  TaskStatus.CANCELLED,
-  TaskStatus.CANCELLED_EXECUTOR,
+  TaskStatus.ANNULLED,
 ];
 
 export const taskWithMediaInclude = {
   media: {
     orderBy: { sortOrder: 'asc' as const },
+  },
+  annulmentRequests: {
+    orderBy: { requestedAt: 'desc' as const },
+  },
+  deadlineExtensionRequests: {
+    orderBy: { requestedAt: 'desc' as const },
   },
 } satisfies Prisma.TaskInclude;
 
@@ -157,6 +188,27 @@ export type TaskWithMedia = Task & {
     mimeType: string;
     kind: TaskMediaKind;
   }[];
+  annulmentRequests?: Array<{
+    id: string;
+    reason: string;
+    initiator: TaskRequestInitiator;
+    status: TaskRequestStatus;
+    requestedAt: Date;
+    requestedById: string;
+    confirmedAt: Date | null;
+    confirmedById: string | null;
+  }>;
+  deadlineExtensionRequests?: Array<{
+    id: string;
+    reason: string;
+    initiator: TaskRequestInitiator;
+    status: TaskRequestStatus;
+    proposedFinalDate: Date;
+    requestedAt: Date;
+    requestedById: string;
+    confirmedAt: Date | null;
+    confirmedById: string | null;
+  }>;
 };
 
 type TaskWithRelations = TaskWithMedia;
@@ -173,13 +225,15 @@ export class TasksService {
     private readonly storageService: StorageService,
     private readonly notificationsService: NotificationsService,
     private readonly publicationsService: PublicationsService,
+    private readonly actorAttribution: ActorAttributionService,
     @Inject(forwardRef(() => TaskCommentsGateway))
     private readonly taskCommentsGateway: TaskCommentsGateway
   ) {}
 
   async createFromAcceptedApplication(
     tx: PrismaTx,
-    applicationId: string
+    applicationId: string,
+    assignee?: ActorSnapshot | null
   ): Promise<Task> {
     const application = await tx.postApplication.findUnique({
       where: { id: applicationId },
@@ -205,6 +259,12 @@ export class TasksService {
         ownerId: application.post.ownerId,
         executorId: application.applicantId,
         urgent: application.post.urgent,
+        isExecutorApprove: true,
+        ...(assignee && {
+          assigneeAccountId: assignee.accountId,
+          assigneeDisplayName: assignee.displayName,
+          assigneeKind: assignee.kind,
+        }),
       },
     });
   }
@@ -240,6 +300,11 @@ export class TasksService {
       await this.validateExecutor(dto.executorId, post.ownerId);
     }
 
+    const assignee = await this.actorAttribution.resolve(
+      user.accountId,
+      user.userId
+    );
+
     const task = await this.prisma.task.create({
       data: {
         postId: dto.postId,
@@ -257,9 +322,10 @@ export class TasksService {
         photoCount: dto.photoCount ?? '0',
         videoCount: dto.videoCount ?? '0',
         urgent: dto.urgent ?? post.urgent,
-        ...(dto.isExecutorApprove !== undefined && {
-          isExecutorApprove: dto.isExecutorApprove,
-        }),
+        isExecutorApprove: null,
+        assigneeAccountId: assignee.accountId,
+        assigneeDisplayName: assignee.displayName,
+        assigneeKind: assignee.kind,
         ...(dto.isCompanyAction !== undefined && {
           isCompanyAction: dto.isCompanyAction,
         }),
@@ -291,6 +357,7 @@ export class TasksService {
       await this.notificationsService.notify({
         recipientId: task.executorId,
         actorId: user.userId,
+        actor: assignee,
         type: NotificationType.TASK_CREATED,
         title: `Создана задача «${title}»`,
         body: 'Вы назначены исполнителем',
@@ -369,7 +436,7 @@ export class TasksService {
     user: AuthUser,
     query: ListTaskStatsQueryDto
   ): Promise<TaskStatsResponseDto> {
-    const baseWhere = this.buildStatsBaseWhere(user.userId, query);
+    const baseWhere = this.buildStatsBaseWhere(user, query);
     const activeWhere: Prisma.TaskWhereInput = {
       ...baseWhere,
       status: { notIn: TERMINAL_TASK_STATUSES },
@@ -429,7 +496,7 @@ export class TasksService {
         where: {
           ...baseWhere,
           status: {
-            in: [TaskStatus.CANCELLED, TaskStatus.CANCELLED_EXECUTOR],
+            in: [TaskStatus.ANNULLED],
           },
         },
       }),
@@ -451,7 +518,7 @@ export class TasksService {
     const limit = query.limit ?? 100;
     const skip = (page - 1) * limit;
     const dateField = query.dateField ?? TaskCalendarDateField.CREATED_AT;
-    const where = this.buildCalendarWhere(user.userId, query);
+    const where = this.buildCalendarWhere(user, query);
 
     const [items, total] = await Promise.all([
       this.prisma.task.findMany({
@@ -473,9 +540,10 @@ export class TasksService {
   }
 
   private buildCalendarWhere(
-    userId: string,
+    user: AuthUser,
     query: ListTasksCalendarQueryDto
   ): Prisma.TaskWhereInput {
+    const { userId, accountId } = user;
     const dateRangeFilter = buildCalendarDateRangeFilter(
       query.dateFrom,
       query.dateTo
@@ -486,7 +554,13 @@ export class TasksService {
       ...this.buildParticipantTaskWhere(userId, query.role),
       ...(query.ownerId !== undefined && { ownerId: query.ownerId }),
       ...(query.executorId !== undefined && { executorId: query.executorId }),
+      ...(query.postId !== undefined && { postId: query.postId }),
       ...(query.urgent !== undefined && { urgent: query.urgent }),
+      ...(query.assigneeMine === true && { assigneeAccountId: accountId }),
+      ...(query.assigneeAccountId !== undefined &&
+        query.assigneeMine !== true && {
+          assigneeAccountId: query.assigneeAccountId,
+        }),
       ...(dateRangeFilter !== undefined && {
         [dateField]: dateRangeFilter,
       }),
@@ -539,6 +613,36 @@ export class TasksService {
     return base;
   }
 
+  private mapCommentsRecipient(user: {
+    id: string;
+    role: Role;
+    avatar: string | null;
+    creatorProfile: { name: string; lastName: string } | null;
+    companyProfile: { companyName: string } | null;
+  }): TaskWithCommentsRecipientDto {
+    if (user.role === Role.CREATOR && user.creatorProfile) {
+      return {
+        id: user.id,
+        avatar: user.avatar,
+        displayName: `${user.creatorProfile.name} ${user.creatorProfile.lastName}`.trim(),
+      };
+    }
+
+    if (user.role === Role.COMPANY && user.companyProfile) {
+      return {
+        id: user.id,
+        avatar: user.avatar,
+        displayName: user.companyProfile.companyName,
+      };
+    }
+
+    return {
+      id: user.id,
+      avatar: user.avatar,
+      displayName: user.role,
+    };
+  }
+
   private async queryTasks(
     user: AuthUser,
     query: ListTasksQueryDto,
@@ -551,7 +655,7 @@ export class TasksService {
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
 
-    const where = this.buildListWhere(user.userId, query, options);
+    const where = this.buildListWhere(user, query, options);
 
     const [items, total] = await Promise.all([
       this.prisma.task.findMany({
@@ -578,13 +682,14 @@ export class TasksService {
   }
 
   private buildListWhere(
-    userId: string,
+    user: Pick<AuthUser, 'userId' | 'accountId'>,
     query: ListTasksQueryDto,
     options: {
       executorApprovalFilter?: 'unapproved';
       forceExecutorRole?: boolean;
     } = {}
   ): Prisma.TaskWhereInput {
+    const { userId, accountId } = user;
     const hasDateRange =
       query.dateFrom !== undefined || query.dateTo !== undefined;
 
@@ -594,11 +699,24 @@ export class TasksService {
       );
     }
 
-    const createdAtDayFilter = buildCalendarDayFilter(query.createdDate);
-    const createdAtRangeFilter = buildCalendarDateRangeFilter(
-      query.dateFrom,
-      query.dateTo
+    const createdAtDayFilter = buildCalendarDayFilter(
+      query.createdDate,
+      query.tzOffset
     );
+    const updatedAtDayFilter = buildCalendarDayFilter(
+      query.updatedDate,
+      query.tzOffset
+    );
+    const deadlineDayFilter = buildCalendarDayFilter(
+      query.deadlineDate,
+      query.tzOffset
+    );
+    const dateRangeFilter = buildCalendarDateRangeFilter(
+      query.dateFrom,
+      query.dateTo,
+      query.tzOffset
+    );
+    const dateField = query.dateField ?? TaskCalendarDateField.CREATED_AT;
     const role = options.forceExecutorRole ? TaskListRole.EXECUTOR : query.role;
     const executorApprovalWhere =
       options.executorApprovalFilter === 'unapproved'
@@ -627,15 +745,26 @@ export class TasksService {
       ...(query.postId !== undefined && { postId: query.postId }),
       ...(query.ownerId !== undefined && { ownerId: query.ownerId }),
       ...(query.executorId !== undefined && { executorId: query.executorId }),
+      ...(query.taskId !== undefined && { id: query.taskId }),
       ...(createdAtDayFilter !== undefined && {
         createdAt: createdAtDayFilter,
       }),
-      ...(createdAtRangeFilter !== undefined && {
-        createdAt: createdAtRangeFilter,
+      ...(updatedAtDayFilter !== undefined && {
+        updatedAt: updatedAtDayFilter,
+      }),
+      ...(deadlineDayFilter !== undefined && {
+        finalDate: deadlineDayFilter,
+      }),
+      ...(dateRangeFilter !== undefined && {
+        [dateField]: dateRangeFilter,
       }),
       ...(query.q !== undefined && {
-        post: this.buildPostSearchWhere(query.q),
+        OR: [
+          { title: { contains: query.q, mode: 'insensitive' } },
+          { post: this.buildPostSearchWhere(query.q) },
+        ],
       }),
+      ...this.buildPersonSearchWhere(query),
       ...(query.isCompanyAction !== undefined && {
         isCompanyAction: query.isCompanyAction,
       }),
@@ -644,6 +773,11 @@ export class TasksService {
           isExecutorApprove: query.isExecutorApprove,
         }),
       ...(query.urgent !== undefined && { urgent: query.urgent }),
+      ...(query.assigneeMine === true && { assigneeAccountId: accountId }),
+      ...(query.assigneeAccountId !== undefined &&
+        query.assigneeMine !== true && {
+          assigneeAccountId: query.assigneeAccountId,
+        }),
       ...(query.overdue === true && {
         finalDate: { lt: new Date() },
       }),
@@ -651,6 +785,31 @@ export class TasksService {
     };
 
     return where;
+  }
+
+  private buildPersonSearchWhere(
+    query: ListTasksQueryDto
+  ): Prisma.TaskWhereInput {
+    if (query.personQ === undefined) {
+      return {};
+    }
+
+    const personField =
+      query.personField ??
+      (query.role === TaskListRole.OWNER
+        ? TaskListPersonField.EXECUTOR
+        : TaskListPersonField.OWNER);
+
+    if (personField === TaskListPersonField.EXECUTOR) {
+      return {
+        executorId: { not: null },
+        executor: buildCreatorNameSearch(query.personQ),
+      };
+    }
+
+    return {
+      owner: buildCompanyNameSearch(query.personQ),
+    };
   }
 
   private resolveStatuses(
@@ -747,12 +906,29 @@ export class TasksService {
   }
 
   private buildStatsBaseWhere(
-    userId: string,
+    user: AuthUser,
     query: ListTaskStatsQueryDto
   ): Prisma.TaskWhereInput {
+    const { userId, accountId } = user;
+    const dateRangeFilter = buildCalendarDateRangeFilter(
+      query.dateFrom,
+      query.dateTo
+    );
+    const dateField = query.dateField ?? TaskCalendarDateField.FINAL_DATE;
+
     return {
       ...this.buildParticipantTaskWhere(userId, query.role),
       ...(query.postId !== undefined && { postId: query.postId }),
+      ...(query.executorId !== undefined && { executorId: query.executorId }),
+      ...(query.ownerId !== undefined && { ownerId: query.ownerId }),
+      ...(dateRangeFilter !== undefined && {
+        [dateField]: dateRangeFilter,
+      }),
+      ...(query.assigneeMine === true && { assigneeAccountId: accountId }),
+      ...(query.assigneeAccountId !== undefined &&
+        query.assigneeMine !== true && {
+          assigneeAccountId: query.assigneeAccountId,
+        }),
     };
   }
 
@@ -883,12 +1059,56 @@ export class TasksService {
     id: string,
     dto: UpdateTaskDto
   ): Promise<TaskResponseDto> {
+    if (dto.status === TaskStatus.ANNULLED) {
+      throw new BadRequestException(
+        'Статус ANNULLED устанавливается только через подтверждение аннулирования'
+      );
+    }
+
     const task = await this.getTaskOrThrow(id);
     this.assertParticipant(task, user.userId);
 
     const isOwner = task.ownerId === user.userId;
+
+    if (dto.postId !== undefined) {
+      if (!isOwner) {
+        throw new ForbiddenException(
+          'Переносить задачу в другой пост может только владелец'
+        );
+      }
+
+      if (dto.postId === task.postId) {
+        throw new BadRequestException('Задача уже привязана к этому посту');
+      }
+
+      const targetPost = await this.prisma.post.findUnique({
+        where: { id: dto.postId },
+        select: { id: true, ownerId: true, isArchived: true },
+      });
+
+      if (!targetPost) {
+        throw new NotFoundException('Пост не найден');
+      }
+
+      if (targetPost.ownerId !== user.userId) {
+        throw new ForbiddenException(
+          'Можно перенести задачу только в свой пост'
+        );
+      }
+
+      if (targetPost.isArchived) {
+        throw new BadRequestException(
+          'Нельзя перенести задачу в архивный пост'
+        );
+      }
+    }
+
     const data = this.buildUpdateData(dto, isOwner);
     const changes = this.collectTaskChanges(task, dto, isOwner);
+    const actor = await this.actorAttribution.resolve(
+      user.accountId,
+      user.userId
+    );
 
     if (isOwner && dto.executorId !== undefined) {
       await this.validateExecutor(dto.executorId, task.ownerId);
@@ -901,13 +1121,21 @@ export class TasksService {
         include: taskWithMediaInclude,
       });
 
+      if (dto.postId !== undefined && dto.postId !== task.postId) {
+        await tx.publication.updateMany({
+          where: { taskId: id },
+          data: { postId: dto.postId },
+        });
+      }
+
       for (const change of changes) {
         await this.logActivity(
           id,
           user.userId,
           change.type,
           change.payload,
-          tx
+          tx,
+          actor
         );
       }
 
@@ -918,11 +1146,600 @@ export class TasksService {
       task,
       updated,
       user.userId,
-      changes
+      changes,
+      actor
     );
     await this.dispatchPublicationOnCompleted(updated, user.userId, changes);
 
     return this.toResponse(updated);
+  }
+
+  async requestAnnulment(
+    user: AuthUser,
+    id: string,
+    dto: RequestTaskAnnulmentDto
+  ): Promise<TaskResponseDto> {
+    const task = await this.getTaskOrThrow(id);
+    this.assertParticipant(task, user.userId);
+
+    if (!task.executorId) {
+      throw new BadRequestException(
+        'Аннулирование доступно только для задач с исполнителем'
+      );
+    }
+
+    if (TERMINAL_TASK_STATUSES.includes(task.status)) {
+      throw new BadRequestException(
+        'Нельзя аннулировать завершённую или уже аннулированную задачу'
+      );
+    }
+
+    const pending = await this.prisma.taskAnnulmentRequest.findFirst({
+      where: { taskId: id, status: TaskRequestStatus.PENDING },
+    });
+    if (pending) {
+      throw new ConflictException('Запрос на аннулирование уже отправлен');
+    }
+
+    const actor = await this.actorAttribution.resolve(
+      user.accountId,
+      user.userId
+    );
+
+    const created = await this.prisma.$transaction(async tx => {
+      const request = await tx.taskAnnulmentRequest.create({
+        data: {
+          taskId: id,
+          reason: dto.reason.trim(),
+          initiator: dto.initiator as TaskRequestInitiator,
+          status: TaskRequestStatus.PENDING,
+          requestedById: user.userId,
+        },
+      });
+
+      await this.logActivity(
+        id,
+        user.userId,
+        TaskActivityType.ANNULMENT_REQUESTED,
+        {
+          requestId: request.id,
+          reason: request.reason,
+          initiator: request.initiator,
+        },
+        tx,
+        actor
+      );
+
+      return request;
+    });
+
+    const updated = await this.prisma.task.findUniqueOrThrow({
+      where: { id },
+      include: taskListInclude,
+    });
+
+    const recipientId = this.resolveOtherParticipantId(task, user.userId);
+    if (recipientId) {
+      const taskTitle = updated.title ?? 'Задача';
+      await this.notificationsService.notify({
+        recipientId,
+        actorId: user.userId,
+        actor,
+        type: NotificationType.TASK_STATUS_CHANGED,
+        title: 'Запрос на аннулирование задачи',
+        body: `«${taskTitle}»`,
+        payload: {
+          entityType: 'task',
+          entityId: updated.id,
+          postId: updated.postId,
+          taskId: updated.id,
+          meta: {
+            taskTitle: updated.title,
+            annulmentId: created.id,
+            action: 'annulment_requested',
+          },
+        },
+      });
+    }
+
+    return this.toResponse(
+      updated,
+      this.participantResponseOptions(user.userId, updated)
+    );
+  }
+
+  async confirmAnnulment(
+    user: AuthUser,
+    id: string
+  ): Promise<TaskResponseDto> {
+    const task = await this.getTaskOrThrow(id);
+    this.assertParticipant(task, user.userId);
+
+    const pending = await this.prisma.taskAnnulmentRequest.findFirst({
+      where: { taskId: id, status: TaskRequestStatus.PENDING },
+    });
+    if (!pending) {
+      throw new BadRequestException('Нет активного запроса на аннулирование');
+    }
+
+    if (pending.requestedById === user.userId) {
+      throw new ForbiddenException(
+        'Подтвердить аннулирование может только вторая сторона'
+      );
+    }
+
+    const previousStatus = task.status;
+    const actor = await this.actorAttribution.resolve(
+      user.accountId,
+      user.userId
+    );
+    const now = new Date();
+
+    const updated = await this.prisma.$transaction(async tx => {
+      await tx.taskAnnulmentRequest.update({
+        where: { id: pending.id },
+        data: {
+          status: TaskRequestStatus.CONFIRMED,
+          confirmedAt: now,
+          confirmedById: user.userId,
+        },
+      });
+
+      const updatedTask = await tx.task.update({
+        where: { id },
+        data: { status: TaskStatus.ANNULLED },
+        include: taskListInclude,
+      });
+
+      await this.logActivity(
+        id,
+        user.userId,
+        TaskActivityType.ANNULMENT_CONFIRMED,
+        {
+          requestId: pending.id,
+          reason: pending.reason,
+          initiator: pending.initiator,
+        },
+        tx,
+        actor
+      );
+
+      await this.logActivity(
+        id,
+        user.userId,
+        TaskActivityType.STATUS_CHANGED,
+        {
+          field: 'status',
+          from: previousStatus,
+          to: TaskStatus.ANNULLED,
+        },
+        tx,
+        actor
+      );
+
+      return updatedTask;
+    });
+
+    const recipientId = this.resolveOtherParticipantId(task, user.userId);
+    if (recipientId) {
+      const taskTitle = updated.title ?? 'Задача';
+      await this.notificationsService.notify({
+        recipientId,
+        actorId: user.userId,
+        actor,
+        type: NotificationType.TASK_STATUS_CHANGED,
+        title: `Статус задачи: ${formatTaskStatus(TaskStatus.ANNULLED)}`,
+        body: `«${taskTitle}»`,
+        payload: {
+          entityType: 'task',
+          entityId: updated.id,
+          postId: updated.postId,
+          taskId: updated.id,
+          meta: {
+            taskTitle: updated.title,
+            from: previousStatus,
+            to: TaskStatus.ANNULLED,
+            annulmentId: pending.id,
+          },
+        },
+      });
+    }
+
+    return this.toResponse(
+      updated,
+      this.participantResponseOptions(user.userId, updated)
+    );
+  }
+
+  async rejectAnnulment(
+    user: AuthUser,
+    id: string
+  ): Promise<TaskResponseDto> {
+    const task = await this.getTaskOrThrow(id);
+    this.assertParticipant(task, user.userId);
+
+    const pending = await this.prisma.taskAnnulmentRequest.findFirst({
+      where: { taskId: id, status: TaskRequestStatus.PENDING },
+    });
+    if (!pending) {
+      throw new BadRequestException('Нет активного запроса на аннулирование');
+    }
+
+    if (pending.requestedById === user.userId) {
+      throw new ForbiddenException(
+        'Отклонить аннулирование может только вторая сторона'
+      );
+    }
+
+    const actor = await this.actorAttribution.resolve(
+      user.accountId,
+      user.userId
+    );
+    const now = new Date();
+
+    await this.prisma.$transaction(async tx => {
+      await tx.taskAnnulmentRequest.update({
+        where: { id: pending.id },
+        data: {
+          status: TaskRequestStatus.REJECTED,
+          confirmedAt: now,
+          confirmedById: user.userId,
+        },
+      });
+
+      await this.logActivity(
+        id,
+        user.userId,
+        TaskActivityType.ANNULMENT_REJECTED,
+        {
+          requestId: pending.id,
+          reason: pending.reason,
+          initiator: pending.initiator,
+        },
+        tx,
+        actor
+      );
+    });
+
+    const updated = await this.prisma.task.findUniqueOrThrow({
+      where: { id },
+      include: taskListInclude,
+    });
+
+    const recipientId = this.resolveOtherParticipantId(task, user.userId);
+    if (recipientId) {
+      const taskTitle = updated.title ?? 'Задача';
+      await this.notificationsService.notify({
+        recipientId,
+        actorId: user.userId,
+        actor,
+        type: NotificationType.TASK_STATUS_CHANGED,
+        title: 'Запрос на аннулирование отклонён',
+        body: `«${taskTitle}»`,
+        payload: {
+          entityType: 'task',
+          entityId: updated.id,
+          postId: updated.postId,
+          taskId: updated.id,
+          meta: {
+            taskTitle: updated.title,
+            annulmentId: pending.id,
+            action: 'annulment_rejected',
+          },
+        },
+      });
+    }
+
+    return this.toResponse(
+      updated,
+      this.participantResponseOptions(user.userId, updated)
+    );
+  }
+
+  async requestDeadlineExtension(
+    user: AuthUser,
+    id: string,
+    dto: RequestTaskDeadlineExtensionDto
+  ): Promise<TaskResponseDto> {
+    const task = await this.getTaskOrThrow(id);
+    this.assertParticipant(task, user.userId);
+
+    if (!task.executorId) {
+      throw new BadRequestException(
+        'Перенос дедлайна доступен только для задач с исполнителем'
+      );
+    }
+
+    if (TERMINAL_TASK_STATUSES.includes(task.status)) {
+      throw new BadRequestException(
+        'Нельзя перенести дедлайн завершённой или аннулированной задачи'
+      );
+    }
+
+    const pending = await this.prisma.taskDeadlineExtensionRequest.findFirst({
+      where: { taskId: id, status: TaskRequestStatus.PENDING },
+    });
+    if (pending) {
+      throw new ConflictException('Запрос на перенос дедлайна уже отправлен');
+    }
+
+    const proposedFinalDate = new Date(dto.proposedFinalDate);
+    if (Number.isNaN(proposedFinalDate.getTime())) {
+      throw new BadRequestException('Некорректная предлагаемая дата');
+    }
+
+    if (task.finalDate && proposedFinalDate.getTime() <= task.finalDate.getTime()) {
+      throw new BadRequestException(
+        'Новая дата должна быть позже текущего дедлайна'
+      );
+    }
+
+    if (!task.finalDate && proposedFinalDate.getTime() <= Date.now()) {
+      throw new BadRequestException('Новая дата должна быть в будущем');
+    }
+
+    const actor = await this.actorAttribution.resolve(
+      user.accountId,
+      user.userId
+    );
+
+    const created = await this.prisma.$transaction(async tx => {
+      const request = await tx.taskDeadlineExtensionRequest.create({
+        data: {
+          taskId: id,
+          reason: dto.reason.trim(),
+          initiator: dto.initiator as TaskRequestInitiator,
+          status: TaskRequestStatus.PENDING,
+          proposedFinalDate,
+          requestedById: user.userId,
+        },
+      });
+
+      await this.logActivity(
+        id,
+        user.userId,
+        TaskActivityType.DEADLINE_EXTENSION_REQUESTED,
+        {
+          requestId: request.id,
+          reason: request.reason,
+          initiator: request.initiator,
+          proposedFinalDate: request.proposedFinalDate.toISOString(),
+        },
+        tx,
+        actor
+      );
+
+      return request;
+    });
+
+    const updated = await this.prisma.task.findUniqueOrThrow({
+      where: { id },
+      include: taskListInclude,
+    });
+
+    const recipientId = this.resolveOtherParticipantId(task, user.userId);
+    if (recipientId) {
+      const taskTitle = updated.title ?? 'Задача';
+      await this.notificationsService.notify({
+        recipientId,
+        actorId: user.userId,
+        actor,
+        type: NotificationType.TASK_STATUS_CHANGED,
+        title: 'Запрос на перенос дедлайна',
+        body: `«${taskTitle}»`,
+        payload: {
+          entityType: 'task',
+          entityId: updated.id,
+          postId: updated.postId,
+          taskId: updated.id,
+          meta: {
+            taskTitle: updated.title,
+            deadlineExtensionId: created.id,
+            action: 'deadline_extension_requested',
+            proposedFinalDate: created.proposedFinalDate.toISOString(),
+          },
+        },
+      });
+    }
+
+    return this.toResponse(
+      updated,
+      this.participantResponseOptions(user.userId, updated)
+    );
+  }
+
+  async confirmDeadlineExtension(
+    user: AuthUser,
+    id: string
+  ): Promise<TaskResponseDto> {
+    const task = await this.getTaskOrThrow(id);
+    this.assertParticipant(task, user.userId);
+
+    const pending = await this.prisma.taskDeadlineExtensionRequest.findFirst({
+      where: { taskId: id, status: TaskRequestStatus.PENDING },
+    });
+    if (!pending) {
+      throw new BadRequestException('Нет активного запроса на перенос дедлайна');
+    }
+
+    if (pending.requestedById === user.userId) {
+      throw new ForbiddenException(
+        'Подтвердить перенос дедлайна может только вторая сторона'
+      );
+    }
+
+    const previousFinalDate = task.finalDate?.toISOString() ?? null;
+    const nextFinalDate = pending.proposedFinalDate;
+    const actor = await this.actorAttribution.resolve(
+      user.accountId,
+      user.userId
+    );
+    const now = new Date();
+
+    const updated = await this.prisma.$transaction(async tx => {
+      await tx.taskDeadlineExtensionRequest.update({
+        where: { id: pending.id },
+        data: {
+          status: TaskRequestStatus.CONFIRMED,
+          confirmedAt: now,
+          confirmedById: user.userId,
+        },
+      });
+
+      const updatedTask = await tx.task.update({
+        where: { id },
+        data: { finalDate: nextFinalDate },
+        include: taskListInclude,
+      });
+
+      await this.logActivity(
+        id,
+        user.userId,
+        TaskActivityType.DEADLINE_EXTENSION_CONFIRMED,
+        {
+          requestId: pending.id,
+          reason: pending.reason,
+          initiator: pending.initiator,
+          proposedFinalDate: nextFinalDate.toISOString(),
+          from: previousFinalDate,
+          to: nextFinalDate.toISOString(),
+        },
+        tx,
+        actor
+      );
+
+      await this.logActivity(
+        id,
+        user.userId,
+        TaskActivityType.FIELD_UPDATED,
+        {
+          field: 'finalDate',
+          from: previousFinalDate,
+          to: nextFinalDate.toISOString(),
+        },
+        tx,
+        actor
+      );
+
+      return updatedTask;
+    });
+
+    const recipientId = this.resolveOtherParticipantId(task, user.userId);
+    if (recipientId) {
+      const taskTitle = updated.title ?? 'Задача';
+      await this.notificationsService.notify({
+        recipientId,
+        actorId: user.userId,
+        actor,
+        type: NotificationType.TASK_STATUS_CHANGED,
+        title: 'Дедлайн перенесён',
+        body: `«${taskTitle}»`,
+        payload: {
+          entityType: 'task',
+          entityId: updated.id,
+          postId: updated.postId,
+          taskId: updated.id,
+          meta: {
+            taskTitle: updated.title,
+            deadlineExtensionId: pending.id,
+            action: 'deadline_extension_confirmed',
+            from: previousFinalDate,
+            to: nextFinalDate.toISOString(),
+          },
+        },
+      });
+    }
+
+    return this.toResponse(
+      updated,
+      this.participantResponseOptions(user.userId, updated)
+    );
+  }
+
+  async rejectDeadlineExtension(
+    user: AuthUser,
+    id: string
+  ): Promise<TaskResponseDto> {
+    const task = await this.getTaskOrThrow(id);
+    this.assertParticipant(task, user.userId);
+
+    const pending = await this.prisma.taskDeadlineExtensionRequest.findFirst({
+      where: { taskId: id, status: TaskRequestStatus.PENDING },
+    });
+    if (!pending) {
+      throw new BadRequestException('Нет активного запроса на перенос дедлайна');
+    }
+
+    if (pending.requestedById === user.userId) {
+      throw new ForbiddenException(
+        'Отклонить перенос дедлайна может только вторая сторона'
+      );
+    }
+
+    const actor = await this.actorAttribution.resolve(
+      user.accountId,
+      user.userId
+    );
+    const now = new Date();
+
+    await this.prisma.$transaction(async tx => {
+      await tx.taskDeadlineExtensionRequest.update({
+        where: { id: pending.id },
+        data: {
+          status: TaskRequestStatus.REJECTED,
+          confirmedAt: now,
+          confirmedById: user.userId,
+        },
+      });
+
+      await this.logActivity(
+        id,
+        user.userId,
+        TaskActivityType.DEADLINE_EXTENSION_REJECTED,
+        {
+          requestId: pending.id,
+          reason: pending.reason,
+          initiator: pending.initiator,
+          proposedFinalDate: pending.proposedFinalDate.toISOString(),
+        },
+        tx,
+        actor
+      );
+    });
+
+    const updated = await this.prisma.task.findUniqueOrThrow({
+      where: { id },
+      include: taskListInclude,
+    });
+
+    const recipientId = this.resolveOtherParticipantId(task, user.userId);
+    if (recipientId) {
+      const taskTitle = updated.title ?? 'Задача';
+      await this.notificationsService.notify({
+        recipientId,
+        actorId: user.userId,
+        actor,
+        type: NotificationType.TASK_STATUS_CHANGED,
+        title: 'Запрос на перенос дедлайна отклонён',
+        body: `«${taskTitle}»`,
+        payload: {
+          entityType: 'task',
+          entityId: updated.id,
+          postId: updated.postId,
+          taskId: updated.id,
+          meta: {
+            taskTitle: updated.title,
+            deadlineExtensionId: pending.id,
+            action: 'deadline_extension_rejected',
+          },
+        },
+      });
+    }
+
+    return this.toResponse(
+      updated,
+      this.participantResponseOptions(user.userId, updated)
+    );
   }
 
   private async dispatchPublicationOnCompleted(
@@ -950,7 +1767,8 @@ export class TasksService {
     previous: Task,
     updated: Task,
     actorId: string,
-    changes: TaskChange[]
+    changes: TaskChange[],
+    actor?: ActorSnapshot | null
   ): Promise<void> {
     const recipientId = this.resolveOtherParticipantId(previous, actorId);
 
@@ -970,6 +1788,7 @@ export class TasksService {
         await this.notificationsService.notify({
           recipientId,
           actorId,
+          actor,
           type: NotificationType.TASK_STATUS_CHANGED,
           title: `Статус задачи: ${formatTaskStatus(payload.to)}`,
           body: `«${taskTitle}»`,
@@ -1000,6 +1819,7 @@ export class TasksService {
           await this.notificationsService.notify({
             recipientId: payload.to,
             actorId,
+            actor,
             type: NotificationType.TASK_EXECUTOR_ASSIGNED,
             title: `Вас назначили исполнителем`,
             body: `«${taskTitle}»`,
@@ -1050,15 +1870,56 @@ export class TasksService {
     return task;
   }
 
+  async listMediaForCopy(
+    userId: string,
+    taskId: string,
+    options: {
+      kind?: TaskMediaKind;
+      mediaIds?: string[];
+    } = {}
+  ) {
+    await this.assertParticipantForMedia(userId, taskId);
+
+    const kind = options.kind ?? TaskMediaKind.MAIN;
+    const mediaIds = options.mediaIds?.filter(Boolean);
+
+    const items = await this.prisma.taskMedia.findMany({
+      where: {
+        taskId,
+        kind,
+        ...(mediaIds?.length ? { id: { in: mediaIds } } : {}),
+      },
+      orderBy: { sortOrder: 'asc' },
+      select: {
+        id: true,
+        url: true,
+        key: true,
+        size: true,
+        mimeType: true,
+      },
+    });
+
+    if (mediaIds?.length && items.length !== mediaIds.length) {
+      throw new NotFoundException('Некоторые медиа задачи не найдены');
+    }
+
+    return items;
+  }
+
   async addMedia(
     taskId: string,
     actorId: string,
     data: { url: string; key: string; size: string; mimeType: string },
-    kind: TaskMediaKind = TaskMediaKind.MAIN
+    kind: TaskMediaKind = TaskMediaKind.MAIN,
+    accountId?: string
   ) {
     const count = await this.prisma.taskMedia.count({
       where: { taskId, kind },
     });
+
+    const actor = accountId
+      ? await this.actorAttribution.resolve(accountId, actorId)
+      : null;
 
     const media = await this.prisma.taskMedia.create({
       data: {
@@ -1072,14 +1933,21 @@ export class TasksService {
       },
     });
 
-    await this.logActivity(taskId, actorId, TaskActivityType.MEDIA_ADDED, {
-      mediaId: media.id,
-      kind: media.kind,
-      url: media.url,
-      key: media.key,
-      mimeType: media.mimeType,
-      size: media.size,
-    });
+    await this.logActivity(
+      taskId,
+      actorId,
+      TaskActivityType.MEDIA_ADDED,
+      {
+        mediaId: media.id,
+        kind: media.kind,
+        url: media.url,
+        key: media.key,
+        mimeType: media.mimeType,
+        size: media.size,
+      },
+      undefined,
+      actor
+    );
 
     if (kind === TaskMediaKind.REPORT) {
       const task = await this.prisma.task.findUnique({
@@ -1091,6 +1959,7 @@ export class TasksService {
         await this.notificationsService.notify({
           recipientId: task.ownerId,
           actorId,
+          actor,
           type: NotificationType.TASK_MEDIA_ADDED,
           title: 'Исполнитель загрузил отчёт',
           body: task.title ? `«${task.title}»` : undefined,
@@ -1111,7 +1980,8 @@ export class TasksService {
   async removeMedia(
     userId: string,
     taskId: string,
-    mediaId: string
+    mediaId: string,
+    accountId?: string
   ): Promise<void> {
     const task = await this.getTaskOrThrow(taskId);
     this.assertParticipant(task, userId);
@@ -1130,6 +2000,10 @@ export class TasksService {
       throw new InternalServerErrorException('Не удалось удалить файл');
     }
 
+    const actor = accountId
+      ? await this.actorAttribution.resolve(accountId, userId)
+      : null;
+
     await this.prisma.$transaction(async tx => {
       await tx.taskMedia.delete({
         where: { id: mediaId },
@@ -1147,7 +2021,8 @@ export class TasksService {
           mimeType: media.mimeType,
           size: media.size,
         },
-        tx
+        tx,
+        actor
       );
     });
   }
@@ -1301,13 +2176,25 @@ export class TasksService {
 
     const taskIds = pageGroups.map(group => group.taskId);
 
+    const participantSelect = {
+      id: true,
+      role: true,
+      avatar: true,
+      creatorProfile: { select: { name: true, lastName: true } },
+      companyProfile: { select: { companyName: true } },
+    } as const;
+
     const [tasks, lastComments] = await Promise.all([
       this.prisma.task.findMany({
         where: { id: { in: taskIds } },
         select: {
           id: true,
           title: true,
+          ownerId: true,
+          executorId: true,
           post: { select: { title: true } },
+          owner: { select: participantSelect },
+          executor: { select: participantSelect },
         },
       }),
       this.prisma.taskComment.findMany({
@@ -1344,9 +2231,19 @@ export class TasksService {
         continue;
       }
 
+      const recipientUser =
+        task.ownerId === user.userId
+          ? task.executor
+          : task.executorId === user.userId
+            ? task.owner
+            : null;
+
       items.push({
         taskId: group.taskId,
         title: resolveTaskTitle(task.title, task.post.title),
+        recipient: recipientUser
+          ? this.mapCommentsRecipient(recipientUser)
+          : null,
         lastComment: {
           preview: buildCommentPreview(
             lastComment.content,
@@ -1610,11 +2507,17 @@ export class TasksService {
 
     this.assertCommentMediaKeys(taskId, media);
 
+    const actor = await this.actorAttribution.resolve(
+      user.accountId,
+      user.userId
+    );
+
     const comment = await this.prisma.taskComment.create({
       data: {
         taskId,
         authorId: user.userId,
         content,
+        ...this.actorAttribution.toPrismaFields(actor),
         ...(media.length > 0 && {
           media: {
             create: media.map((item, index) => ({
@@ -1648,6 +2551,7 @@ export class TasksService {
       await this.notificationsService.notify({
         recipientId,
         actorId: user.userId,
+        actor,
         type: NotificationType.TASK_COMMENT_CREATED,
         title: 'Новый комментарий к задаче',
         body: preview,
@@ -1772,7 +2676,8 @@ export class TasksService {
     actorId: string,
     type: TaskActivityType,
     payload: Prisma.InputJsonValue,
-    tx?: PrismaTx
+    tx?: PrismaTx,
+    actor?: ActorSnapshot | null
   ) {
     const client = tx ?? this.prisma;
 
@@ -1782,6 +2687,7 @@ export class TasksService {
         actorId,
         type,
         payload,
+        ...this.actorAttribution.toPrismaFields(actor),
       },
     });
   }
@@ -1905,13 +2811,18 @@ export class TasksService {
       });
     }
 
-    for (const field of [
-      'location',
-      'bloggerRequirements',
-      'cooperationDetails',
-      'brief',
-      'deliverables',
-    ] as const) {
+    if (dto.postId !== undefined && dto.postId !== task.postId) {
+      changes.push({
+        type: TaskActivityType.FIELD_UPDATED,
+        payload: {
+          field: 'postId',
+          from: task.postId,
+          to: dto.postId,
+        },
+      });
+    }
+
+    for (const field of ['location', 'brief', 'deliverables'] as const) {
       if (
         dto[field] !== undefined &&
         this.jsonFieldChanged(task[field], dto[field])
@@ -1922,6 +2833,36 @@ export class TasksService {
             field,
             from: task[field] ?? null,
             to: (dto[field] ?? null) as Prisma.InputJsonValue,
+          },
+        });
+      }
+    }
+
+    if (dto.bloggerRequirements !== undefined) {
+      const current = columnsToBloggerRequirements(task);
+      if (this.jsonFieldChanged(current, dto.bloggerRequirements)) {
+        changes.push({
+          type: TaskActivityType.FIELD_UPDATED,
+          payload: {
+            field: 'bloggerRequirements',
+            from: current as Prisma.InputJsonValue,
+            to: (dto.bloggerRequirements ??
+              null) as unknown as Prisma.InputJsonValue,
+          },
+        });
+      }
+    }
+
+    if (dto.cooperationDetails !== undefined) {
+      const current = columnsToCooperationDetails(task);
+      if (this.jsonFieldChanged(current, dto.cooperationDetails)) {
+        changes.push({
+          type: TaskActivityType.FIELD_UPDATED,
+          payload: {
+            field: 'cooperationDetails',
+            from: current as Prisma.InputJsonValue,
+            to: (dto.cooperationDetails ??
+              null) as unknown as Prisma.InputJsonValue,
           },
         });
       }
@@ -1967,6 +2908,7 @@ export class TasksService {
         'videoCount',
         'urgent',
         'executorId',
+        'postId',
         'location',
         'bloggerRequirements',
         'cooperationDetails',
@@ -2014,6 +2956,10 @@ export class TasksService {
     }
     if (dto.executorId !== undefined) {
       data.executor = { connect: { id: dto.executorId } };
+    }
+    if (dto.postId !== undefined) {
+      data.post = { connect: { id: dto.postId } };
+      data.application = { disconnect: true };
     }
 
     Object.assign(data, taskJsonFieldsFromDto(dto));
@@ -2218,6 +3164,7 @@ export class TasksService {
     return {
       id: task.id,
       applicationId: task.applicationId ?? null,
+      postId: task.postId,
       ownerId: task.ownerId,
       executorId: task.executorId ?? null,
       status: task.status,
@@ -2236,14 +3183,14 @@ export class TasksService {
       isExecutorApprove: task.isExecutorApprove ?? null,
       isCompanyAction: task.isCompanyAction,
       location: this.mapTaskLocation(task.location),
-      bloggerRequirements: this.mapTaskBloggerRequirements(
-        task.bloggerRequirements
-      ),
-      cooperationDetails: this.mapTaskCooperationDetails(
-        task.cooperationDetails
-      ),
+      bloggerRequirements: columnsToBloggerRequirements(task),
+      cooperationDetails: columnsToCooperationDetails(task),
       brief: this.mapTaskBrief(task.brief),
       deliverables: this.mapTaskDeliverables(task.deliverables),
+      ...this.mapTaskRequests(task),
+      assigneeAccountId: task.assigneeAccountId ?? null,
+      assigneeDisplayName: task.assigneeDisplayName ?? null,
+      assigneeKind: task.assigneeKind ?? null,
       createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString(),
       ...(options.includePost &&
@@ -2268,29 +3215,105 @@ export class TasksService {
     };
   }
 
+  private mapTaskRequests(task: {
+    annulmentRequests?: Array<{
+      id: string;
+      reason: string;
+      initiator: TaskRequestInitiator;
+      status: TaskRequestStatus;
+      requestedAt: Date;
+      requestedById: string;
+      confirmedAt: Date | null;
+      confirmedById: string | null;
+    }>;
+    deadlineExtensionRequests?: Array<{
+      id: string;
+      reason: string;
+      initiator: TaskRequestInitiator;
+      status: TaskRequestStatus;
+      proposedFinalDate: Date;
+      requestedAt: Date;
+      requestedById: string;
+      confirmedAt: Date | null;
+      confirmedById: string | null;
+    }>;
+  }): {
+    annulment: TaskAnnulmentDto | null;
+    annulments: TaskAnnulmentDto[];
+    deadlineExtension: TaskDeadlineExtensionDto | null;
+    deadlineExtensions: TaskDeadlineExtensionDto[];
+  } {
+    const annulments = (task.annulmentRequests ?? []).map(item =>
+      this.mapAnnulmentRequest(item)
+    );
+    const deadlineExtensions = (task.deadlineExtensionRequests ?? []).map(
+      item => this.mapDeadlineExtensionRequest(item)
+    );
+
+    return {
+      annulments,
+      deadlineExtensions,
+      annulment:
+        annulments.find(item => item.status === TaskAnnulmentStatus.PENDING) ??
+        null,
+      deadlineExtension:
+        deadlineExtensions.find(
+          item => item.status === TaskDeadlineExtensionStatus.PENDING
+        ) ?? null,
+    };
+  }
+
+  private mapAnnulmentRequest(item: {
+    id: string;
+    reason: string;
+    initiator: TaskRequestInitiator;
+    status: TaskRequestStatus;
+    requestedAt: Date;
+    requestedById: string;
+    confirmedAt: Date | null;
+    confirmedById: string | null;
+  }): TaskAnnulmentDto {
+    return {
+      id: item.id,
+      reason: item.reason,
+      initiator: item.initiator as TaskAnnulmentInitiator,
+      requestedAt: item.requestedAt.toISOString(),
+      requestedById: item.requestedById,
+      status: item.status as TaskAnnulmentStatus,
+      confirmedAt: item.confirmedAt?.toISOString() ?? null,
+      confirmedById: item.confirmedById,
+    };
+  }
+
+  private mapDeadlineExtensionRequest(item: {
+    id: string;
+    reason: string;
+    initiator: TaskRequestInitiator;
+    status: TaskRequestStatus;
+    proposedFinalDate: Date;
+    requestedAt: Date;
+    requestedById: string;
+    confirmedAt: Date | null;
+    confirmedById: string | null;
+  }): TaskDeadlineExtensionDto {
+    return {
+      id: item.id,
+      reason: item.reason,
+      initiator: item.initiator as TaskAnnulmentInitiator,
+      proposedFinalDate: item.proposedFinalDate.toISOString(),
+      requestedAt: item.requestedAt.toISOString(),
+      requestedById: item.requestedById,
+      status: item.status as TaskDeadlineExtensionStatus,
+      confirmedAt: item.confirmedAt?.toISOString() ?? null,
+      confirmedById: item.confirmedById,
+    };
+  }
+
   private mapTaskLocation(
     value: Prisma.JsonValue | null
   ): TaskResponseDto['location'] {
     const record = jsonToRecord(value);
     return record ? (record as TaskResponseDto['location']) : null;
-  }
-
-  private mapTaskBloggerRequirements(
-    value: Prisma.JsonValue | null
-  ): TaskResponseDto['bloggerRequirements'] {
-    const record = jsonToRecord(value);
-    return record
-      ? (record as TaskResponseDto['bloggerRequirements'])
-      : null;
-  }
-
-  private mapTaskCooperationDetails(
-    value: Prisma.JsonValue | null
-  ): TaskResponseDto['cooperationDetails'] {
-    const record = jsonToRecord(value);
-    return record
-      ? (record as TaskResponseDto['cooperationDetails'])
-      : null;
   }
 
   private mapTaskBrief(value: Prisma.JsonValue | null): TaskResponseDto['brief'] {
@@ -2306,7 +3329,7 @@ export class TasksService {
   }
 
   private jsonFieldChanged(
-    current: Prisma.JsonValue | null,
+    current: unknown,
     next: unknown
   ): boolean {
     return JSON.stringify(current ?? null) !== JSON.stringify(next ?? null);
@@ -2319,6 +3342,9 @@ export class TasksService {
     type: TaskActivityType;
     payload: Prisma.JsonValue;
     createdAt: Date;
+    actorAccountId?: string | null;
+    actorDisplayName?: string | null;
+    actorKind?: 'OWNER' | 'MANAGER' | null;
   }): TaskActivityResponseDto {
     return {
       id: activity.id,
@@ -2327,6 +3353,9 @@ export class TasksService {
       type: activity.type,
       payload: activity.payload as Record<string, unknown>,
       createdAt: activity.createdAt.toISOString(),
+      actorAccountId: activity.actorAccountId ?? null,
+      actorDisplayName: activity.actorDisplayName ?? null,
+      actorKind: activity.actorKind ?? null,
     };
   }
 
@@ -2383,6 +3412,9 @@ export class TasksService {
       createdAt: Date;
       updatedAt: Date;
       editedAt?: Date | null;
+      actorAccountId?: string | null;
+      actorDisplayName?: string | null;
+      actorKind?: 'OWNER' | 'MANAGER' | null;
       media?: {
         id: string;
         url: string;
@@ -2416,6 +3448,9 @@ export class TasksService {
         viewerLastReadAt,
         peerLastReadAt
       ),
+      actorAccountId: comment.actorAccountId ?? null,
+      actorDisplayName: comment.actorDisplayName ?? null,
+      actorKind: comment.actorKind ?? null,
     };
   }
 

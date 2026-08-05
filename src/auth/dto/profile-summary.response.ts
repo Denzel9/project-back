@@ -11,6 +11,13 @@ export class ProfileSummaryResponse {
   @ApiProperty({ example: 'John Doe' })
   displayName: string;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      'ФИО менеджера аккаунта — для подписи COMPANY/CREATOR в profile switch',
+  })
+  actorName: string | null;
+
   @ApiProperty({ nullable: true })
   avatar: string | null;
 
@@ -32,11 +39,19 @@ export class ProfileSummaryResponse {
     description: 'Email профиля (User.email) подтверждён',
   })
   isEmailConfirmed: boolean;
+
+  @ApiProperty({
+    description: 'Дата добавления membership (ISO)',
+  })
+  createdAt: string;
 }
 
 export class AuthSessionUserResponse {
   @ApiProperty({ format: 'uuid' })
   id: string;
+
+  @ApiProperty({ format: 'uuid', description: 'Account id (логин)' })
+  accountId: string;
 
   @ApiProperty({ enum: Role })
   role: Role;

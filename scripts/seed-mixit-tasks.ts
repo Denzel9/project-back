@@ -25,8 +25,7 @@ const TASK_STATUSES: TaskStatus[] = [
   TaskStatus.CHECKING,
   TaskStatus.REVISION,
   TaskStatus.COMPLETED,
-  TaskStatus.CANCELLED,
-  TaskStatus.CANCELLED_EXECUTOR,
+  TaskStatus.ANNULLED,
 ];
 
 function assertCount(value: number) {

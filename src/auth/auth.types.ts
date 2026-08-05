@@ -75,6 +75,7 @@ export type UserProfileFields = {
 
 export type AuthSessionUser = {
   id: string;
+  accountId: string;
   role: Role;
   membershipRole: MembershipRole;
   isVerified: boolean;

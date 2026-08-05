@@ -12,7 +12,7 @@ export class AddFavoriteDto {
 
   @ApiPropertyOptional({
     format: 'uuid',
-    description: 'Креатор или компания для избранного. Укажите postId или userId',
+    description: 'Исполнитель или компания для избранного. Укажите postId или userId',
   })
   @ValidateIf(dto => dto.postId === undefined)
   @IsUUID()

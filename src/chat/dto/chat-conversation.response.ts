@@ -18,6 +18,11 @@ export class ChatConversationResponse {
   })
   unreadCount: number;
 
+  @ApiProperty({
+    description: 'Закреплён ли диалог для текущего пользователя',
+  })
+  isPinned: boolean;
+
   @ApiProperty({ format: 'date-time' })
   updatedAt: Date;
 }

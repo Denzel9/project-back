@@ -1,16 +1,22 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
 import { PostAuthorType, Role } from '@prisma/client';
+import {
+  assertMarketplaceParticipant,
+} from '../auth/utils/marketplace-participant.util';
 
-export function visiblePostTypeForRole(role: Role): PostAuthorType {
+/** Тип постов в ленте; `null` — оба типа (MANAGER). */
+export function visiblePostTypeForRole(role: Role): PostAuthorType | null {
+  assertMarketplaceParticipant(role);
+
+  if (role === Role.MANAGER) {
+    return null;
+  }
+
   if (role === Role.CREATOR) {
     return PostAuthorType.COMPANY;
   }
 
-  if (role === Role.COMPANY) {
-    return PostAuthorType.CREATOR;
-  }
-
-  throw new BadRequestException('Недопустимая роль');
+  return PostAuthorType.CREATOR;
 }
 
 export function canViewPost(
@@ -26,7 +32,16 @@ export function canViewPost(
     return true;
   }
 
-  return post.type === visiblePostTypeForRole(role);
+  if (role === Role.MANAGER) {
+    return true;
+  }
+
+  try {
+    const visibleType = visiblePostTypeForRole(role);
+    return visibleType === null || post.type === visibleType;
+  } catch {
+    return false;
+  }
 }
 
 export function assertCanViewPost(

@@ -12,7 +12,8 @@ Backend для marketplace creator ↔ company. Документация для 
 |----------|---------|
 | **Account** | Login: email + password. Один человек = один Account. |
 | **User** | Публичный профиль: CREATOR или COMPANY. При регистрации создаётся один User на Account. |
-| **Membership** | Доступ Account к User: OWNER / ADMIN / EDITOR / VIEWER. |
+| **Membership** | Доступ Account к User: OWNER / ADMIN. |
+| **User.role** | CREATOR / COMPANY / MANAGER. MANAGER — shell без витрины профиля; лента/чат/избранное доступны; публикация постов и отклики — после switch на COMPANY/CREATOR. |
 | **Invite** | Приглашение другому человеку управлять **существующим** профилем. |
 
 **Активный профиль** — тот, чей \`userId\` в JWT (\`sub\`). Переключение: \`POST /auth/switch-profile\`.
@@ -36,8 +37,6 @@ Backend для marketplace creator ↔ company. Документация для 
 
 ### Редактирование профиля
 - \`PATCH /users/update\` — единственный эндпоинт обновления (поля User + name/companyName по роли).
-- VIEWER не может редактировать (403).
-
 ### Загрузка медиа
 1. \`POST /media/upload\` — multipart, поле \`file\`. Фото/видео — профиль, пост, чат, задача. Документы (PDF, XLS, XLSX, DOC, DOCX) — только чат (\`?conversationId=\`) и задача (\`?taskId=\`). Для задачи: \`?kind=main\` (по умолчанию) или \`?kind=report\` — отчёт исполнителя. Ответ: публичный \`url\`.
 2. \`PATCH /users/update\` — сохранить URL в \`avatar\`, \`banner\` и т.д.
@@ -88,13 +87,13 @@ Backend для marketplace creator ↔ company. Документация для 
 
 ### Публикации
 1. Создаются **автоматически** при \`PATCH /tasks/:id\` → \`status: COMPLETED\` (снимок \`reportMedia\` и полей задачи). Ручного \`POST /publications\` нет.
-2. \`GET /publications\` — список, где пользователь owner или executor (\`?role=owner|executor\`, \`?postId=\`, \`?taskId=\`, \`?ownerId=\`, \`?executorId=\`, \`?q=\` по title, пагинация).
+2. \`GET /publications\` — список, где пользователь owner или executor (\`?role=owner|executor\`, \`?postId=\`, \`?taskId=\`, \`?ownerId=\`, \`?executorId=\`, \`?q=\` по title, \`?executorQ=\` по имени исполнителя, пагинация).
 3. \`GET /publications/:id\` — детали + \`media[]\` + \`owner\` / \`executor\`.
 4. \`PATCH /publications/:id\` — участники задачи: \`title\`, \`description\`, \`externalUrl\`, \`platform\`.
 
 ### Приватный пост + прямое назначение
 1. Компания: \`POST /posts\` с \`isPrivate: true\` → медиа → \`POST /tasks\` с \`postId\` (и опционально \`executorId\`, либо назначить через \`PATCH /tasks/:id\`).
-2. Креатор видит задачу в \`GET /tasks\`, но \`GET /posts/:id\` для приватного поста недоступен (403).
+2. Исполнитель видит задачу в \`GET /tasks\`, но \`GET /posts/:id\` для приватного поста недоступен (403).
 
 ### Чат
 - REST: список диалогов и история (сообщения с media[]).

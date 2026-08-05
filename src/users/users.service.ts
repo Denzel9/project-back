@@ -3,8 +3,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role } from '@prisma/client';
-import { UserProfileFields } from '../auth/auth.types';
+import { MembershipRole, Prisma, Role } from '@prisma/client';
+import { AuthUser, UserProfileFields } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { Person, PersonPatch } from './dto/person.dto';
 import { UpdateUserDto } from './dto/update.dto';
@@ -26,6 +26,8 @@ const userWithPublicStatsInclude = {
 } as const;
 
 const PERSON_KEYS = [
+  'name',
+  'lastName',
   'height',
   'weight',
   'size',
@@ -104,6 +106,94 @@ export class UsersService {
     }
 
     return { ...publicUser, ...stats, email };
+  }
+
+  async search(
+    viewer: AuthUser,
+    query: { q: string; page?: number; limit?: number }
+  ) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+    const q = query.q.trim();
+    const roles = this.getChatSearchRoles(viewer);
+
+    if (roles.length === 0) {
+      return { items: [], total: 0, page, limit };
+    }
+
+    const where: Prisma.UserWhereInput = {
+      id: { not: viewer.userId },
+      role: { in: roles },
+      OR: [
+        { creatorProfile: { name: { contains: q, mode: 'insensitive' } } },
+        { creatorProfile: { lastName: { contains: q, mode: 'insensitive' } } },
+        {
+          companyProfile: {
+            companyName: { contains: q, mode: 'insensitive' },
+          },
+        },
+      ],
+    };
+
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        include: userWithProfileInclude,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      items: users.map(user => ({
+        id: user.id,
+        role: user.role,
+        avatar: user.avatar,
+        displayName: this.getSearchDisplayName(user),
+      })),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  private getChatSearchRoles(viewer: AuthUser): Role[] {
+    if (
+      viewer.role === Role.MANAGER ||
+      viewer.membershipRole === MembershipRole.ADMIN
+    ) {
+      return [Role.CREATOR, Role.COMPANY];
+    }
+
+    if (viewer.role === Role.COMPANY) {
+      return [Role.CREATOR];
+    }
+
+    if (viewer.role === Role.CREATOR) {
+      return [Role.COMPANY];
+    }
+
+    return [];
+  }
+
+  private getSearchDisplayName(user: {
+    role: Role;
+    email?: string | null;
+    creatorProfile: { name: string; lastName: string } | null;
+    companyProfile: { companyName: string } | null;
+  }): string {
+    if (user.role === Role.CREATOR && user.creatorProfile) {
+      return `${user.creatorProfile.name} ${user.creatorProfile.lastName}`.trim();
+    }
+
+    if (user.role === Role.COMPANY && user.companyProfile) {
+      return user.companyProfile.companyName;
+    }
+
+    return user.email ?? user.role;
   }
 
   createCreator(data: CreateCreatorData) {
@@ -225,6 +315,38 @@ export class UsersService {
         },
         emailChanged
       );
+    }
+
+    if (user.role === Role.MANAGER) {
+      if (
+        name !== undefined ||
+        lastName !== undefined ||
+        companyName !== undefined ||
+        creatorProfile !== undefined ||
+        companyProfile !== undefined
+      ) {
+        throw new BadRequestException(
+          'У профиля менеджера нет полей витрины'
+        );
+      }
+
+      return this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          ...(email !== undefined && { email: email.trim() }),
+          ...(emailChanged && { isEmailConfirmed: false }),
+          ...(profileFields.phone !== undefined && {
+            phone: profileFields.phone,
+          }),
+          ...(profileFields.avatar !== undefined && {
+            avatar: profileFields.avatar,
+          }),
+          ...(mergedPerson !== undefined && {
+            person: this.toNullableJson(mergedPerson),
+          }),
+        },
+        include: userWithProfileInclude,
+      });
     }
 
     return this.prisma.user.update({

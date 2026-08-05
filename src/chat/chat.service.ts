@@ -7,7 +7,11 @@ import {
   NotFoundException,
   forwardRef,
 } from '@nestjs/common';
-import { Role, Prisma, NotificationType } from '@prisma/client';
+import { Role, Prisma, NotificationType, MessageActorKind } from '@prisma/client';
+import {
+  ActorAttributionService,
+  type ActorSnapshot,
+} from '../accounts/actor-attribution.service';
 import { StorageService } from '../media/storage.service';
 import { ALLOWED_DOCUMENT_MIME_TYPES } from '../media/media.constants';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -105,9 +109,34 @@ export class ChatService {
     private readonly usersService: UsersService,
     private readonly storageService: StorageService,
     private readonly notificationsService: NotificationsService,
+    private readonly actorAttribution: ActorAttributionService,
     @Inject(forwardRef(() => ChatGateway))
     private readonly chatGateway: ChatGateway
   ) {}
+
+  async getUnreadCount(userId: string): Promise<{ count: number }> {
+    const participations =
+      await this.prisma.conversationParticipant.findMany({
+        where: { userId },
+        select: { conversationId: true, lastReadAt: true },
+      });
+
+    if (participations.length === 0) {
+      return { count: 0 };
+    }
+
+    const count = await this.prisma.message.count({
+      where: {
+        OR: participations.map(({ conversationId, lastReadAt }) => ({
+          conversationId,
+          senderId: { not: userId },
+          ...(lastReadAt ? { createdAt: { gt: lastReadAt } } : {}),
+        })),
+      },
+    });
+
+    return { count };
+  }
 
   async listConversations(
     userId: string,
@@ -152,15 +181,19 @@ export class ChatService {
           },
         },
       },
-      orderBy: {
-        conversation: {
-          updatedAt: 'desc',
+      orderBy: [
+        { isPinned: 'desc' },
+        { pinnedAt: 'desc' },
+        {
+          conversation: {
+            updatedAt: 'desc',
+          },
         },
-      },
+      ],
     });
 
     return Promise.all(
-      participations.map(async ({ lastReadAt, conversation }) => {
+      participations.map(async ({ lastReadAt, isPinned, conversation }) => {
         const peerParticipant = conversation.participants.find(
           participant => participant.userId !== userId
         );
@@ -185,6 +218,7 @@ export class ChatService {
             ? this.mapMessage(lastMessage, userId, lastReadAt, peerLastReadAt)
             : null,
           unreadCount,
+          isPinned,
           updatedAt: conversation.updatedAt,
         };
       })
@@ -256,6 +290,47 @@ export class ChatService {
     });
 
     return this.mapConversation(created, userId);
+  }
+
+  async updateConversationPin(
+    conversationId: string,
+    userId: string,
+    isPinned: boolean
+  ): Promise<ChatConversationDto> {
+    await this.assertParticipant(conversationId, userId);
+
+    await this.prisma.conversationParticipant.update({
+      where: {
+        conversationId_userId: {
+          conversationId,
+          userId,
+        },
+      },
+      data: {
+        isPinned,
+        pinnedAt: isPinned ? new Date() : null,
+      },
+    });
+
+    const conversation = await this.prisma.conversation.findUniqueOrThrow({
+      where: { id: conversationId },
+      include: {
+        participants: {
+          include: {
+            user: {
+              include: userWithProfileInclude,
+            },
+          },
+        },
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: messageWithMediaInclude,
+        },
+      },
+    });
+
+    return this.mapConversation(conversation, userId);
   }
 
   async listMessages(
@@ -662,7 +737,8 @@ export class ChatService {
     senderId: string,
     content = '',
     media: ChatMessageMediaInput[] = [],
-    isRedirected = false
+    isRedirected = false,
+    actorAccountId?: string
   ): Promise<ChatMessageDto> {
     const trimmedContent = content.trim();
     const normalizedMedia = media ?? [];
@@ -682,6 +758,10 @@ export class ChatService {
       }
     }
 
+    const actor = actorAccountId
+      ? await this.actorAttribution.resolve(actorAccountId, senderId)
+      : null;
+
     const message = await this.prisma.$transaction(tx =>
       this.createMessageInTransaction(
         tx,
@@ -689,11 +769,17 @@ export class ChatService {
         senderId,
         trimmedContent,
         normalizedMedia,
-        isRedirected
+        isRedirected,
+        actor
       )
     );
 
-    await this.notifyRecipientAboutMessage(conversationId, senderId, message);
+    await this.notifyRecipientAboutMessage(
+      conversationId,
+      senderId,
+      message,
+      actor
+    );
 
     const readState = await this.getConversationReadState(
       conversationId,
@@ -715,7 +801,8 @@ export class ChatService {
       id: string;
       content: string;
       media?: Array<{ id: string }>;
-    }
+    },
+    actor: ActorSnapshot | null = null
   ): Promise<void> {
     const participants = await this.prisma.conversationParticipant.findMany({
       where: { conversationId },
@@ -740,6 +827,7 @@ export class ChatService {
     await this.notificationsService.notify({
       recipientId,
       actorId: senderId,
+      actor,
       type: NotificationType.CHAT_MESSAGE,
       title: 'Новое сообщение в чате',
       body: preview,
@@ -761,7 +849,8 @@ export class ChatService {
     senderId: string,
     content: string,
     media: ChatMessageMediaInput[] = [],
-    isRedirected = false
+    isRedirected = false,
+    actor: ActorSnapshot | null = null
   ) {
     const trimmedContent = content.trim();
     const normalizedMedia = media ?? [];
@@ -785,6 +874,7 @@ export class ChatService {
         senderId,
         content: trimmedContent,
         isRedirected,
+        ...this.actorAttribution.toPrismaFields(actor),
         ...(normalizedMedia.length > 0 && {
           media: {
             create: normalizedMedia.map((item, index) => ({
@@ -833,6 +923,7 @@ export class ChatService {
       participants: Array<{
         userId: string;
         lastReadAt: Date | null;
+        isPinned?: boolean;
         user: NonNullable<UserWithProfile>;
       }>;
       messages: Array<{
@@ -879,6 +970,7 @@ export class ChatService {
         ? this.mapMessage(lastMessage, userId, viewerLastReadAt, peerLastReadAt)
         : null,
       unreadCount,
+      isPinned: viewerParticipant.isPinned ?? false,
       updatedAt: conversation.updatedAt,
     };
   }
@@ -915,6 +1007,9 @@ export class ChatService {
       id: string;
       conversationId: string;
       senderId: string;
+      actorAccountId?: string | null;
+      actorDisplayName?: string | null;
+      actorKind?: MessageActorKind | null;
       content: string;
       createdAt: Date;
       editedAt?: Date | null;
@@ -934,6 +1029,9 @@ export class ChatService {
       id: message.id,
       conversationId: message.conversationId,
       senderId: message.senderId,
+      actorAccountId: message.actorAccountId ?? null,
+      actorDisplayName: message.actorDisplayName ?? null,
+      actorKind: message.actorKind ?? null,
       content: message.content,
       media: (message.media ?? []).map(item => ({
         url: item.url,

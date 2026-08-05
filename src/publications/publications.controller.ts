@@ -29,7 +29,7 @@ export class PublicationsController {
     description:
       'Публикации по задачам, где пользователь owner или executor. ' +
       'Создаются автоматически при `COMPLETED` задачи. ' +
-      'Фильтры: `role`, `postId`, `taskId`, `ownerId`, `executorId`, `q` (title).',
+      'Фильтры: `role`, `postId`, `taskId`, `ownerId`, `executorId`, `q` (title), `executorQ` (имя исполнителя).',
   })
   @ApiOkResponse({ description: 'Список публикаций с пагинацией' })
   list(

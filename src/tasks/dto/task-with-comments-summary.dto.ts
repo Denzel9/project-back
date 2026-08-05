@@ -13,6 +13,17 @@ export class TaskLastCommentPreviewDto {
   authorId: string;
 }
 
+export class TaskWithCommentsRecipientDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ description: 'Отображаемое имя собеседника по задаче' })
+  displayName: string;
+
+  @ApiProperty({ nullable: true })
+  avatar: string | null;
+}
+
 export class TaskWithCommentsSummaryDto {
   @ApiProperty({ format: 'uuid' })
   taskId: string;
@@ -22,6 +33,13 @@ export class TaskWithCommentsSummaryDto {
     description: 'title задачи или название поста, если title не задан',
   })
   title: string | null;
+
+  @ApiProperty({
+    type: TaskWithCommentsRecipientDto,
+    nullable: true,
+    description: 'Другой участник задачи (собеседник) относительно текущего пользователя',
+  })
+  recipient: TaskWithCommentsRecipientDto | null;
 
   @ApiProperty({ type: TaskLastCommentPreviewDto })
   lastComment: TaskLastCommentPreviewDto;

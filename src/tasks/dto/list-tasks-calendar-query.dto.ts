@@ -55,6 +55,24 @@ export class ListTasksCalendarQueryDto {
   @IsBoolean()
   urgent?: boolean;
 
+  @ApiPropertyOptional({
+    description:
+      'Только задачи, где текущий аккаунт указан как ответственный (`assigneeAccountId`).',
+  })
+  @IsOptional()
+  @Transform(transformOptionalBoolean)
+  @IsBoolean()
+  assigneeMine?: boolean;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Фильтр по ответственному: задачи с указанным `assigneeAccountId` (аккаунт менеджера/владельца).',
+  })
+  @IsOptional()
+  @IsUUID()
+  assigneeAccountId?: string;
+
   @ApiPropertyOptional({ format: 'uuid', description: 'Фильтр по владельцу задачи (owner.id)' })
   @IsOptional()
   @IsUUID()
@@ -64,6 +82,14 @@ export class ListTasksCalendarQueryDto {
   @IsOptional()
   @IsUUID()
   executorId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Фильтр по посту — задачи, связанные с этим postId',
+  })
+  @IsOptional()
+  @IsUUID()
+  postId?: string;
 
   @ApiPropertyOptional({
     enum: TaskListRole,

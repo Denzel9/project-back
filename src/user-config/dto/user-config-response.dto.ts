@@ -26,6 +26,24 @@ export class UserConfigResponseDto {
   emailNotificationTypes: NotificationType[];
 
   @ApiProperty({
+    enum: NotificationType,
+    isArray: true,
+    description:
+      'Whitelist типов Telegram. Пустой массив — все Telegram выключены. ' +
+      'Для CHAT_MESSAGE: только offline + throttle.',
+  })
+  telegramNotificationTypes: NotificationType[];
+
+  @ApiProperty({
+    enum: NotificationType,
+    isArray: true,
+    description:
+      'Whitelist типов MAX. Пустой массив — все MAX выключены. ' +
+      'Для CHAT_MESSAGE: только offline + throttle.',
+  })
+  maxNotificationTypes: NotificationType[];
+
+  @ApiProperty({
     enum: DashboardTileType,
     isArray: true,
     description:

@@ -24,6 +24,8 @@ export const personSchema = {
   type: 'object',
   nullable: true,
   properties: {
+    name: { type: 'string', nullable: true, example: 'Ivan' },
+    lastName: { type: 'string', nullable: true, example: 'Ivanov' },
     height: { type: 'string', nullable: true, example: '180' },
     weight: { type: 'string', nullable: true, example: '75' },
     size: { type: 'string', nullable: true, example: 'M' },
@@ -40,10 +42,10 @@ export const userResponseSchema = {
       type: 'object',
       properties: {
         id: { type: 'string', format: 'uuid' },
-        role: { type: 'string', enum: ['CREATOR', 'COMPANY'] },
+        role: { type: 'string', enum: ['CREATOR', 'COMPANY', 'MANAGER'] },
         membershipRole: {
           type: 'string',
-          enum: ['OWNER', 'ADMIN', 'EDITOR', 'VIEWER'],
+          enum: ['OWNER', 'ADMIN'],
         },
         contacts: {
           type: 'array',

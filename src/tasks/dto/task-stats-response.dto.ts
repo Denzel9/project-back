@@ -36,8 +36,7 @@ export class TaskStatsResponseDto {
   underReview: number;
 
   @ApiProperty({
-    description:
-      'Отменённые: `status` — `CANCELLED` или `CANCELLED_EXECUTOR`.',
+    description: 'Аннулированные: `status` — `ANNULLED`.',
   })
   cancelled: number;
 }

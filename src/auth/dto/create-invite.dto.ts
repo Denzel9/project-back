@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { MembershipRole } from '@prisma/client';
-import { IsEmail, IsEnum, IsUUID } from 'class-validator';
+import { IsEmail, IsIn, IsUUID } from 'class-validator';
 
 export class CreateInviteDto {
   @ApiProperty({
@@ -18,10 +18,9 @@ export class CreateInviteDto {
   userId: string;
 
   @ApiProperty({
-    enum: [MembershipRole.ADMIN, MembershipRole.EDITOR, MembershipRole.VIEWER],
-    description:
-      'ADMIN — полный доступ + invite; EDITOR — редактирование; VIEWER — только чтение',
+    enum: [MembershipRole.ADMIN],
+    description: 'ADMIN — полный доступ + invite (не OWNER)',
   })
-  @IsEnum(MembershipRole)
+  @IsIn([MembershipRole.ADMIN])
   role: MembershipRole;
 }

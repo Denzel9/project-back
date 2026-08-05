@@ -37,6 +37,7 @@ import { AuthUser } from './auth.types';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
 import { RegisterCreatorDto } from './dto/register-creator.dto';
+import { RegisterManagerDto } from './dto/register-manager.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ConfirmEmailDto } from './dto/confirm-email.dto';
@@ -101,6 +102,29 @@ export class AuthController {
     return { user };
   }
 
+  @Post('register/manager')
+  @ApiOperation({
+    summary: 'Регистрация менеджера',
+    description:
+      'Создаёт Account и пустой профиль User с ролью MANAGER (без витрины). ' +
+      'Marketplace недоступен, пока менеджера не пригласят ADMIN-ом к CREATOR/COMPANY и он не переключит профиль.',
+  })
+  @ApiCreatedResponse({
+    type: AuthSessionUserResponse,
+    description: 'Account и shell-профиль созданы, пользователь авторизован',
+  })
+  @ApiConflictResponse({ description: 'Email уже зарегистрирован' })
+  async registerManager(
+    @Body() dto: RegisterManagerDto,
+    @Res({ passthrough: true }) res: Response
+  ) {
+    const { user, tokens, rememberMe } = await this.authService.registerManager(
+      dto
+    );
+    setAuthCookies(res, tokens, { rememberMe });
+    return { user };
+  }
+
   @Post('login')
   @ApiOperation({
     summary: 'Вход',
@@ -139,6 +163,21 @@ export class AuthController {
   })
   listProfiles(@CurrentUser() user: AuthUser) {
     return this.authService.listProfiles(user);
+  }
+
+  @Get('profile-members')
+  @UseGuards(JwtAuthGuard)
+  @ApiCookieAuth('access-token')
+  @ApiOperation({
+    summary: 'Участники текущего профиля',
+    description:
+      'Аккаунты с доступом к активному профилю (OWNER/ADMIN). ' +
+      'Для фильтра задач по ответственному-менеджеру.',
+  })
+  @ApiOkResponse({ description: 'Список участников профиля' })
+  @ApiForbiddenResponse({ description: 'Недостаточно прав' })
+  listProfileMembers(@CurrentUser() user: AuthUser) {
+    return this.authService.listProfileMembers(user);
   }
 
   @Post('switch-profile')
@@ -182,7 +221,7 @@ export class AuthController {
     description:
       'Отправляет письмо на email приглашённого. userId — **существующий** профиль, которым вы управляете. ' +
       'Требуется роль OWNER или ADMIN на этом профиле. ' +
-      'Роли invite: ADMIN, EDITOR, VIEWER (не OWNER). ' +
+      'Роль invite: ADMIN (не OWNER). ' +
       'Приглашённый должен зарегистрироваться/войти своим email и принять invite.',
   })
   @ApiCreatedResponse({ description: 'Приглашение создано, письмо отправлено' })

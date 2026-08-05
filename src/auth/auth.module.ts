@@ -13,6 +13,8 @@ import { AuthService } from './auth.service';
 import { InvitesService } from './invites.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { MembershipWriteGuard } from './guards/membership-write.guard';
+import { MembershipRoleWriteGuard } from './guards/membership-role-write.guard';
+import { MarketplaceParticipantGuard } from './guards/marketplace-participant.guard';
 import { EmailConfirmedGuard } from './guards/email-confirmed.guard';
 
 @Module({
@@ -42,12 +44,16 @@ import { EmailConfirmedGuard } from './guards/email-confirmed.guard';
     InvitesService,
     JwtStrategy,
     MembershipWriteGuard,
+    MembershipRoleWriteGuard,
+    MarketplaceParticipantGuard,
     EmailConfirmedGuard,
   ],
   exports: [
     AuthService,
     JwtModule,
     MembershipWriteGuard,
+    MembershipRoleWriteGuard,
+    MarketplaceParticipantGuard,
     EmailConfirmedGuard,
   ],
 })

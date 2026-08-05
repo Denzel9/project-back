@@ -6,16 +6,18 @@ import {
 } from '@nestjs/common';
 import { MembershipRole } from '@prisma/client';
 import { AuthUser } from '../auth.types';
+import { assertMarketplaceParticipant } from '../utils/marketplace-participant.util';
 
 @Injectable()
 export class MembershipWriteGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const { user } = context.switchToHttp().getRequest<{ user: AuthUser }>();
 
+    assertMarketplaceParticipant(user.role);
+
     if (
       user.membershipRole === MembershipRole.OWNER ||
-      user.membershipRole === MembershipRole.ADMIN ||
-      user.membershipRole === MembershipRole.EDITOR
+      user.membershipRole === MembershipRole.ADMIN
     ) {
       return true;
     }

@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TaskActivityType } from '@prisma/client';
 
 export class TaskActivityResponseDto {
@@ -21,4 +21,13 @@ export class TaskActivityResponseDto {
 
   @ApiProperty({ format: 'date-time' })
   createdAt: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  actorAccountId: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  actorDisplayName: string | null;
+
+  @ApiPropertyOptional({ enum: ['OWNER', 'MANAGER'], nullable: true })
+  actorKind: 'OWNER' | 'MANAGER' | null;
 }

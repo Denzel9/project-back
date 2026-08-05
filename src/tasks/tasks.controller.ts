@@ -51,6 +51,8 @@ import {
 } from './dto/task-response.dto';
 import { UpdateTaskCommentDto } from './dto/update-task-comment.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import { RequestTaskAnnulmentDto } from './dto/task-annulment.dto';
+import { RequestTaskDeadlineExtensionDto } from './dto/task-deadline-extension.dto';
 import { TasksService } from './tasks.service';
 
 @ApiTags('tasks')
@@ -169,7 +171,7 @@ export class TasksController {
       '`awaitingConfirmation` — `isExecutorApprove: null`. ' +
       '`unassigned` — без исполнителя (только owner). ' +
       '`overdue` — `finalDate` в прошлом. `urgent` — срочные активные. `underReview` — `CHECKING`. ' +
-      '`cancelled` — отменённые (`CANCELLED`, `CANCELLED_EXECUTOR`). ' +
+      '`cancelled` — аннулированные (`ANNULLED`). ' +
       'Фильтры: `role`, `postId`.',
   })
   @ApiOkResponse({ type: TaskStatsResponseDto })
@@ -187,11 +189,12 @@ export class TasksController {
     description:
       'Только владелец поста. Создаёт задачу без отклика (`applicationId` = null). ' +
       '`executorId` опционален — можно назначить позже через PATCH. ' +
-      'JSON-поля: `location`, `bloggerRequirements`, `cooperationDetails`, `brief`, `deliverables`.',
+      'JSON: `location`, `brief`, `deliverables`. ' +
+      '`bloggerRequirements` / `cooperationDetails` — nested в API, в БД плоские колонки.',
   })
   @ApiCreatedResponse({ type: TaskResponseDto })
   @ApiNotFoundResponse({ description: 'Пост или исполнитель не найдены' })
-  @ApiForbiddenResponse({ description: 'Не владелец поста или VIEWER' })
+  @ApiForbiddenResponse({ description: 'Недостаточно прав' })
   @ApiBadRequestResponse({ description: 'Недопустимые данные' })
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateTaskDto) {
     return this.tasksService.create(user, dto);
@@ -218,7 +221,7 @@ export class TasksController {
   @ApiOperation({
     summary: 'Обновить задачу',
     description:
-      'owner — все поля (включая `executorId`, `isExecutorApprove`, JSON: `location`, `bloggerRequirements`, `cooperationDetails`, `brief`, `deliverables`); executor — `status`, `isExecutorApprove` и `isCompanyAction`. `description` — Markdown. VIEWER → 403.',
+      'owner — все поля (включая `executorId`, `isExecutorApprove`, JSON: `location`, `brief`, `deliverables`, nested `bloggerRequirements`/`cooperationDetails`); executor — `status`, `isExecutorApprove` и `isCompanyAction`. `description` — Markdown.',
   })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiNotFoundResponse({ description: 'Задача не найдена' })
@@ -231,6 +234,118 @@ export class TasksController {
     return this.tasksService.update(user, id, dto);
   }
 
+  @Post(':id/annulment')
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
+  @ApiOperation({
+    summary: 'Запросить аннулирование задачи',
+    description:
+      'Создаёт запись аннулирования со статусом PENDING. Статус задачи не меняется, пока вторая сторона не подтвердит. ' +
+      'Доступно owner/executor при назначенном исполнителе.',
+  })
+  @ApiOkResponse({ type: TaskResponseDto })
+  @ApiNotFoundResponse({ description: 'Задача не найдена' })
+  @ApiForbiddenResponse({ description: 'Нет доступа' })
+  @ApiBadRequestResponse({ description: 'Недопустимое состояние задачи' })
+  requestAnnulment(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RequestTaskAnnulmentDto
+  ) {
+    return this.tasksService.requestAnnulment(user, id, dto);
+  }
+
+  @Post(':id/annulment/confirm')
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
+  @ApiOperation({
+    summary: 'Подтвердить аннулирование задачи',
+    description:
+      'Только вторая сторона. Ставит `status: ANNULLED` и статус запроса CONFIRMED.',
+  })
+  @ApiOkResponse({ type: TaskResponseDto })
+  @ApiNotFoundResponse({ description: 'Задача не найдена' })
+  @ApiForbiddenResponse({ description: 'Нет доступа или вы инициатор запроса' })
+  @ApiBadRequestResponse({ description: 'Нет активного запроса' })
+  confirmAnnulment(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string
+  ) {
+    return this.tasksService.confirmAnnulment(user, id);
+  }
+
+  @Post(':id/annulment/reject')
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
+  @ApiOperation({
+    summary: 'Отклонить аннулирование задачи',
+    description:
+      'Только вторая сторона. Ставит `annulment.status: REJECTED`, запись сохраняется в истории.',
+  })
+  @ApiOkResponse({ type: TaskResponseDto })
+  @ApiNotFoundResponse({ description: 'Задача не найдена' })
+  @ApiForbiddenResponse({ description: 'Нет доступа или вы инициатор запроса' })
+  @ApiBadRequestResponse({ description: 'Нет активного запроса' })
+  rejectAnnulment(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string
+  ) {
+    return this.tasksService.rejectAnnulment(user, id);
+  }
+
+  @Post(':id/deadline-extension')
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
+  @ApiOperation({
+    summary: 'Запросить перенос дедлайна',
+    description:
+      'Создаёт запись переноса со статусом PENDING. `finalDate` не меняется, пока вторая сторона не подтвердит. ' +
+      'Доступно owner/executor при назначенном исполнителе.',
+  })
+  @ApiOkResponse({ type: TaskResponseDto })
+  @ApiNotFoundResponse({ description: 'Задача не найдена' })
+  @ApiForbiddenResponse({ description: 'Нет доступа' })
+  @ApiBadRequestResponse({ description: 'Недопустимое состояние задачи' })
+  requestDeadlineExtension(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RequestTaskDeadlineExtensionDto
+  ) {
+    return this.tasksService.requestDeadlineExtension(user, id, dto);
+  }
+
+  @Post(':id/deadline-extension/confirm')
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
+  @ApiOperation({
+    summary: 'Подтвердить перенос дедлайна',
+    description:
+      'Только вторая сторона. Обновляет `finalDate` и ставит статус запроса CONFIRMED.',
+  })
+  @ApiOkResponse({ type: TaskResponseDto })
+  @ApiNotFoundResponse({ description: 'Задача не найдена' })
+  @ApiForbiddenResponse({ description: 'Нет доступа или вы инициатор запроса' })
+  @ApiBadRequestResponse({ description: 'Нет активного запроса' })
+  confirmDeadlineExtension(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string
+  ) {
+    return this.tasksService.confirmDeadlineExtension(user, id);
+  }
+
+  @Post(':id/deadline-extension/reject')
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
+  @ApiOperation({
+    summary: 'Отклонить перенос дедлайна',
+    description:
+      'Только вторая сторона. Ставит статус REJECTED, запись сохраняется в истории. `finalDate` не меняется.',
+  })
+  @ApiOkResponse({ type: TaskResponseDto })
+  @ApiNotFoundResponse({ description: 'Задача не найдена' })
+  @ApiForbiddenResponse({ description: 'Нет доступа или вы инициатор запроса' })
+  @ApiBadRequestResponse({ description: 'Нет активного запроса' })
+  rejectDeadlineExtension(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string
+  ) {
+    return this.tasksService.rejectDeadlineExtension(user, id);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
@@ -241,7 +356,7 @@ export class TasksController {
   })
   @ApiNoContentResponse({ description: 'Задача удалена' })
   @ApiNotFoundResponse({ description: 'Задача не найдена' })
-  @ApiForbiddenResponse({ description: 'Не владелец поста или VIEWER' })
+  @ApiForbiddenResponse({ description: 'Недостаточно прав' })
   remove(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string
@@ -254,7 +369,8 @@ export class TasksController {
     summary: 'Активности задачи',
     description:
       'История изменений: статус, поля задачи, загрузка и удаление медиа. ' +
-      'Фильтр `type`: STATUS_CHANGED, FIELD_UPDATED, MEDIA_ADDED, MEDIA_REMOVED. ' +
+      'Фильтр `type`: STATUS_CHANGED, FIELD_UPDATED, MEDIA_ADDED, MEDIA_REMOVED, ' +
+      'ANNULMENT_*, DEADLINE_EXTENSION_*. ' +
       'Сортировка — от новых к старым.',
   })
   @ApiOkResponse({ description: 'Список активностей с пагинацией' })

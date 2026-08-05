@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiCookieAuth,
   ApiForbiddenResponse,
@@ -8,11 +16,13 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { MembershipWriteGuard } from '../auth/guards/membership-write.guard';
+import { MembershipRoleWriteGuard } from '../auth/guards/membership-role-write.guard';
 import { userResponseSchema } from '../auth/swagger/user-response.schema';
 import { UsersService } from './users.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
+import { SearchUsersQueryDto } from './dto/search-users-query.dto';
+import { SearchUsersResponseDto } from './dto/search-users-response.dto';
 import { UpdateUserDto } from './dto/update.dto';
 
 @ApiTags('users')
@@ -21,6 +31,19 @@ import { UpdateUserDto } from './dto/update.dto';
 @UseGuards(JwtAuthGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  @Get('search')
+  @ApiOperation({
+    summary: 'Поиск пользователей для чата',
+    description:
+      'Поиск по имени/фамилии или названию компании (минимум 2 символа). ' +
+      'COMPANY видит только CREATOR, CREATOR — только COMPANY, ' +
+      'MANAGER и ADMIN membership — всех. Текущий профиль не в выдаче.',
+  })
+  @ApiOkResponse({ type: SearchUsersResponseDto })
+  search(@CurrentUser() user: AuthUser, @Query() query: SearchUsersQueryDto) {
+    return this.usersService.search(user, query);
+  }
 
   @Get(':id')
   @ApiOperation({
@@ -44,23 +67,24 @@ export class UsersController {
   }
 
   @Patch('update')
-  @UseGuards(MembershipWriteGuard)
+  @UseGuards(MembershipRoleWriteGuard)
   @ApiOperation({
     summary: 'Обновить активный профиль',
     description:
       'Единственный эндпоинт редактирования профиля. Обновляет **текущий активный** User из JWT. ' +
       'Для CREATOR: name, lastName + общие поля. Для COMPANY: companyName + общие поля. ' +
+      'Для MANAGER: email / phone / avatar / person (имя и фамилия для атрибуции). ' +
       'Общие поля: phone, contacts, person, location, avatar, bio, aboutMe, banner. ' +
       'Передайте `null`, чтобы удалить nullable поле (phone, bio и т.д.). ' +
       'person мержится с существующим: `person: { height: null }` удаляет ключ, `person: null` — весь объект. ' +
-      'VIEWER получит 403. Для смены профиля перед редактированием — switch-profile.',
+      'Для смены профиля перед редактированием — switch-profile.',
   })
   @ApiOkResponse({
     schema: userResponseSchema,
     description: 'Обновлённый профиль',
   })
   @ApiForbiddenResponse({
-    description: 'Недостаточно прав (роль VIEWER)',
+    description: 'Недостаточно прав',
   })
   async updateProfile(
     @CurrentUser() user: AuthUser,

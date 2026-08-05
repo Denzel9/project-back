@@ -1,4 +1,5 @@
 import {
+  CopyObjectCommand,
   DeleteObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -45,6 +46,31 @@ export class StorageService {
         Key: key,
         Body: body,
         ContentType: contentType,
+      })
+    );
+  }
+
+  async copyObject(
+    sourceKey: string,
+    destKey: string,
+    contentType?: string
+  ): Promise<void> {
+    const encodedSourceKey = sourceKey
+      .split('/')
+      .map(segment => encodeURIComponent(segment))
+      .join('/');
+
+    await this.client.send(
+      new CopyObjectCommand({
+        Bucket: this.bucket,
+        CopySource: `${this.bucket}/${encodedSourceKey}`,
+        Key: destKey,
+        ...(contentType
+          ? {
+              ContentType: contentType,
+              MetadataDirective: 'REPLACE' as const,
+            }
+          : {}),
       })
     );
   }

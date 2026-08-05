@@ -11,6 +11,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../media/storage.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
+import {
+  PostOptionDto,
+  PostOptionsResponseDto,
+} from './dto/post-options.dto';
 import { PostResponseDto } from './dto/post-response.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import {
@@ -25,9 +29,14 @@ import {
 } from './post-list-query.util';
 import { postJsonFieldsFromDto } from './post-write-fields.util';
 import {
+  columnsToBloggerRequirements,
+  columnsToCooperationDetails,
+} from './blogger-coop-fields.util';
+import {
   assertCanViewPost,
   visiblePostTypeForRole,
 } from './post-visibility.util';
+import { assertMarketplaceTrader } from '../auth/utils/marketplace-participant.util';
 import {
   mapOwnerWithStats,
   userOwnerWithStatsSelect,
@@ -74,6 +83,8 @@ export class PostsService {
   ) {}
 
   async create(user: AuthUser, dto: CreatePostDto): Promise<PostResponseDto> {
+    assertMarketplaceTrader(user.role);
+
     const postType = this.roleToPostAuthorType(user.role);
 
     const post = await this.prisma.post.create({
@@ -124,6 +135,7 @@ export class PostsService {
 
     if (
       !viewingOwnPosts &&
+      visibleType !== null &&
       query.type !== undefined &&
       query.type !== visibleType
     ) {
@@ -136,7 +148,7 @@ export class PostsService {
       ...(query.ownerId !== undefined
         ? { ownerId: query.ownerId }
         : { ownerId: { not: user.userId } }),
-      ...(!viewingOwnPosts && { type: visibleType }),
+      ...(!viewingOwnPosts && visibleType !== null && { type: visibleType }),
       ...(viewingOwnPosts &&
         query.type !== undefined && { type: query.type }),
       ...(query.isArchived !== undefined
@@ -167,6 +179,29 @@ export class PostsService {
       total,
       page,
       limit,
+    };
+  }
+
+  async listOptions(user: AuthUser): Promise<PostOptionsResponseDto> {
+    const items = await this.prisma.post.findMany({
+      where: {
+        ownerId: user.userId,
+        isArchived: false,
+      },
+      select: {
+        id: true,
+        title: true,
+      },
+      orderBy: postListOrderBy,
+    });
+
+    return {
+      items: items.map(
+        (post): PostOptionDto => ({
+          id: post.id,
+          title: post.title,
+        })
+      ),
     };
   }
 
@@ -313,8 +348,8 @@ export class PostsService {
   toResponse(post: PostWithMedia): PostResponseDto {
     const budget = mapBudgetToApi(jsonToRecord(post.budget));
     const location = jsonToRecord(post.location);
-    const bloggerRequirements = jsonToRecord(post.bloggerRequirements);
-    const cooperationDetails = jsonToRecord(post.cooperationDetails);
+    const bloggerRequirements = columnsToBloggerRequirements(post);
+    const cooperationDetails = columnsToCooperationDetails(post);
     const brief = jsonToRecord(post.brief);
     const deliverables = jsonToArray(post.deliverables);
 
@@ -350,14 +385,8 @@ export class PostsService {
       ...(post.deadline && { deadline: post.deadline.toISOString() }),
       ...(post.workFormat && { workFormat: post.workFormat }),
       ...(location && { location: location as PostResponseDto['location'] }),
-      ...(bloggerRequirements && {
-        bloggerRequirements:
-          bloggerRequirements as PostResponseDto['bloggerRequirements'],
-      }),
-      ...(cooperationDetails && {
-        cooperationDetails:
-          cooperationDetails as PostResponseDto['cooperationDetails'],
-      }),
+      ...(bloggerRequirements && { bloggerRequirements }),
+      ...(cooperationDetails && { cooperationDetails }),
       ...(brief && { brief: brief as PostResponseDto['brief'] }),
       ...(deliverables &&
         deliverables.length > 0 && {

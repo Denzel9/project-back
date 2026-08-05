@@ -23,6 +23,14 @@ export class PublicationMediaDto {
   mimeType: string;
 }
 
+export class PublicationPostBriefDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  title: string | null;
+}
+
 export class PublicationResponseDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
@@ -32,6 +40,9 @@ export class PublicationResponseDto {
 
   @ApiProperty({ format: 'uuid' })
   postId: string;
+
+  @ApiPropertyOptional({ type: PublicationPostBriefDto, nullable: true })
+  post: PublicationPostBriefDto | null;
 
   @ApiPropertyOptional({ nullable: true })
   title: string | null;

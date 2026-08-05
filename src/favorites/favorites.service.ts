@@ -307,15 +307,18 @@ export class FavoritesService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
+    const visibleType = visiblePostTypeForRole(user.role);
+    const postTypeFilter =
+      visibleType !== null ? { type: visibleType } : {};
 
     const where: Prisma.FavoritePostWhereInput = {
       userId: user.userId,
-      post: { type: visiblePostTypeForRole(user.role) },
+      post: { ...postTypeFilter },
       ...(query.groupId !== undefined && { groupId: query.groupId }),
       ...(query.ungrouped === true && { groupId: null }),
       ...(query.q !== undefined && {
         post: {
-          type: visiblePostTypeForRole(user.role),
+          ...postTypeFilter,
           OR: [
             { title: { contains: query.q, mode: 'insensitive' } },
             {

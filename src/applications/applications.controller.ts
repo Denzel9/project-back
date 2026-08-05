@@ -24,7 +24,9 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { EmailConfirmedGuard } from '../auth/guards/email-confirmed.guard';
+import { MarketplaceParticipantGuard } from '../auth/guards/marketplace-participant.guard';
 import { ApplicationResponseDto } from './dto/application-response.dto';
+import { ApplicationStatsDto } from './dto/application-stats.dto';
 import { CreateApplicationDto } from './dto/create-application.dto';
 import { ListApplicationsQueryDto } from './dto/list-applications-query.dto';
 import { UpdateApplicationStatusDto } from './dto/update-application-status.dto';
@@ -33,7 +35,7 @@ import { ApplicationsService } from './applications.service';
 @ApiTags('applications')
 @ApiCookieAuth('access-token')
 @Controller('applications')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, MarketplaceParticipantGuard)
 export class ApplicationsController {
   constructor(private readonly applicationsService: ApplicationsService) {}
 
@@ -51,6 +53,18 @@ export class ApplicationsController {
   @ApiConflictResponse({ description: 'Уже откликались на этот пост' })
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateApplicationDto) {
     return this.applicationsService.create(user, dto);
+  }
+
+  @Get('stats')
+  @ApiOperation({
+    summary: 'Счётчики откликов для сайдбара',
+    description:
+      '`incomingNew` — входящие NEW на мои посты (COMPANY). ' +
+      '`mineActive` — мои отклики NEW/VIEWED (CREATOR).',
+  })
+  @ApiOkResponse({ type: ApplicationStatsDto })
+  getStats(@CurrentUser() user: AuthUser) {
+    return this.applicationsService.getStats(user);
   }
 
   @Get('mine')

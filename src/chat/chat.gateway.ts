@@ -143,7 +143,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         user.userId,
         payload.content ?? '',
         payload.media ?? [],
-        payload.isRedirected === true
+        payload.isRedirected === true,
+        user.accountId
       );
 
       await client.join(this.getRoomName(payload.conversationId));

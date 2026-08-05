@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { MembershipRole, NotificationType } from '@prisma/client';
+import { MembershipRole, NotificationType, Role } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { AccountMembershipService } from '../accounts/account-membership.service';
 import { AccountsService } from '../accounts/accounts.service';
@@ -41,6 +41,12 @@ export class InvitesService {
 
     if (!profile) {
       throw new NotFoundException('Профиль не найден');
+    }
+
+    if (profile.role !== Role.CREATOR && profile.role !== Role.COMPANY) {
+      throw new BadRequestException(
+        'Приглашать можно только к профилю креатора или компании'
+      );
     }
 
     const existingMembership = await this.prisma.accountMembership.findFirst({

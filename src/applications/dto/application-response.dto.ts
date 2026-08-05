@@ -19,6 +19,24 @@ export class ApplicationResponseDto {
   @ApiProperty({ format: 'date-time' })
   updatedAt: string;
 
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  createdActorAccountId: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  createdActorDisplayName: string | null;
+
+  @ApiPropertyOptional({ enum: ['OWNER', 'MANAGER'], nullable: true })
+  createdActorKind: 'OWNER' | 'MANAGER' | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  lastActorAccountId: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  lastActorDisplayName: string | null;
+
+  @ApiPropertyOptional({ enum: ['OWNER', 'MANAGER'], nullable: true })
+  lastActorKind: 'OWNER' | 'MANAGER' | null;
+
   @ApiPropertyOptional({ type: ApplicationPostSummaryDto })
   post?: ApplicationPostSummaryDto;
 

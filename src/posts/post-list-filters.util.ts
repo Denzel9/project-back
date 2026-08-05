@@ -173,111 +173,57 @@ export function buildPostFieldFilters(
   }
 
   if (query.minFollowers !== undefined) {
-    andFilters.push(
-      jsonPathEquals('bloggerRequirements', ['minFollowers'], query.minFollowers)
-    );
+    andFilters.push({ minFollowers: query.minFollowers });
   }
 
   if (query.maxFollowers !== undefined) {
-    andFilters.push(
-      jsonPathEquals('bloggerRequirements', ['maxFollowers'], query.maxFollowers)
-    );
+    andFilters.push({ maxFollowers: query.maxFollowers });
   }
 
   if (query.minEngagementRate !== undefined) {
-    andFilters.push(
-      jsonPathEquals(
-        'bloggerRequirements',
-        ['minEngagementRate'],
-        query.minEngagementRate
-      )
-    );
+    andFilters.push({ minEngagementRate: query.minEngagementRate });
   }
 
   if (query.verifiedAccount !== undefined) {
-    andFilters.push(
-      jsonPathEquals(
-        'bloggerRequirements',
-        ['verifiedAccount'],
-        query.verifiedAccount
-      )
-    );
+    andFilters.push({ verifiedAccount: query.verifiedAccount });
   }
 
   if (query.experienceWithAds !== undefined) {
-    andFilters.push(
-      jsonPathEquals(
-        'bloggerRequirements',
-        ['experienceWithAds'],
-        query.experienceWithAds
-      )
-    );
+    andFilters.push({ experienceWithAds: query.experienceWithAds });
   }
 
   if (query.contentStyle !== undefined) {
     andFilters.push({
-      OR: query.contentStyle.map(style =>
-        jsonPathArrayContains('bloggerRequirements', ['contentStyle'], style)
-      ),
+      contentStyle: { hasSome: query.contentStyle },
     });
   }
 
   if (query.exclusivity !== undefined) {
-    andFilters.push(
-      jsonPathEquals('cooperationDetails', ['exclusivity'], query.exclusivity)
-    );
+    andFilters.push({ exclusivity: query.exclusivity });
   }
 
   if (query.exclusivityDays !== undefined) {
-    andFilters.push(
-      jsonPathEquals(
-        'cooperationDetails',
-        ['exclusivityDays'],
-        query.exclusivityDays
-      )
-    );
+    andFilters.push({ exclusivityDays: query.exclusivityDays });
   }
 
   if (query.usageRights !== undefined) {
-    andFilters.push(
-      jsonPathEquals('cooperationDetails', ['usageRights'], query.usageRights)
-    );
+    andFilters.push({ usageRights: query.usageRights });
   }
 
   if (query.usageDurationDays !== undefined) {
-    andFilters.push(
-      jsonPathEquals(
-        'cooperationDetails',
-        ['usageDurationDays'],
-        query.usageDurationDays
-      )
-    );
+    andFilters.push({ usageDurationDays: query.usageDurationDays });
   }
 
   if (query.requiresMarking !== undefined) {
-    andFilters.push(
-      jsonPathEquals(
-        'cooperationDetails',
-        ['requiresMarking'],
-        query.requiresMarking
-      )
-    );
+    andFilters.push({ requiresMarking: query.requiresMarking });
   }
 
   if (query.requiresContract !== undefined) {
-    andFilters.push(
-      jsonPathEquals(
-        'cooperationDetails',
-        ['requiresContract'],
-        query.requiresContract
-      )
-    );
+    andFilters.push({ requiresContract: query.requiresContract });
   }
 
   if (query.ndaRequired !== undefined) {
-    andFilters.push(
-      jsonPathEquals('cooperationDetails', ['ndaRequired'], query.ndaRequired)
-    );
+    andFilters.push({ ndaRequired: query.ndaRequired });
   }
 
   if (query.briefHashtag !== undefined) {

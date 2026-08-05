@@ -28,6 +28,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { EmailConfirmedGuard } from '../auth/guards/email-confirmed.guard';
+import { MarketplaceParticipantGuard } from '../auth/guards/marketplace-participant.guard';
 import { AddFavoriteDto } from './dto/add-favorite.dto';
 import { CreateFavoriteGroupDto } from './dto/create-favorite-group.dto';
 import { FavoriteGroupResponseDto } from './dto/favorite-group-response.dto';
@@ -44,7 +45,7 @@ import { FavoritesService } from './favorites.service';
 @ApiCookieAuth('access-token')
 @ApiExtraModels(FavoriteResponseDto, FavoriteUserItemResponseDto)
 @Controller('favorites')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, MarketplaceParticipantGuard)
 export class FavoritesController {
   constructor(private readonly favoritesService: FavoritesService) {}
 
