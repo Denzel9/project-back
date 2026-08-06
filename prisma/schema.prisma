@@ -286,6 +286,7 @@ model User {
   config                   UserConfig?
   messengerConnections     MessengerConnection[]
   messengerLinkTokens      MessengerLinkToken[]
+  messagePins             MessagePin[]
 }
 
 model UserConfig {
@@ -364,6 +365,7 @@ model Conversation {
   id           String                    @id @default(uuid())
   participants ConversationParticipant[]
   messages     Message[]
+  messagePins  MessagePin[]
   createdAt    DateTime                  @default(now())
   updatedAt    DateTime                  @updatedAt
 }
@@ -400,6 +402,7 @@ model Message {
   sender           User              @relation(fields: [senderId], references: [id], onDelete: Cascade)
   actorAccount     Account?          @relation(fields: [actorAccountId], references: [id], onDelete: SetNull)
   media            MessageMedia[]
+  messagePins     MessagePin[]
 
   @@index([conversationId, createdAt])
   @@index([actorAccountId])
@@ -417,6 +420,21 @@ model MessageMedia {
   createdAt DateTime @default(now())
 
   @@index([messageId])
+}
+
+model MessagePin {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  messageId String @unique
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  pinnedAt   DateTime @default(now())
+  pinnedById String
+  pinnedBy   User     @relation(fields: [pinnedById], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, pinnedAt])
 }
 
 model CreatorProfile {

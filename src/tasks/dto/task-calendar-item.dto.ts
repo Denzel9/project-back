@@ -25,6 +25,9 @@ export class TaskCalendarItemDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
+  @ApiProperty({ format: 'uuid' })
+  postId: string;
+
   @ApiProperty({ format: 'date-time' })
   createdAt: string;
 

@@ -21,6 +21,7 @@ import {
   ChatConversationDto,
   ChatAttachmentDto,
   ChatMessageDto,
+  ChatMessagePinDto,
   ChatMessageMediaInput,
   ChatPeerDto,
 } from './chat.types';
@@ -331,6 +332,79 @@ export class ChatService {
     });
 
     return this.mapConversation(conversation, userId);
+  }
+
+  async pinMessage(
+    conversationId: string,
+    messageId: string,
+    userId: string,
+    isPinned: boolean
+  ): Promise<void> {
+    await this.assertParticipant(conversationId, userId);
+
+    const message = await this.prisma.message.findFirst({
+      where: { id: messageId, conversationId },
+      select: { id: true },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Сообщение не найдено');
+    }
+
+    if (isPinned) {
+      await this.prisma.messagePin.upsert({
+        where: { messageId },
+        create: {
+          conversationId,
+          messageId,
+          pinnedById: userId,
+        },
+        update: {
+          conversationId,
+          pinnedAt: new Date(),
+          pinnedById: userId,
+        },
+      });
+      return;
+    }
+
+    // messageId уникален, но deleteMany более безопасен (не падает, если записи ещё нет)
+    await this.prisma.messagePin.deleteMany({ where: { messageId } });
+  }
+
+  async listMessagePins(
+    conversationId: string,
+    userId: string,
+    limit = 50
+  ): Promise<ChatMessagePinDto[]> {
+    await this.assertParticipant(conversationId, userId);
+
+    const pins = await this.prisma.messagePin.findMany({
+      where: { conversationId },
+      orderBy: { pinnedAt: 'desc' },
+      take: limit,
+      select: {
+        messageId: true,
+        pinnedAt: true,
+        pinnedById: true,
+        message: {
+          select: {
+            content: true,
+            createdAt: true,
+            _count: { select: { media: true } },
+          },
+        },
+      },
+    });
+
+    return pins.map(pin => ({
+      messageId: pin.messageId,
+      content: pin.message.content,
+      mediaCount: pin.message._count.media,
+      pinnedAt: pin.pinnedAt,
+      pinnedById: pin.pinnedById ?? undefined,
+      createdAt: pin.message.createdAt,
+    }));
   }
 
   async listMessages(

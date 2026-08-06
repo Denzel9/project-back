@@ -75,7 +75,7 @@ Backend для marketplace creator ↔ company. Документация для 
 2b. \`GET /tasks/activities\` — лента активностей по всем доступным задачам (\`?type=\`, \`?role=owner|executor\`, \`?taskId=\`).
 2c. \`GET /tasks/comments\` — лента комментариев по всем доступным задачам (\`?role=owner|executor\`, \`?taskId=\`, \`?q=\`).
 2d. \`GET /tasks/with-comments\` — задачи с комментариями: превью последнего, \`commentsCount\`, \`unreadCount\` (по lastReadAt).
-2e. \`GET /tasks/calendar\` — компактный список для календаря (id, даты, urgent, finalDate, title, owner, executor). Фильтры: \`dateFrom\`/\`dateTo\` + \`dateField=createdAt|updatedAt|finalDate\`, \`urgent\`, \`ownerId\`, \`executorId\`, \`role\`.
+2e. \`GET /tasks/calendar\` — компактный список для календаря (id, postId, даты, urgent, finalDate, title, owner, executor). Фильтры: \`dateFrom\`/\`dateTo\` + \`dateField=createdAt|updatedAt|finalDate\`, \`urgent\`, \`ownerId\`, \`executorId\`, \`role\`.
 2f. \`GET /tasks/stats\` — счётчики для дашборда: \`awaitingAction\`, \`awaitingConfirmation\`, \`unassigned\`, \`overdue\`, \`urgent\`, \`underReview\`, \`cancelled\`. Фильтры: \`role\`, \`postId\`.
 3. \`POST /tasks\` — создать задачу вручную (владелец поста: \`postId\`, опционально \`executorId\`). Без отклика; \`applicationId\` = null. Исполнителя можно назначить позже через \`PATCH /tasks/:id\`.
 4. \`GET /tasks/:id\` — задача с \`media[]\` (основные) и \`reportMedia[]\` (отчёт). Комментарии — отдельно (\`GET /tasks/:id/comments\`). Исполнитель не видит \`post\`.

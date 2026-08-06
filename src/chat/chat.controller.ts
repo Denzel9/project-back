@@ -41,6 +41,8 @@ import { ListAttachmentsQueryDto } from './dto/list-attachments-query.dto';
 import { ListAttachmentsResponse } from './dto/list-attachments-response.dto';
 import { UpdateChatMessageDto } from './dto/update-message.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
+import { ChatMessagePinResponse } from './dto/chat-message-pin.response';
+import { UpdateChatMessagePinDto } from './dto/update-message-pin.dto';
 
 @ApiTags('chat')
 @ApiCookieAuth('access-token')
@@ -177,6 +179,56 @@ export class ChatController {
       query.cursor,
       query.limit,
       query.markRead ?? (query.cursor ? false : undefined)
+    );
+  }
+
+  @Patch('conversations/:id/messages/:messageId/pin')
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Закрепить или открепить сообщение',
+    description:
+      'Закреплённые сообщения общие для всех участников диалога. ' +
+      'Текст превью и счетчик вложений используются в верхней строке диалога.',
+  })
+  @ApiNoContentResponse({ description: 'Готово' })
+  @ApiForbiddenResponse({ description: 'Нет доступа к диалогу' })
+  @ApiNotFoundResponse({ description: 'Сообщение не найдено' })
+  pinMessage(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) conversationId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+    @Body() dto: UpdateChatMessagePinDto
+  ) {
+    return this.chatService.pinMessage(
+      conversationId,
+      messageId,
+      user.userId,
+      dto.isPinned
+    );
+  }
+
+  @Get('conversations/:id/messages/pins')
+  @ApiOperation({
+    summary: 'Список закреплённых сообщений диалога',
+    description: 'Возвращает закреплённые сообщения по pinnedAt DESC.',
+  })
+  @ApiOkResponse({
+    description: 'Массив закреплённых сообщений',
+    type: ChatMessagePinResponse,
+    isArray: true,
+  })
+  @ApiForbiddenResponse({ description: 'Нет доступа к диалогу' })
+  listMessagePins(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) conversationId: string,
+    @Query('limit') limit?: string
+  ) {
+    const parsedLimit = limit ? Number(limit) : undefined;
+    return this.chatService.listMessagePins(
+      conversationId,
+      user.userId,
+      parsedLimit ?? 50
     );
   }
 

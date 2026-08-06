@@ -32,6 +32,15 @@ export type ChatMessageDto = {
   isRead: boolean;
 };
 
+export type ChatMessagePinDto = {
+  messageId: string;
+  content: string;
+  mediaCount: number;
+  pinnedAt: Date;
+  pinnedById?: string;
+  createdAt: Date;
+};
+
 export type ChatAttachmentDto = {
   id: string;
   messageId: string;

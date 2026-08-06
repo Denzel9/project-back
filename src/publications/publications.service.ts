@@ -151,6 +151,7 @@ export class PublicationsService {
       ...(query.taskId !== undefined && { taskId: query.taskId }),
       ...(query.ownerId !== undefined && { ownerId: query.ownerId }),
       ...(query.executorId !== undefined && { executorId: query.executorId }),
+      ...(query.platform !== undefined && { platform: query.platform }),
       ...(query.q !== undefined && {
         title: { contains: query.q, mode: 'insensitive' },
       }),

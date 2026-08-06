@@ -8,6 +8,7 @@ import {
   NotFoundException,
   forwardRef,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import {
   Prisma,
   Role,
@@ -337,10 +338,15 @@ export class TasksService {
     const media = dto.media ?? [];
 
     if (media.length > 0) {
-      this.assertCreateTaskMediaKeys(task.id, task.postId, post.ownerId, media);
+      const preparedMedia = await this.prepareCreateTaskMedia(
+        task.id,
+        task.postId,
+        post.ownerId,
+        media
+      );
 
-      for (const item of media) {
-        await this.addMedia(task.id, user.userId, item);
+      for (const item of preparedMedia) {
+        await this.addMedia(task.id, user.userId, item, item.kind);
       }
     }
 
@@ -463,6 +469,7 @@ export class TasksService {
         where: {
           ...activeWhere,
           isExecutorApprove: null,
+          executorId: { not: null },
         },
       }),
       query.role === TaskListRole.EXECUTOR
@@ -472,6 +479,7 @@ export class TasksService {
             ...activeWhere,
             ownerId: user.userId,
             executorId: null,
+            isExecutorApprove: null,
           },
         }),
       this.prisma.task.count({
@@ -570,6 +578,7 @@ export class TasksService {
   private toCalendarItem(task: TaskCalendarItem): TaskCalendarItemDto {
     return {
       id: task.id,
+      postId: task.postId,
       createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString(),
       urgent: task.urgent,
@@ -771,6 +780,10 @@ export class TasksService {
       ...(query.isExecutorApprove !== undefined &&
         options.executorApprovalFilter !== 'unapproved' && {
           isExecutorApprove: query.isExecutorApprove,
+          ...(query.isExecutorApprove === null &&
+            query.unassigned !== true && {
+              executorId: { not: null },
+            }),
         }),
       ...(query.urgent !== undefined && { urgent: query.urgent }),
       ...(query.assigneeMine === true && { assigneeAccountId: accountId }),
@@ -879,12 +892,13 @@ export class TasksService {
     }
 
     if (role === TaskListRole.OWNER) {
-      return { executorId: null };
+      return { executorId: null, isExecutorApprove: null };
     }
 
     return {
       ownerId: userId,
       executorId: null,
+      isExecutorApprove: null,
     };
   }
 
@@ -2992,12 +3006,24 @@ export class TasksService {
     }
   }
 
-  private assertCreateTaskMediaKeys(
+  /**
+   * При создании задачи принимает свежие uploads ИЛИ медиа чужой задачи того же владельца
+   * (дублирование): копирует объекты в S3 под новый taskId.
+   */
+  private async prepareCreateTaskMedia(
     taskId: string,
     postId: string,
     ownerId: string,
     media: TaskCommentMediaInputDto[]
-  ) {
+  ): Promise<
+    Array<{
+      url: string;
+      key: string;
+      size: string;
+      mimeType: string;
+      kind: TaskMediaKind;
+    }>
+  > {
     const allowedPrefixes = [
       `${ownerId}/`,
       `posts/${postId}/`,
@@ -3006,13 +3032,87 @@ export class TasksService {
       `tasks/${taskId}/`,
     ];
 
+    const prepared: Array<{
+      url: string;
+      key: string;
+      size: string;
+      mimeType: string;
+      kind: TaskMediaKind;
+    }> = [];
+
     for (const item of media) {
-      if (!allowedPrefixes.some(prefix => item.key.startsWith(prefix))) {
+      if (allowedPrefixes.some(prefix => item.key.startsWith(prefix))) {
+        prepared.push({
+          url: item.url,
+          key: item.key,
+          size: item.size,
+          mimeType: item.mimeType,
+          kind: item.key.includes('/reports/')
+            ? TaskMediaKind.REPORT
+            : TaskMediaKind.MAIN,
+        });
+        continue;
+      }
+
+      const sourceMatch = item.key.match(/^tasks\/([^/]+)\//);
+      if (!sourceMatch) {
         throw new BadRequestException(
           'Недопустимый ключ медиа. Загрузите файл через POST /media/upload (без taskId или с postId)'
         );
       }
+
+      const sourceTaskId = sourceMatch[1];
+      if (sourceTaskId === taskId) {
+        prepared.push({
+          url: item.url,
+          key: item.key,
+          size: item.size,
+          mimeType: item.mimeType,
+          kind: item.key.includes('/reports/')
+            ? TaskMediaKind.REPORT
+            : TaskMediaKind.MAIN,
+        });
+        continue;
+      }
+
+      const sourceTask = await this.prisma.task.findFirst({
+        where: { id: sourceTaskId, ownerId },
+        select: { id: true },
+      });
+
+      if (!sourceTask) {
+        throw new BadRequestException(
+          'Недопустимый ключ медиа. Можно копировать только медиа своих задач'
+        );
+      }
+
+      const kind = item.key.includes('/reports/')
+        ? TaskMediaKind.REPORT
+        : TaskMediaKind.MAIN;
+      const subPath = kind === TaskMediaKind.REPORT ? 'reports' : 'main';
+      const extension =
+        item.key.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ||
+        'bin';
+      const destKey = `tasks/${taskId}/${subPath}/${randomUUID()}.${extension}`;
+
+      try {
+        await this.storageService.copyObject(item.key, destKey, item.mimeType);
+      } catch {
+        throw new InternalServerErrorException(
+          'Не удалось скопировать медиа при создании задачи'
+        );
+      }
+
+      prepared.push({
+        url: this.storageService.getPublicUrl(destKey),
+        key: destKey,
+        size: item.size,
+        mimeType: item.mimeType,
+        kind,
+      });
     }
+
+    return prepared;
   }
 
   private async getCommentOrThrow(

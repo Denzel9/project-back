@@ -1,4 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Platform } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
   IsEnum,
@@ -65,6 +66,14 @@ export class ListPublicationsQueryDto {
   @IsString()
   @MinLength(1)
   executorQ?: string;
+
+  @ApiPropertyOptional({
+    enum: Platform,
+    description: 'Фильтр по площадке публикации',
+  })
+  @IsOptional()
+  @IsEnum(Platform)
+  platform?: Platform;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()

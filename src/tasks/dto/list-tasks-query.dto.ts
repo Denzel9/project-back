@@ -129,7 +129,7 @@ export class ListTasksQueryDto {
 
   @ApiPropertyOptional({
     description:
-      'Только без назначенного исполнителя (`executorId: null`). Для owner; при `role=executor` — пустой список.',
+      'Только без назначенного исполнителя: `executorId: null` и `isExecutorApprove: null`. Для owner; при `role=executor` — пустой список.',
   })
   @IsOptional()
   @Transform(transformOptionalBoolean)

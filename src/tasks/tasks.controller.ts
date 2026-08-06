@@ -168,8 +168,8 @@ export class TasksController {
     description:
       'Счётчики по доступным задачам (owner или executor). Категории могут пересекаться. ' +
       '`awaitingAction` — очередь текущего пользователя (`isCompanyAction`). ' +
-      '`awaitingConfirmation` — `isExecutorApprove: null`. ' +
-      '`unassigned` — без исполнителя (только owner). ' +
+      '`awaitingConfirmation` — `isExecutorApprove: null` и есть `executorId`. ' +
+      '`unassigned` — без исполнителя (`executorId: null`, `isExecutorApprove: null`, только owner). ' +
       '`overdue` — `finalDate` в прошлом. `urgent` — срочные активные. `underReview` — `CHECKING`. ' +
       '`cancelled` — аннулированные (`ANNULLED`). ' +
       'Фильтры: `role`, `postId`.',

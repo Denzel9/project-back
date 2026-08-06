@@ -9,13 +9,13 @@ export class TaskStatsResponseDto {
 
   @ApiProperty({
     description:
-      'Ожидают подтверждения исполнителя (`isExecutorApprove: null`). Только активные задачи.',
+      'Ожидают подтверждения исполнителя: `isExecutorApprove: null` и `executorId` задан. Только активные задачи.',
   })
   awaitingConfirmation: number;
 
   @ApiProperty({
     description:
-      'Без назначенного исполнителя (`executorId: null`). Считается только для owner.',
+      'Без назначенного исполнителя: `executorId: null` и `isExecutorApprove: null`. Считается только для owner.',
   })
   unassigned: number;
 
