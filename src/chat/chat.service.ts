@@ -391,6 +391,12 @@ export class ChatService {
           select: {
             content: true,
             createdAt: true,
+            senderId: true,
+            actorDisplayName: true,
+            actorKind: true,
+            sender: {
+              include: userWithProfileInclude,
+            },
             _count: { select: { media: true } },
           },
         },
@@ -404,6 +410,10 @@ export class ChatService {
       pinnedAt: pin.pinnedAt,
       pinnedById: pin.pinnedById ?? undefined,
       createdAt: pin.message.createdAt,
+      senderId: pin.message.senderId,
+      senderDisplayName: this.mapPeer(pin.message.sender).displayName,
+      actorDisplayName: pin.message.actorDisplayName ?? null,
+      actorKind: pin.message.actorKind ?? null,
     }));
   }
 

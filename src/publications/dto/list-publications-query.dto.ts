@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   Min,
   MinLength,
@@ -74,6 +75,28 @@ export class ListPublicationsQueryDto {
   @IsOptional()
   @IsEnum(Platform)
   platform?: Platform;
+
+  @ApiPropertyOptional({
+    format: 'date',
+    description: 'Фильтр по дате создания публикации (календарный день)',
+    example: '2026-06-14',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'createdDate должен быть в формате YYYY-MM-DD',
+  })
+  createdDate?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Смещение таймзоны клиента в минутах (как `Date#getTimezoneOffset()`). ' +
+      'Используется для `createdDate`. Без параметра день считается в UTC.',
+    example: -180,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  tzOffset?: number;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()

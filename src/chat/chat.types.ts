@@ -39,6 +39,10 @@ export type ChatMessagePinDto = {
   pinnedAt: Date;
   pinnedById?: string;
   createdAt: Date;
+  senderId: string;
+  senderDisplayName: string;
+  actorDisplayName: string | null;
+  actorKind: 'OWNER' | 'MANAGER' | null;
 };
 
 export type ChatAttachmentDto = {

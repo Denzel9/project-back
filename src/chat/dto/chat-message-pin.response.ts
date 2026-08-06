@@ -20,5 +20,17 @@ export class ChatMessagePinResponse {
 
   @ApiProperty({ format: 'date-time' })
   createdAt: Date;
+
+  @ApiProperty({ format: 'uuid' })
+  senderId: string;
+
+  @ApiProperty({ example: 'Иван Иванов' })
+  senderDisplayName: string;
+
+  @ApiProperty({ nullable: true, example: 'Денис Никитин' })
+  actorDisplayName: string | null;
+
+  @ApiProperty({ nullable: true, enum: ['OWNER', 'MANAGER'] })
+  actorKind: 'OWNER' | 'MANAGER' | null;
 }
 

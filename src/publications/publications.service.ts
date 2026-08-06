@@ -13,16 +13,17 @@ import {
 import { ApplicationApplicantDto } from '../applications/dto/application-applicant.dto';
 import { ApplicationOwnerDto } from '../applications/dto/application-owner.dto';
 import { AuthUser } from '../auth/auth.types';
+import { buildCalendarDayFilter } from '../common/date/calendar-day-filter';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ListPublicationsQueryDto } from './dto/list-publications-query.dto';
-import { PublicationListRole } from './dto/publication-list-role.enum';
-import { PublicationResponseDto } from './dto/publication-response.dto';
-import { UpdatePublicationDto } from './dto/update-publication.dto';
 import {
   mapOwnerWithStats,
   userStatsCountSelect,
 } from '../users/user-stats.util';
+import { ListPublicationsQueryDto } from './dto/list-publications-query.dto';
+import { PublicationListRole } from './dto/publication-list-role.enum';
+import { PublicationResponseDto } from './dto/publication-response.dto';
+import { UpdatePublicationDto } from './dto/update-publication.dto';
 
 const participantUserInclude = {
   creatorProfile: true,
@@ -145,6 +146,11 @@ export class PublicationsService {
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
 
+    const createdAtDayFilter = buildCalendarDayFilter(
+      query.createdDate,
+      query.tzOffset
+    );
+
     const where: Prisma.PublicationWhereInput = {
       ...this.buildParticipantWhere(user.userId, query.role),
       ...(query.postId !== undefined && { postId: query.postId }),
@@ -152,6 +158,9 @@ export class PublicationsService {
       ...(query.ownerId !== undefined && { ownerId: query.ownerId }),
       ...(query.executorId !== undefined && { executorId: query.executorId }),
       ...(query.platform !== undefined && { platform: query.platform }),
+      ...(createdAtDayFilter !== undefined && {
+        createdAt: createdAtDayFilter,
+      }),
       ...(query.q !== undefined && {
         title: { contains: query.q, mode: 'insensitive' },
       }),
