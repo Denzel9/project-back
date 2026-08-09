@@ -154,6 +154,9 @@ enum NotificationType {
   TASK_EXECUTOR_ASSIGNED
   TASK_COMMENT_CREATED
   TASK_MEDIA_ADDED
+  TASK_DEADLINE_SOON
+  TASK_DEADLINE_TODAY
+  TASK_DEADLINE_OVERDUE
   CHAT_MESSAGE
   TEAM_INVITE
   MEMBERSHIP_REVOKED
@@ -281,12 +284,15 @@ model User {
   deadlineExtensionRequestsResolved TaskDeadlineExtensionRequest[] @relation("DeadlineExtensionConfirmedBy")
   notifications            Notification[]
   sentNotifications        Notification[]            @relation("NotificationActor")
+  deadlineReminderLogs     DeadlineReminderLog[]
   ownedPublications        Publication[]             @relation("OwnedPublications")
   executedPublications     Publication[]             @relation("ExecutedPublications")
   config                   UserConfig?
   messengerConnections     MessengerConnection[]
   messengerLinkTokens      MessengerLinkToken[]
   messagePins             MessagePin[]
+  hiddenMessages          MessageHidden[]
+  taskCommentPins         TaskCommentPin[]
 }
 
 model UserConfig {
@@ -363,49 +369,79 @@ model Notification {
 
 model Conversation {
   id           String                    @id @default(uuid())
+  isNotes      Boolean                   @default(false)
   participants ConversationParticipant[]
   messages     Message[]
   messagePins  MessagePin[]
   createdAt    DateTime                  @default(now())
   updatedAt    DateTime                  @updatedAt
+
+  @@index([isNotes])
 }
 
 model ConversationParticipant {
-  id             String       @id @default(uuid())
-  conversationId String
-  userId         String
-  lastReadAt     DateTime?
-  isPinned       Boolean      @default(false)
-  pinnedAt       DateTime?
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                    String       @id @default(uuid())
+  conversationId        String
+  userId                String
+  lastReadAt            DateTime?
+  /// Одно сообщение, принудительно непрочитанное (бейдж/разделитель), без «всё после него»
+  unreadAnchorMessageId String?
+  /// Чат помечен непрочитанным вручную (точка в списке), без непрочитанных сообщений
+  isMarkedUnread        Boolean      @default(false)
+  isPinned              Boolean      @default(false)
+  pinnedAt              DateTime?
+  conversation          Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user                  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, userId])
   @@index([userId])
 }
 
 model Message {
-  id               String            @id @default(uuid())
-  conversationId   String
-  senderId         String
+  id                        String            @id @default(uuid())
+  conversationId            String
+  senderId                  String
   /// Account, от имени которого отправили (логин владельца или менеджера)
-  actorAccountId   String?
+  actorAccountId            String?
   /// Снимок имени актёра на момент отправки
-  actorDisplayName String?
+  actorDisplayName          String?
   /// OWNER — основная компания/креатор; MANAGER — менеджер аккаунта
-  actorKind        MessageActorKind?
-  content          String
-  editedAt         DateTime?
-  isRedirected     Boolean           @default(false)
-  createdAt        DateTime          @default(now())
-  conversation     Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender           User              @relation(fields: [senderId], references: [id], onDelete: Cascade)
-  actorAccount     Account?          @relation(fields: [actorAccountId], references: [id], onDelete: SetNull)
-  media            MessageMedia[]
-  messagePins     MessagePin[]
+  actorKind                 MessageActorKind?
+  content                   String
+  editedAt                  DateTime?
+  isRedirected              Boolean           @default(false)
+  redirectedFromUserId      String?
+  redirectedFromDisplayName String?
+  replyToId                 String?
+  replyTo                   Message?          @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies                   Message[]         @relation("MessageReplies")
+  replyToPreview            String?
+  replyToSenderId           String?
+  replyToSenderName         String?
+  createdAt                 DateTime          @default(now())
+  conversation              Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender                    User              @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  actorAccount              Account?          @relation(fields: [actorAccountId], references: [id], onDelete: SetNull)
+  media                     MessageMedia[]
+  messagePins               MessagePin[]
+  hiddenFor                 MessageHidden[]
 
   @@index([conversationId, createdAt])
   @@index([actorAccountId])
+  @@index([replyToId])
+}
+
+model MessageHidden {
+  id        String   @id @default(uuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hiddenAt  DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([userId])
+  @@index([messageId])
 }
 
 model MessageMedia {
@@ -566,6 +602,8 @@ model PostApplication {
   applicant              User              @relation("PostApplications", fields: [applicantId], references: [id], onDelete: Cascade)
   message                String
   status                 ApplicationStatus @default(NEW)
+  /// Показывать статистику кандидата владельцу поста
+  attachStatistics       Boolean           @default(true)
   createdActorAccountId  String?
   createdActorAccount    Account?          @relation("ApplicationCreatedActorAccount", fields: [createdActorAccountId], references: [id], onDelete: SetNull)
   createdActorDisplayName String?
@@ -630,9 +668,11 @@ model Task {
   media               TaskMedia[]
   comments            TaskComment[]
   commentReadStates   TaskCommentReadState[]
+  commentPins         TaskCommentPin[]
   activities          TaskActivity[]
   annulmentRequests   TaskAnnulmentRequest[]
   deadlineExtensionRequests TaskDeadlineExtensionRequest[]
+  deadlineReminderLogs DeadlineReminderLog[]
   publication         Publication?
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
@@ -642,6 +682,22 @@ model Task {
   @@index([status])
   @@index([postId])
   @@index([assigneeAccountId])
+  @@index([finalDate])
+}
+
+model DeadlineReminderLog {
+  id          String           @id @default(uuid())
+  taskId      String
+  task        Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient   User             @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  type        NotificationType
+  finalDate   DateTime
+  sentAt      DateTime         @default(now())
+
+  @@unique([taskId, recipientId, type, finalDate])
+  @@index([sentAt])
+  @@index([recipientId])
 }
 
 model TaskAnnulmentRequest {
@@ -699,12 +755,20 @@ model TaskComment {
   actorKind        MessageActorKind?
   content          String
   editedAt         DateTime?
+  replyToId        String?
+  replyTo          TaskComment?       @relation("TaskCommentReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies          TaskComment[]      @relation("TaskCommentReplies")
+  replyToPreview   String?
+  replyToSenderId  String?
+  replyToSenderName String?
   media            TaskCommentMedia[]
+  commentPins      TaskCommentPin[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
   @@index([taskId])
   @@index([actorAccountId])
+  @@index([replyToId])
 }
 
 model TaskCommentReadState {
@@ -730,6 +794,19 @@ model TaskCommentMedia {
   createdAt DateTime    @default(now())
 
   @@index([commentId])
+}
+
+model TaskCommentPin {
+  id         String      @id @default(uuid())
+  taskId     String
+  task       Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  commentId  String      @unique
+  comment    TaskComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  pinnedAt   DateTime    @default(now())
+  pinnedById String
+  pinnedBy   User        @relation(fields: [pinnedById], references: [id], onDelete: Cascade)
+
+  @@index([taskId, pinnedAt])
 }
 
 model TaskMedia {

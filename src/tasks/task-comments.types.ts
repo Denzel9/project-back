@@ -31,6 +31,7 @@ export type SendCommentPayload = {
   taskId: string;
   content?: string;
   media?: TaskCommentMediaInput[];
+  replyToId?: string;
 };
 
 export type EditCommentPayload = {

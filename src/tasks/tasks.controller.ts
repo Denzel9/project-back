@@ -41,6 +41,8 @@ import { ListTaskAttachmentsQueryDto } from './dto/list-task-attachments-query.d
 import { ListTaskAttachmentsResponseDto } from './dto/list-task-attachments-response.dto';
 import { SearchTaskCommentsQueryDto } from './dto/search-task-comments-query.dto';
 import { SearchTaskCommentsResponseDto } from './dto/search-task-comments-response.dto';
+import { TaskCommentPinResponseDto } from './dto/task-comment-pin-response.dto';
+import { UpdateTaskCommentPinDto } from './dto/update-task-comment-pin.dto';
 import { ListTasksQueryDto } from './dto/list-tasks-query.dto';
 import { ListTasksCalendarQueryDto } from './dto/list-tasks-calendar-query.dto';
 import { ListTaskStatsQueryDto } from './dto/list-task-stats-query.dto';
@@ -424,6 +426,20 @@ export class TasksController {
     return this.tasksService.searchComments(user, id, query);
   }
 
+  @Get(':id/comments/pins')
+  @ApiOperation({
+    summary: 'Закреплённые комментарии задачи',
+  })
+  @ApiOkResponse({ type: TaskCommentPinResponseDto, isArray: true })
+  @ApiNotFoundResponse({ description: 'Задача не найдена' })
+  @ApiForbiddenResponse({ description: 'Нет доступа' })
+  listCommentPins(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string
+  ) {
+    return this.tasksService.listCommentPins(user, id);
+  }
+
   @Get(':id/comments/attachments')
   @ApiOperation({
     summary: 'Вложения в комментариях задачи',
@@ -528,6 +544,24 @@ export class TasksController {
     @Body() dto: UpdateTaskCommentDto
   ) {
     return this.tasksService.updateComment(user, id, commentId, dto);
+  }
+
+  @Patch(':id/comments/:commentId/pin')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
+  @ApiOperation({
+    summary: 'Закрепить / открепить комментарий',
+  })
+  @ApiNoContentResponse({ description: 'Статус закрепления обновлён' })
+  @ApiNotFoundResponse({ description: 'Комментарий не найден' })
+  @ApiForbiddenResponse({ description: 'Нет доступа' })
+  async pinComment(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('commentId', ParseUUIDPipe) commentId: string,
+    @Body() dto: UpdateTaskCommentPinDto
+  ) {
+    await this.tasksService.pinComment(user, id, commentId, dto.isPinned);
   }
 
   @Delete(':id/comments/:commentId')

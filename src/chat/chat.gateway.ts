@@ -87,6 +87,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         role: payload.role,
         membershipRole: payload.membershipRole,
       };
+
+      await client.join(`user:${payload.sub}`);
     } catch {
       this.emitError(client, 'Неверный access-токен');
       client.disconnect();
@@ -143,7 +145,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         user.userId,
         payload.content ?? '',
         payload.media ?? [],
-        payload.isRedirected === true,
+        {
+          isRedirected: payload.isRedirected === true,
+          redirectedFromUserId: payload.redirectedFromUserId ?? null,
+          redirectedFromDisplayName:
+            payload.redirectedFromDisplayName ?? null,
+          replyToId: payload.replyToId ?? null,
+        },
         user.accountId
       );
 
@@ -234,6 +242,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
 
       await client.join(this.getRoomName(payload.conversationId));
+      client.emit('messages_hidden', {
+        conversationId: payload.conversationId,
+        messageIds: [payload.messageId],
+      });
     } catch (error) {
       this.emitError(client, this.getErrorMessage(error));
     }
@@ -270,8 +282,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .emit('message_edited', message);
   }
 
+  broadcastMessageHiddenForUser(
+    userId: string,
+    payload: { conversationId: string; messageIds: string[] }
+  ): void {
+    this.server.to(this.getUserRoomName(userId)).emit('messages_hidden', payload);
+  }
+
   private getRoomName(conversationId: string): string {
     return `conversation:${conversationId}`;
+  }
+
+  private getUserRoomName(userId: string): string {
+    return `user:${userId}`;
   }
 
   private async assertEmailConfirmed(userId: string) {

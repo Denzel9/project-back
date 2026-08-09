@@ -1117,8 +1117,25 @@ export class TasksService {
       }
     }
 
-    const data = this.buildUpdateData(dto, isOwner);
-    const changes = this.collectTaskChanges(task, dto, isOwner);
+    let nextAssignee: ActorSnapshot | null = null;
+
+    if (dto.assigneeAccountId !== undefined) {
+      if (!isOwner) {
+        throw new ForbiddenException(
+          'Сменить ответственного может только владелец задачи'
+        );
+      }
+
+      if (dto.assigneeAccountId !== task.assigneeAccountId) {
+        nextAssignee = await this.actorAttribution.resolveForProfileMember(
+          dto.assigneeAccountId,
+          task.ownerId
+        );
+      }
+    }
+
+    const data = this.buildUpdateData(dto, isOwner, nextAssignee);
+    const changes = this.collectTaskChanges(task, dto, isOwner, nextAssignee);
     const actor = await this.actorAttribution.resolve(
       user.accountId,
       user.userId
@@ -1132,7 +1149,7 @@ export class TasksService {
       const updatedTask = await tx.task.update({
         where: { id },
         data,
-        include: taskWithMediaInclude,
+        include: taskListInclude,
       });
 
       if (dto.postId !== undefined && dto.postId !== task.postId) {
@@ -1165,7 +1182,11 @@ export class TasksService {
     );
     await this.dispatchPublicationOnCompleted(updated, user.userId, changes);
 
-    return this.toResponse(updated);
+    return this.toResponse(updated, {
+      includePost: true,
+      includeExecutor: true,
+      includeOwner: updated.ownerId !== user.userId,
+    });
   }
 
   async requestAnnulment(
@@ -2206,7 +2227,8 @@ export class TasksService {
           title: true,
           ownerId: true,
           executorId: true,
-          post: { select: { title: true } },
+          postId: true,
+          post: { select: { id: true, title: true } },
           owner: { select: participantSelect },
           executor: { select: participantSelect },
         },
@@ -2254,6 +2276,9 @@ export class TasksService {
 
       items.push({
         taskId: group.taskId,
+        postId: task.postId,
+        ownerId: task.ownerId,
+        executorId: task.executorId,
         title: resolveTaskTitle(task.title, task.post.title),
         recipient: recipientUser
           ? this.mapCommentsRecipient(recipientUser)
@@ -2526,11 +2551,49 @@ export class TasksService {
       user.userId
     );
 
+    let replyToId: string | null = null;
+    let replyToPreview: string | null = null;
+    let replyToSenderId: string | null = null;
+    let replyToSenderName: string | null = null;
+
+    if (dto.replyToId) {
+      const replyTo = await this.prisma.taskComment.findFirst({
+        where: {
+          id: dto.replyToId,
+          taskId,
+        },
+        include: {
+          media: { select: { id: true }, take: 1 },
+          author: { include: executorInclude },
+        },
+      });
+
+      if (!replyTo) {
+        throw new BadRequestException('Комментарий для ответа не найден');
+      }
+
+      replyToId = replyTo.id;
+      replyToPreview =
+        replyTo.content.trim().length > 0
+          ? replyTo.content.trim().slice(0, 200)
+          : replyTo.media.length > 0
+            ? 'Вложение'
+            : '';
+      replyToSenderId = replyTo.authorId;
+      replyToSenderName =
+        replyTo.actorDisplayName?.trim() ||
+        this.getCommentAuthorDisplayName(replyTo.author);
+    }
+
     const comment = await this.prisma.taskComment.create({
       data: {
         taskId,
         authorId: user.userId,
         content,
+        replyToId,
+        replyToPreview,
+        replyToSenderId,
+        replyToSenderName,
         ...this.actorAttribution.toPrismaFields(actor),
         ...(media.length > 0 && {
           media: {
@@ -2709,7 +2772,8 @@ export class TasksService {
   private collectTaskChanges(
     task: Task,
     dto: UpdateTaskDto,
-    isOwner: boolean
+    isOwner: boolean,
+    nextAssignee?: ActorSnapshot | null
   ): TaskChange[] {
     const changes: TaskChange[] = [];
 
@@ -2896,12 +2960,29 @@ export class TasksService {
       });
     }
 
+    if (
+      nextAssignee &&
+      (nextAssignee.accountId !== task.assigneeAccountId ||
+        nextAssignee.displayName !== task.assigneeDisplayName ||
+        nextAssignee.kind !== task.assigneeKind)
+    ) {
+      changes.push({
+        type: TaskActivityType.FIELD_UPDATED,
+        payload: {
+          field: 'assignee',
+          from: task.assigneeDisplayName,
+          to: nextAssignee.displayName,
+        },
+      });
+    }
+
     return changes;
   }
 
   private buildUpdateData(
     dto: UpdateTaskDto,
-    isOwner: boolean
+    isOwner: boolean,
+    nextAssignee?: ActorSnapshot | null
   ): Prisma.TaskUpdateInput {
     if (!isOwner) {
       if (
@@ -2922,6 +3003,7 @@ export class TasksService {
         'videoCount',
         'urgent',
         'executorId',
+        'assigneeAccountId',
         'postId',
         'location',
         'bloggerRequirements',
@@ -2974,6 +3056,12 @@ export class TasksService {
     if (dto.postId !== undefined) {
       data.post = { connect: { id: dto.postId } };
       data.application = { disconnect: true };
+    }
+
+    if (nextAssignee) {
+      data.assigneeAccount = { connect: { id: nextAssignee.accountId } };
+      data.assigneeDisplayName = nextAssignee.displayName;
+      data.assigneeKind = nextAssignee.kind;
     }
 
     Object.assign(data, taskJsonFieldsFromDto(dto));
@@ -3515,6 +3603,10 @@ export class TasksService {
       actorAccountId?: string | null;
       actorDisplayName?: string | null;
       actorKind?: 'OWNER' | 'MANAGER' | null;
+      replyToId?: string | null;
+      replyToPreview?: string | null;
+      replyToSenderId?: string | null;
+      replyToSenderName?: string | null;
       media?: {
         id: string;
         url: string;
@@ -3551,7 +3643,104 @@ export class TasksService {
       actorAccountId: comment.actorAccountId ?? null,
       actorDisplayName: comment.actorDisplayName ?? null,
       actorKind: comment.actorKind ?? null,
+      replyToId: comment.replyToId ?? null,
+      replyToPreview: comment.replyToPreview ?? null,
+      replyToSenderId: comment.replyToSenderId ?? null,
+      replyToSenderName: comment.replyToSenderName ?? null,
     };
+  }
+
+  private getCommentAuthorDisplayName(author: {
+    role: Role;
+    email?: string | null;
+    creatorProfile: { name: string; lastName: string } | null;
+    companyProfile: { companyName: string } | null;
+  }) {
+    if (author.role === Role.CREATOR && author.creatorProfile) {
+      return `${author.creatorProfile.name} ${author.creatorProfile.lastName}`.trim();
+    }
+
+    if (author.role === Role.COMPANY && author.companyProfile) {
+      return author.companyProfile.companyName;
+    }
+
+    return author.email ?? 'Участник';
+  }
+
+  async pinComment(
+    user: AuthUser,
+    taskId: string,
+    commentId: string,
+    isPinned: boolean
+  ): Promise<void> {
+    const task = await this.getTaskOrThrow(taskId);
+    this.assertParticipant(task, user.userId);
+
+    const comment = await this.prisma.taskComment.findFirst({
+      where: { id: commentId, taskId },
+      select: { id: true },
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Комментарий не найден');
+    }
+
+    if (isPinned) {
+      await this.prisma.taskCommentPin.upsert({
+        where: { commentId },
+        create: {
+          taskId,
+          commentId,
+          pinnedById: user.userId,
+        },
+        update: {
+          taskId,
+          pinnedAt: new Date(),
+          pinnedById: user.userId,
+        },
+      });
+      return;
+    }
+
+    await this.prisma.taskCommentPin.deleteMany({ where: { commentId } });
+  }
+
+  async listCommentPins(user: AuthUser, taskId: string, limit = 50) {
+    const task = await this.getTaskOrThrow(taskId);
+    this.assertParticipant(task, user.userId);
+
+    const pins = await this.prisma.taskCommentPin.findMany({
+      where: { taskId },
+      orderBy: { pinnedAt: 'desc' },
+      take: limit,
+      select: {
+        commentId: true,
+        pinnedAt: true,
+        pinnedById: true,
+        comment: {
+          select: {
+            content: true,
+            createdAt: true,
+            authorId: true,
+            actorDisplayName: true,
+            actorKind: true,
+            _count: { select: { media: true } },
+          },
+        },
+      },
+    });
+
+    return pins.map(pin => ({
+      commentId: pin.commentId,
+      content: pin.comment.content,
+      mediaCount: pin.comment._count.media,
+      pinnedAt: pin.pinnedAt.toISOString(),
+      pinnedById: pin.pinnedById,
+      createdAt: pin.comment.createdAt.toISOString(),
+      authorId: pin.comment.authorId,
+      actorDisplayName: pin.comment.actorDisplayName ?? null,
+      actorKind: pin.comment.actorKind ?? null,
+    }));
   }
 
   private async getTaskCommentReadState(

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class CreateApplicationDto {
   @ApiProperty({ format: 'uuid' })
@@ -15,4 +15,14 @@ export class CreateApplicationDto {
   @MinLength(1)
   @MaxLength(2000)
   message: string;
+
+  @ApiProperty({
+    required: false,
+    default: true,
+    description:
+      'Прикрепить статистику кандидата к отклику (видна владельцу поста)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  attachStatistics?: boolean;
 }

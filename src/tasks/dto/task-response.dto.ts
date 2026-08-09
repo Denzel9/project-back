@@ -53,6 +53,18 @@ export class TaskCommentResponseDto {
 
   @ApiPropertyOptional({ enum: ['OWNER', 'MANAGER'], nullable: true })
   actorKind: 'OWNER' | 'MANAGER' | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  replyToId: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  replyToPreview: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  replyToSenderId: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  replyToSenderName: string | null;
 }
 
 export class TaskResponseDto {

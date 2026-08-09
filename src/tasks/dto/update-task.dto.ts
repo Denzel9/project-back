@@ -41,6 +41,15 @@ export class UpdateTaskDto {
   @IsUUID()
   executorId?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'UUID аккаунта ответственного (участник профиля владельца задачи)',
+  })
+  @IsOptional()
+  @IsUUID()
+  assigneeAccountId?: string;
+
   @ApiPropertyOptional({ description: 'Название задачи', nullable: true })
   @IsOptional()
   @ValidateIf((_, value) => value != null)

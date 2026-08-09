@@ -19,9 +19,28 @@ export class ChatConversationResponse {
   unreadCount: number;
 
   @ApiProperty({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Сообщение, помеченное непрочитанным вручную (только оно, не все после него)',
+  })
+  unreadAnchorMessageId: string | null;
+
+  @ApiProperty({
+    description:
+      'Диалог помечен непрочитанным вручную (точка в списке без числа)',
+  })
+  isMarkedUnread: boolean;
+
+  @ApiProperty({
     description: 'Закреплён ли диалог для текущего пользователя',
   })
   isPinned: boolean;
+
+  @ApiProperty({
+    description: 'Диалог «Заметки» (чат с самим собой)',
+  })
+  isNotes: boolean;
 
   @ApiProperty({ format: 'date-time' })
   updatedAt: Date;

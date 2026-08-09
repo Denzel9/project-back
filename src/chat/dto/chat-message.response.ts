@@ -68,6 +68,24 @@ export class ChatMessageResponse {
   })
   isRedirected: boolean;
 
+  @ApiProperty({ format: 'uuid', nullable: true })
+  redirectedFromUserId: string | null;
+
+  @ApiProperty({ nullable: true })
+  redirectedFromDisplayName: string | null;
+
+  @ApiProperty({ format: 'uuid', nullable: true })
+  replyToId: string | null;
+
+  @ApiProperty({ nullable: true })
+  replyToPreview: string | null;
+
+  @ApiProperty({ format: 'uuid', nullable: true })
+  replyToSenderId: string | null;
+
+  @ApiProperty({ nullable: true })
+  replyToSenderName: string | null;
+
   @ApiProperty({
     description:
       'Для входящих — прочитано вами; для исходящих — прочитано собеседником',

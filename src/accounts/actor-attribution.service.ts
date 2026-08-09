@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { MessageActorKind, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -14,6 +14,11 @@ export type ActorPrismaFields = {
   actorKind: MessageActorKind;
 };
 
+const userWithProfilesInclude = {
+  creatorProfile: true,
+  companyProfile: true,
+} as const;
+
 @Injectable()
 export class ActorAttributionService {
   constructor(private readonly prisma: PrismaService) {}
@@ -26,10 +31,7 @@ export class ActorAttributionService {
       where: { accountId },
       include: {
         user: {
-          include: {
-            creatorProfile: true,
-            companyProfile: true,
-          },
+          include: userWithProfilesInclude,
         },
       },
     });
@@ -53,10 +55,7 @@ export class ActorAttributionService {
       senderMembership?.user ??
       (await this.prisma.user.findUnique({
         where: { id: activeUserId },
-        include: {
-          creatorProfile: true,
-          companyProfile: true,
-        },
+        include: userWithProfilesInclude,
       }));
 
     return {
@@ -64,6 +63,64 @@ export class ActorAttributionService {
       kind: MessageActorKind.OWNER,
       displayName: senderUser
         ? this.getProfileDisplayName(senderUser)
+        : 'Компания',
+    };
+  }
+
+  /** Снимок ответственного по аккаунту-участнику профиля задачи. */
+  async resolveForProfileMember(
+    accountId: string,
+    profileUserId: string
+  ): Promise<ActorSnapshot> {
+    const membership = await this.prisma.accountMembership.findUnique({
+      where: {
+        accountId_userId: {
+          accountId,
+          userId: profileUserId,
+        },
+      },
+      include: {
+        account: {
+          include: {
+            memberships: {
+              include: {
+                user: {
+                  include: userWithProfilesInclude,
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!membership) {
+      throw new BadRequestException(
+        'Аккаунт не является участником профиля владельца задачи'
+      );
+    }
+
+    const managerUser = membership.account.memberships.find(
+      item => item.user.role === Role.MANAGER
+    )?.user;
+
+    if (managerUser) {
+      return {
+        accountId,
+        kind: MessageActorKind.MANAGER,
+        displayName: this.getManagerDisplayName(managerUser),
+      };
+    }
+
+    const profileUser = membership.account.memberships.find(
+      item => item.userId === profileUserId
+    )?.user;
+
+    return {
+      accountId,
+      kind: MessageActorKind.OWNER,
+      displayName: profileUser
+        ? this.getProfileDisplayName(profileUser)
         : 'Компания',
     };
   }

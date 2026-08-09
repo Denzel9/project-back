@@ -1,9 +1,10 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
@@ -18,6 +19,14 @@ export class CreateTaskCommentDto {
   @IsString()
   @MaxLength(2000)
   content?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'UUID комментария, на который отвечают',
+  })
+  @IsOptional()
+  @IsUUID()
+  replyToId?: string;
 
   @ApiPropertyOptional({
     type: [TaskCommentMediaInputDto],

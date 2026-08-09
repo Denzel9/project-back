@@ -43,6 +43,10 @@ import { UpdateChatMessageDto } from './dto/update-message.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { ChatMessagePinResponse } from './dto/chat-message-pin.response';
 import { UpdateChatMessagePinDto } from './dto/update-message-pin.dto';
+import {
+  HideMessagesDto,
+  MarkUnreadDto,
+} from './dto/chat-message-actions.dto';
 
 @ApiTags('chat')
 @ApiCookieAuth('access-token')
@@ -268,15 +272,15 @@ export class ChatController {
   @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
-    summary: 'Удалить сообщение',
+    summary: 'Скрыть сообщение у себя',
     description:
-      'Удаляет сообщение и все его вложения (S3 + БД). Только отправитель. ' +
-      'Участники диалога получат событие message_deleted по WebSocket.',
+      'Удаляет сообщение только у текущего пользователя (MessageHidden). ' +
+      'У собеседника сообщение остаётся.',
   })
-  @ApiNoContentResponse({ description: 'Сообщение удалено' })
+  @ApiNoContentResponse({ description: 'Сообщение скрыто' })
   @ApiNotFoundResponse({ description: 'Сообщение не найдено' })
   @ApiForbiddenResponse({
-    description: 'Нет доступа к диалогу или сообщение не ваше',
+    description: 'Нет доступа к диалогу',
   })
   removeMessage(
     @CurrentUser() user: AuthUser,
@@ -288,6 +292,91 @@ export class ChatController {
       user.userId,
       messageId
     );
+  }
+
+  @Post('conversations/:id/messages/hide')
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Скрыть несколько сообщений у себя',
+  })
+  @ApiOkResponse({
+    description: 'Скрытые messageIds',
+    schema: {
+      type: 'object',
+      properties: {
+        conversationId: { type: 'string', format: 'uuid' },
+        messageIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+      },
+    },
+  })
+  hideMessages(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) conversationId: string,
+    @Body() dto: HideMessagesDto
+  ) {
+    return this.chatService.hideMessages(
+      conversationId,
+      user.userId,
+      dto.messageIds
+    );
+  }
+
+  @Post('conversations/:id/mark-unread')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Пометить одно сообщение непрочитанным',
+    description:
+      'Ставит якорь на указанное сообщение и lastReadAt на последнее видимое. ' +
+      'Непрочитанным считается только это сообщение (плюс новые после lastReadAt).',
+  })
+  markConversationUnread(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) conversationId: string,
+    @Body() dto: MarkUnreadDto
+  ) {
+    return this.chatService.markConversationUnread(
+      conversationId,
+      user.userId,
+      dto.messageId
+    );
+  }
+
+  @Post('conversations/:id/mark-dialog-unread')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Пометить диалог непрочитанным',
+    description:
+      'Только метка чата (точка в списке). Сообщения не становятся непрочитанными. ' +
+      'Доступно, если в диалоге нет непрочитанных сообщений.',
+  })
+  markConversationDialogUnread(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) conversationId: string
+  ) {
+    return this.chatService.markConversationDialogUnread(
+      conversationId,
+      user.userId
+    );
+  }
+
+  @Get('notes')
+  @ApiOperation({
+    summary: 'Открыть или создать диалог «Заметки»',
+  })
+  @ApiOkResponse({ type: ChatConversationResponse })
+  getNotes(@CurrentUser() user: AuthUser) {
+    return this.chatService.findOrCreateNotesConversation(user.userId);
+  }
+
+  @Post('notes')
+  @UseGuards(EmailConfirmedGuard)
+  @ApiOperation({
+    summary: 'Создать или вернуть диалог «Заметки»',
+  })
+  @ApiCreatedResponse({ type: ChatConversationResponse })
+  createNotes(@CurrentUser() user: AuthUser) {
+    return this.chatService.findOrCreateNotesConversation(user.userId);
   }
 
   @Post('conversations/:id/read')

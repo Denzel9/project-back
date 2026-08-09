@@ -13,6 +13,7 @@ import {
   Prisma,
   Role,
   Task,
+  TaskStatus,
 } from '@prisma/client';
 import { AuthUser } from '../auth/auth.types';
 import { ActorAttributionService } from '../accounts/actor-attribution.service';
@@ -23,6 +24,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TasksService } from '../tasks/tasks.service';
 import { canViewPost } from '../posts/post-visibility.util';
 import { assertMarketplaceTrader } from '../auth/utils/marketplace-participant.util';
+import { ApplicantStatisticsDto } from './dto/applicant-statistics.dto';
 import { ApplicationApplicantDto } from './dto/application-applicant.dto';
 import { ApplicationResponseDto } from './dto/application-response.dto';
 import { CreateApplicationDto } from './dto/create-application.dto';
@@ -132,6 +134,7 @@ export class ApplicationsService {
           postId: dto.postId,
           applicantId: user.userId,
           message: dto.message,
+          attachStatistics: dto.attachStatistics ?? true,
           createdActorAccountId: actor.accountId,
           createdActorDisplayName: actor.displayName,
           createdActorKind: actor.kind,
@@ -408,7 +411,7 @@ export class ApplicationsService {
       });
     }
 
-    return this.mapApplication(updated, { includeApplicant: true });
+    return this.toApplicationResponse(updated, { includeApplicant: true });
   }
 
   private buildPostListFilter(
@@ -501,8 +504,29 @@ export class ApplicationsService {
       this.prisma.postApplication.count({ where }),
     ]);
 
+    const statsByPair = options.includeApplicant
+      ? await this.loadApplicantStatisticsMap(
+          items
+            .filter(item => item.attachStatistics)
+            .map(item => ({
+              applicantId: item.applicantId,
+              ownerId: item.post.ownerId,
+            })),
+        )
+      : new Map<string, ApplicantStatisticsDto>();
+
     return {
-      items: items.map(item => this.mapApplication(item, options)),
+      items: items.map(item => {
+        const pairKey = this.statsPairKey(item.applicantId, item.post.ownerId);
+
+        return this.mapApplication(item, {
+          ...options,
+          applicantStatistics:
+            options.includeApplicant && item.attachStatistics
+              ? (statsByPair.get(pairKey) ?? null)
+              : null,
+        });
+      }),
       total,
       page,
       limit,
@@ -596,6 +620,109 @@ export class ApplicationsService {
     return applicant.role;
   }
 
+  private async toApplicationResponse(
+    application: ApplicationWithRelations,
+    options: {
+      includePost?: boolean;
+      includeApplicant?: boolean;
+    } = {},
+  ): Promise<ApplicationResponseDto> {
+    let applicantStatistics: ApplicantStatisticsDto | null = null;
+
+    if (options.includeApplicant && application.attachStatistics) {
+      applicantStatistics = await this.getApplicantStatistics(
+        application.applicantId,
+        application.post.ownerId,
+      );
+    }
+
+    return this.mapApplication(application, {
+      ...options,
+      applicantStatistics,
+    });
+  }
+
+  private statsPairKey(applicantId: string, ownerId: string) {
+    return `${applicantId}:${ownerId}`;
+  }
+
+  private async loadApplicantStatisticsMap(
+    pairs: { applicantId: string; ownerId: string }[],
+  ): Promise<Map<string, ApplicantStatisticsDto>> {
+    const unique = new Map<string, { applicantId: string; ownerId: string }>();
+
+    for (const pair of pairs) {
+      unique.set(this.statsPairKey(pair.applicantId, pair.ownerId), pair);
+    }
+
+    const entries = await Promise.all(
+      [...unique.entries()].map(async ([key, pair]) => {
+        const stats = await this.getApplicantStatistics(
+          pair.applicantId,
+          pair.ownerId,
+        );
+        return [key, stats] as const;
+      }),
+    );
+
+    return new Map(entries);
+  }
+
+  private async getApplicantStatistics(
+    applicantId: string,
+    counterpartyId: string,
+  ): Promise<ApplicantStatisticsDto> {
+    const sharedPairWhere = {
+      OR: [
+        { ownerId: counterpartyId, executorId: applicantId },
+        { ownerId: applicantId, executorId: counterpartyId },
+      ],
+    };
+
+    const [
+      completedWorks,
+      cancelledWorks,
+      sharedCompletedWorks,
+      sharedPublications,
+      favoritedByCount,
+    ] = await Promise.all([
+      this.prisma.task.count({
+        where: {
+          status: TaskStatus.COMPLETED,
+          OR: [{ executorId: applicantId }, { ownerId: applicantId }],
+        },
+      }),
+      this.prisma.task.count({
+        where: {
+          status: TaskStatus.ANNULLED,
+          OR: [{ executorId: applicantId }, { ownerId: applicantId }],
+        },
+      }),
+      this.prisma.task.count({
+        where: {
+          status: TaskStatus.COMPLETED,
+          OR: sharedPairWhere.OR,
+        },
+      }),
+      this.prisma.publication.count({
+        where: {
+          OR: sharedPairWhere.OR,
+        },
+      }),
+      this.prisma.favoriteUser.count({
+        where: { favoriteUserId: applicantId },
+      }),
+    ]);
+
+    return {
+      completedWorks,
+      cancelledWorks,
+      sharedCompletedWorks,
+      sharedPublications,
+      favoritedByCount,
+    };
+  }
+
   private mapApplicant(
     applicant: ApplicationWithRelations['applicant']
   ): ApplicationApplicantDto {
@@ -625,12 +752,17 @@ export class ApplicationsService {
 
   private mapApplication(
     application: ApplicationWithRelations,
-    options: { includePost?: boolean; includeApplicant?: boolean } = {}
+    options: {
+      includePost?: boolean;
+      includeApplicant?: boolean;
+      applicantStatistics?: ApplicantStatisticsDto | null;
+    } = {}
   ): ApplicationResponseDto {
     return {
       id: application.id,
       message: application.message,
       status: application.status,
+      attachStatistics: application.attachStatistics,
       createdAt: application.createdAt.toISOString(),
       updatedAt: application.updatedAt.toISOString(),
       createdActorAccountId: application.createdActorAccountId ?? null,
@@ -657,6 +789,9 @@ export class ApplicationsService {
       }),
       ...(options.includeApplicant && {
         applicant: this.mapApplicant(application.applicant),
+      }),
+      ...(options.includeApplicant && {
+        applicantStatistics: options.applicantStatistics ?? null,
       }),
     };
   }

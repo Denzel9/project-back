@@ -28,6 +28,12 @@ export type ChatMessageDto = {
   editedAt: Date | null;
   /** Переслано из другого диалога */
   isRedirected: boolean;
+  redirectedFromUserId: string | null;
+  redirectedFromDisplayName: string | null;
+  replyToId: string | null;
+  replyToPreview: string | null;
+  replyToSenderId: string | null;
+  replyToSenderName: string | null;
   /** Для входящих — прочитано текущим пользователем; для исходящих — прочитано собеседником */
   isRead: boolean;
 };
@@ -68,7 +74,10 @@ export type ChatConversationDto = {
   peer: ChatPeerDto;
   lastMessage: ChatMessageDto | null;
   unreadCount: number;
+  unreadAnchorMessageId: string | null;
+  isMarkedUnread: boolean;
   isPinned: boolean;
+  isNotes: boolean;
   updatedAt: Date;
 };
 
@@ -96,6 +105,11 @@ export type MessageDeletedPayload = {
   messageId: string;
 };
 
+export type MessageHiddenPayload = {
+  conversationId: string;
+  messageIds: string[];
+};
+
 export type MessagesReadPayload = {
   conversationId: string;
   userId: string;
@@ -108,6 +122,9 @@ export type SendMessagePayload = {
   media?: ChatMessageMediaInput[];
   /** true при пересылке сообщения из другого диалога */
   isRedirected?: boolean;
+  redirectedFromUserId?: string;
+  redirectedFromDisplayName?: string;
+  replyToId?: string;
 };
 
 export type ChatErrorPayload = {

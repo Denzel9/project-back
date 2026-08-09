@@ -13,7 +13,10 @@ import {
   type ActorSnapshot,
 } from '../accounts/actor-attribution.service';
 import { StorageService } from '../media/storage.service';
-import { ALLOWED_DOCUMENT_MIME_TYPES } from '../media/media.constants';
+import {
+  ALLOWED_DOCUMENT_MIME_TYPES,
+  MIME_TO_EXTENSION,
+} from '../media/media.constants';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -33,6 +36,7 @@ import {
 } from './dto/list-attachments-query.dto';
 import { countUnreadMessages, isMessageRead } from './chat-read.util';
 import { ChatGateway } from './chat.gateway';
+import { randomUUID } from 'crypto';
 
 const userWithProfileInclude = {
   creatorProfile: true,
@@ -115,28 +119,48 @@ export class ChatService {
     private readonly chatGateway: ChatGateway
   ) {}
 
+  private notHiddenFilter(userId: string): Prisma.MessageWhereInput {
+    return { hiddenFor: { none: { userId } } };
+  }
+
   async getUnreadCount(userId: string): Promise<{ count: number }> {
     const participations =
       await this.prisma.conversationParticipant.findMany({
         where: { userId },
-        select: { conversationId: true, lastReadAt: true },
+        select: {
+          conversationId: true,
+          lastReadAt: true,
+          unreadAnchorMessageId: true,
+          isMarkedUnread: true,
+        },
       });
 
     if (participations.length === 0) {
       return { count: 0 };
     }
 
-    const count = await this.prisma.message.count({
-      where: {
-        OR: participations.map(({ conversationId, lastReadAt }) => ({
+    const counts = await Promise.all(
+      participations.map(
+        async ({
           conversationId,
-          senderId: { not: userId },
-          ...(lastReadAt ? { createdAt: { gt: lastReadAt } } : {}),
-        })),
-      },
-    });
+          lastReadAt,
+          unreadAnchorMessageId,
+          isMarkedUnread,
+        }) => {
+          const messageUnread = await countUnreadMessages(
+            this.prisma,
+            conversationId,
+            userId,
+            lastReadAt,
+            unreadAnchorMessageId
+          );
 
-    return { count };
+          return Math.max(messageUnread, isMarkedUnread ? 1 : 0);
+        }
+      )
+    );
+
+    return { count: counts.reduce((sum, value) => sum + value, 0) };
   }
 
   async listConversations(
@@ -175,6 +199,7 @@ export class ChatService {
               },
             },
             messages: {
+              where: this.notHiddenFilter(userId),
               orderBy: { createdAt: 'desc' },
               take: 1,
               include: messageWithMediaInclude,
@@ -194,32 +219,62 @@ export class ChatService {
     });
 
     return Promise.all(
-      participations.map(async ({ lastReadAt, isPinned, conversation }) => {
+      participations.map(
+        async ({
+          lastReadAt,
+          unreadAnchorMessageId,
+          isMarkedUnread,
+          isPinned,
+          conversation,
+        }) => {
+        const viewerParticipant = conversation.participants.find(
+          participant => participant.userId === userId
+        );
         const peerParticipant = conversation.participants.find(
           participant => participant.userId !== userId
         );
 
-        if (!peerParticipant) {
+        if (!viewerParticipant) {
           throw new NotFoundException('Собеседник не найден');
         }
 
-        const peerLastReadAt = peerParticipant.lastReadAt;
+        const isNotes = conversation.isNotes;
+        let peer: ChatPeerDto;
+        let peerLastReadAt: Date | null;
+
+        if (isNotes) {
+          peer = {
+            ...this.mapPeer(viewerParticipant.user),
+            displayName: 'Заметки',
+          };
+          peerLastReadAt = viewerParticipant.lastReadAt;
+        } else if (!peerParticipant) {
+          throw new NotFoundException('Собеседник не найден');
+        } else {
+          peer = this.mapPeer(peerParticipant.user);
+          peerLastReadAt = peerParticipant.lastReadAt;
+        }
+
         const lastMessage = conversation.messages[0];
         const unreadCount = await countUnreadMessages(
           this.prisma,
           conversation.id,
           userId,
-          lastReadAt
+          lastReadAt,
+          unreadAnchorMessageId
         );
 
         return {
           id: conversation.id,
-          peer: this.mapPeer(peerParticipant.user),
+          peer,
           lastMessage: lastMessage
             ? this.mapMessage(lastMessage, userId, lastReadAt, peerLastReadAt)
             : null,
           unreadCount,
+          unreadAnchorMessageId: unreadAnchorMessageId ?? null,
+          isMarkedUnread: isMarkedUnread ?? false,
           isPinned,
+          isNotes,
           updatedAt: conversation.updatedAt,
         };
       })
@@ -245,6 +300,7 @@ export class ChatService {
 
     const existing = await this.prisma.conversation.findFirst({
       where: {
+        isNotes: false,
         AND: [
           { participants: { some: { userId } } },
           { participants: { some: { userId: recipientId } } },
@@ -259,6 +315,7 @@ export class ChatService {
           },
         },
         messages: {
+          where: this.notHiddenFilter(userId),
           orderBy: { createdAt: 'desc' },
           take: 1,
           include: messageWithMediaInclude,
@@ -272,8 +329,68 @@ export class ChatService {
 
     const created = await this.prisma.conversation.create({
       data: {
+        isNotes: false,
         participants: {
           create: [{ userId }, { userId: recipientId }],
+        },
+      },
+      include: {
+        participants: {
+          include: {
+            user: {
+              include: userWithProfileInclude,
+            },
+          },
+        },
+        messages: {
+          include: messageWithMediaInclude,
+        },
+      },
+    });
+
+    return this.mapConversation(created, userId);
+  }
+
+  async findOrCreateNotesConversation(
+    userId: string
+  ): Promise<ChatConversationDto> {
+    const currentUser = await this.usersService.findById(userId);
+
+    if (!currentUser) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+
+    const existing = await this.prisma.conversation.findFirst({
+      where: {
+        isNotes: true,
+        participants: { some: { userId } },
+      },
+      include: {
+        participants: {
+          include: {
+            user: {
+              include: userWithProfileInclude,
+            },
+          },
+        },
+        messages: {
+          where: this.notHiddenFilter(userId),
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: messageWithMediaInclude,
+        },
+      },
+    });
+
+    if (existing) {
+      return this.mapConversation(existing, userId);
+    }
+
+    const created = await this.prisma.conversation.create({
+      data: {
+        isNotes: true,
+        participants: {
+          create: [{ userId }],
         },
       },
       include: {
@@ -324,6 +441,7 @@ export class ChatService {
           },
         },
         messages: {
+          where: this.notHiddenFilter(userId),
           orderBy: { createdAt: 'desc' },
           take: 1,
           include: messageWithMediaInclude,
@@ -450,6 +568,7 @@ export class ChatService {
     const messages = await this.prisma.message.findMany({
       where: {
         conversationId,
+        ...this.notHiddenFilter(userId),
         ...(cursorMessage
           ? {
             OR: [
@@ -500,7 +619,11 @@ export class ChatService {
           userId,
         },
       },
-      data: { lastReadAt: readAt },
+      data: {
+        lastReadAt: readAt,
+        unreadAnchorMessageId: null,
+        isMarkedUnread: false,
+      },
     });
 
     this.chatGateway.broadcastMessagesRead(conversationId, {
@@ -536,6 +659,7 @@ export class ChatService {
     const where: Prisma.MessageWhereInput = {
       conversationId,
       content: { contains: query.q, mode: 'insensitive' },
+      ...this.notHiddenFilter(userId),
     };
 
     const [messages, total] = await Promise.all([
@@ -581,7 +705,10 @@ export class ChatService {
     const skip = (page - 1) * limit;
 
     const where: Prisma.MessageMediaWhereInput = {
-      message: { conversationId },
+      message: {
+        conversationId,
+        ...this.notHiddenFilter(userId),
+      },
       ...(query.type === AttachmentTypeFilter.IMAGE && {
         mimeType: { startsWith: 'image/' },
       }),
@@ -680,54 +807,206 @@ export class ChatService {
     conversationId: string,
     userId: string,
     messageId: string
-  ): Promise<{ conversationId: string; messageId: string }> {
+  ): Promise<{ conversationId: string; messageIds: string[] }> {
     await this.assertParticipant(conversationId, userId);
 
     const message = await this.prisma.message.findFirst({
       where: { id: messageId, conversationId },
-      include: { media: true },
+      select: { id: true },
     });
 
     if (!message) {
       throw new NotFoundException('Сообщение не найдено');
     }
 
-    if (message.senderId !== userId) {
-      throw new ForbiddenException('Недостаточно прав для удаления сообщения');
-    }
-
-    for (const item of message.media) {
-      try {
-        await this.storageService.deleteObject(item.key);
-      } catch {
-        throw new InternalServerErrorException('Не удалось удалить файл');
-      }
-    }
-
-    await this.prisma.$transaction(async tx => {
-      await tx.message.delete({
-        where: { id: messageId },
-      });
-
-      const latestMessage = await tx.message.findFirst({
-        where: { conversationId },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        select: { createdAt: true },
-      });
-
-      await tx.conversation.update({
-        where: { id: conversationId },
-        data: {
-          updatedAt: latestMessage?.createdAt ?? new Date(),
+    await this.prisma.messageHidden.upsert({
+      where: {
+        messageId_userId: {
+          messageId,
+          userId,
         },
-      });
+      },
+      create: {
+        messageId,
+        userId,
+      },
+      update: {},
     });
 
-    const payload = { conversationId, messageId };
+    const payload = { conversationId, messageIds: [messageId] };
 
-    this.chatGateway.broadcastMessageDeleted(conversationId, payload);
+    this.chatGateway.broadcastMessageHiddenForUser(userId, payload);
 
     return payload;
+  }
+
+  async hideMessages(
+    conversationId: string,
+    userId: string,
+    messageIds: string[]
+  ): Promise<{ conversationId: string; messageIds: string[] }> {
+    await this.assertParticipant(conversationId, userId);
+
+    if (messageIds.length === 0) {
+      return { conversationId, messageIds: [] };
+    }
+
+    const messages = await this.prisma.message.findMany({
+      where: {
+        conversationId,
+        id: { in: messageIds },
+      },
+      select: { id: true },
+    });
+
+    const foundIds = messages.map(message => message.id);
+
+    if (foundIds.length === 0) {
+      return { conversationId, messageIds: [] };
+    }
+
+    await this.prisma.messageHidden.createMany({
+      data: foundIds.map(messageId => ({
+        messageId,
+        userId,
+      })),
+      skipDuplicates: true,
+    });
+
+    const payload = { conversationId, messageIds: foundIds };
+
+    this.chatGateway.broadcastMessageHiddenForUser(userId, payload);
+
+    return payload;
+  }
+
+  async markConversationUnread(
+    conversationId: string,
+    userId: string,
+    messageId: string
+  ): Promise<{
+    conversationId: string;
+    lastReadAt: Date | null;
+    unreadAnchorMessageId: string;
+    unreadCount: number;
+  }> {
+    await this.assertParticipant(conversationId, userId);
+
+    const message = await this.prisma.message.findFirst({
+      where: {
+        id: messageId,
+        conversationId,
+        ...this.notHiddenFilter(userId),
+      },
+      select: { id: true, createdAt: true },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Сообщение не найдено');
+    }
+
+    const latestMessage = await this.prisma.message.findFirst({
+      where: {
+        conversationId,
+        ...this.notHiddenFilter(userId),
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { createdAt: true },
+    });
+
+    // Keep everything after the cursor read; only the anchored message is unread.
+    const lastReadAt = latestMessage?.createdAt ?? message.createdAt;
+
+    await this.prisma.conversationParticipant.update({
+      where: {
+        conversationId_userId: {
+          conversationId,
+          userId,
+        },
+      },
+      data: {
+        lastReadAt,
+        unreadAnchorMessageId: message.id,
+        isMarkedUnread: false,
+      },
+    });
+
+    const unreadCount = await countUnreadMessages(
+      this.prisma,
+      conversationId,
+      userId,
+      lastReadAt,
+      message.id
+    );
+
+    return {
+      conversationId,
+      lastReadAt,
+      unreadAnchorMessageId: message.id,
+      unreadCount,
+    };
+  }
+
+  async markConversationDialogUnread(
+    conversationId: string,
+    userId: string
+  ): Promise<{
+    conversationId: string;
+    isMarkedUnread: boolean;
+    unreadCount: number;
+  }> {
+    await this.assertParticipant(conversationId, userId);
+
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: {
+        conversationId_userId: {
+          conversationId,
+          userId,
+        },
+      },
+      select: {
+        lastReadAt: true,
+        unreadAnchorMessageId: true,
+        isMarkedUnread: true,
+      },
+    });
+
+    if (!participant) {
+      throw new ForbiddenException('Нет доступа к этому диалогу');
+    }
+
+    const unreadCount = await countUnreadMessages(
+      this.prisma,
+      conversationId,
+      userId,
+      participant.lastReadAt,
+      participant.unreadAnchorMessageId
+    );
+
+    if (unreadCount > 0) {
+      throw new BadRequestException(
+        'Диалог уже содержит непрочитанные сообщения'
+      );
+    }
+
+    await this.prisma.conversationParticipant.update({
+      where: {
+        conversationId_userId: {
+          conversationId,
+          userId,
+        },
+      },
+      data: {
+        isMarkedUnread: true,
+        unreadAnchorMessageId: null,
+      },
+    });
+
+    return {
+      conversationId,
+      isMarkedUnread: true,
+      unreadCount: 0,
+    };
   }
 
   async updateMessage(
@@ -821,26 +1100,28 @@ export class ChatService {
     senderId: string,
     content = '',
     media: ChatMessageMediaInput[] = [],
-    isRedirected = false,
+    options?: {
+      isRedirected?: boolean;
+      redirectedFromUserId?: string | null;
+      redirectedFromDisplayName?: string | null;
+      replyToId?: string | null;
+    },
     actorAccountId?: string
   ): Promise<ChatMessageDto> {
     const trimmedContent = content.trim();
-    const normalizedMedia = media ?? [];
 
-    if (!trimmedContent && normalizedMedia.length === 0) {
+    if (!trimmedContent && (media ?? []).length === 0) {
       throw new BadRequestException('Сообщение не может быть пустым');
     }
 
     await this.assertParticipant(conversationId, senderId);
 
-    const expectedKeyPrefix = `chats/${conversationId}/`;
-    for (const item of normalizedMedia) {
-      if (!item.key.startsWith(expectedKeyPrefix)) {
-        throw new BadRequestException(
-          'Недопустимый ключ медиа для этого диалога'
-        );
-      }
-    }
+    const normalizedMedia = await this.prepareMessageMediaForConversation(
+      conversationId,
+      senderId,
+      media ?? [],
+      options?.isRedirected === true
+    );
 
     const actor = actorAccountId
       ? await this.actorAttribution.resolve(actorAccountId, senderId)
@@ -853,7 +1134,7 @@ export class ChatService {
         senderId,
         trimmedContent,
         normalizedMedia,
-        isRedirected,
+        options,
         actor
       )
     );
@@ -876,6 +1157,92 @@ export class ChatService {
       readState.viewerLastReadAt,
       readState.peerLastReadAt
     );
+  }
+
+  /**
+   * Keys must live under chats/{conversationId}/.
+   * For forwarded messages, copy media from another chat the sender can access.
+   */
+  private async prepareMessageMediaForConversation(
+    conversationId: string,
+    userId: string,
+    media: ChatMessageMediaInput[],
+    allowCopyFromOtherChats: boolean
+  ): Promise<ChatMessageMediaInput[]> {
+    if (!media.length) {
+      return [];
+    }
+
+    const expectedKeyPrefix = `chats/${conversationId}/`;
+    const prepared: ChatMessageMediaInput[] = [];
+
+    for (const item of media) {
+      if (item.key.startsWith(expectedKeyPrefix)) {
+        prepared.push(item);
+        continue;
+      }
+
+      if (!allowCopyFromOtherChats || !item.key.startsWith('chats/')) {
+        throw new BadRequestException(
+          'Недопустимый ключ медиа для этого диалога'
+        );
+      }
+
+      const sourceConversationId = item.key.split('/')[1];
+
+      if (!sourceConversationId || sourceConversationId === conversationId) {
+        throw new BadRequestException(
+          'Недопустимый ключ медиа для этого диалога'
+        );
+      }
+
+      await this.assertParticipant(sourceConversationId, userId);
+
+      const sourceMedia = await this.prisma.messageMedia.findFirst({
+        where: {
+          key: item.key,
+          message: {
+            conversationId: sourceConversationId,
+            ...this.notHiddenFilter(userId),
+          },
+        },
+        select: { id: true, mimeType: true, size: true },
+      });
+
+      if (!sourceMedia) {
+        throw new BadRequestException(
+          'Недопустимый ключ медиа для этого диалога'
+        );
+      }
+
+      const extension =
+        MIME_TO_EXTENSION[item.mimeType] ??
+        MIME_TO_EXTENSION[sourceMedia.mimeType] ??
+        item.key.split('.').pop()?.toLowerCase() ??
+        'bin';
+      const destKey = `chats/${conversationId}/${randomUUID()}.${extension}`;
+
+      try {
+        await this.storageService.copyObject(
+          item.key,
+          destKey,
+          item.mimeType || sourceMedia.mimeType
+        );
+      } catch {
+        throw new InternalServerErrorException(
+          'Не удалось скопировать медиа при пересылке'
+        );
+      }
+
+      prepared.push({
+        url: this.storageService.getPublicUrl(destKey),
+        key: destKey,
+        size: item.size || sourceMedia.size,
+        mimeType: item.mimeType || sourceMedia.mimeType,
+      });
+    }
+
+    return prepared;
   }
 
   private async notifyRecipientAboutMessage(
@@ -933,7 +1300,12 @@ export class ChatService {
     senderId: string,
     content: string,
     media: ChatMessageMediaInput[] = [],
-    isRedirected = false,
+    options?: {
+      isRedirected?: boolean;
+      redirectedFromUserId?: string | null;
+      redirectedFromDisplayName?: string | null;
+      replyToId?: string | null;
+    },
     actor: ActorSnapshot | null = null
   ) {
     const trimmedContent = content.trim();
@@ -952,12 +1324,57 @@ export class ChatService {
       }
     }
 
+    const isRedirected = options?.isRedirected === true;
+    let replyToId: string | null = null;
+    let replyToPreview: string | null = null;
+    let replyToSenderId: string | null = null;
+    let replyToSenderName: string | null = null;
+
+    if (options?.replyToId) {
+      const replyTo = await tx.message.findFirst({
+        where: {
+          id: options.replyToId,
+          conversationId,
+        },
+        include: {
+          media: { select: { id: true }, take: 1 },
+          sender: { include: userWithProfileInclude },
+        },
+      });
+
+      if (!replyTo) {
+        throw new BadRequestException('Сообщение для ответа не найдено');
+      }
+
+      replyToId = replyTo.id;
+      replyToPreview =
+        replyTo.content.trim().length > 0
+          ? replyTo.content.trim().slice(0, 200)
+          : replyTo.media.length > 0
+            ? 'Вложение'
+            : '';
+      replyToSenderId = replyTo.senderId;
+      replyToSenderName =
+        replyTo.actorDisplayName?.trim() ||
+        this.mapPeer(replyTo.sender).displayName;
+    }
+
     const created = await tx.message.create({
       data: {
         conversationId,
         senderId,
         content: trimmedContent,
         isRedirected,
+        redirectedFromUserId: isRedirected
+          ? (options?.redirectedFromUserId ?? null)
+          : null,
+        redirectedFromDisplayName: isRedirected
+          ? (options?.redirectedFromDisplayName ?? null)
+          : null,
+        replyToId,
+        replyToPreview,
+        replyToSenderId,
+        replyToSenderName,
         ...this.actorAttribution.toPrismaFields(actor),
         ...(normalizedMedia.length > 0 && {
           media: {
@@ -1003,10 +1420,13 @@ export class ChatService {
   private async mapConversation(
     conversation: {
       id: string;
+      isNotes?: boolean;
       updatedAt: Date;
       participants: Array<{
         userId: string;
         lastReadAt: Date | null;
+        unreadAnchorMessageId?: string | null;
+        isMarkedUnread?: boolean;
         isPinned?: boolean;
         user: NonNullable<UserWithProfile>;
       }>;
@@ -1016,6 +1436,17 @@ export class ChatService {
         senderId: string;
         content: string;
         createdAt: Date;
+        editedAt?: Date | null;
+        isRedirected?: boolean;
+        redirectedFromUserId?: string | null;
+        redirectedFromDisplayName?: string | null;
+        replyToId?: string | null;
+        replyToPreview?: string | null;
+        replyToSenderId?: string | null;
+        replyToSenderName?: string | null;
+        actorAccountId?: string | null;
+        actorDisplayName?: string | null;
+        actorKind?: MessageActorKind | null;
         media?: Array<{
           url: string;
           key: string;
@@ -1033,28 +1464,51 @@ export class ChatService {
       participant => participant.userId !== userId
     );
 
-    if (!peerParticipant || !viewerParticipant) {
+    if (!viewerParticipant) {
       throw new NotFoundException('Собеседник не найден');
+    }
+
+    const isNotes = conversation.isNotes ?? false;
+    let peer: ChatPeerDto;
+    let peerLastReadAt: Date | null;
+
+    if (isNotes) {
+      peer = {
+        ...this.mapPeer(viewerParticipant.user),
+        displayName: 'Заметки',
+      };
+      peerLastReadAt = viewerParticipant.lastReadAt;
+    } else if (!peerParticipant) {
+      throw new NotFoundException('Собеседник не найден');
+    } else {
+      peer = this.mapPeer(peerParticipant.user);
+      peerLastReadAt = peerParticipant.lastReadAt;
     }
 
     const lastMessage = conversation.messages[0];
     const viewerLastReadAt = viewerParticipant.lastReadAt;
-    const peerLastReadAt = peerParticipant.lastReadAt;
+    const unreadAnchorMessageId =
+      viewerParticipant.unreadAnchorMessageId ?? null;
+    const isMarkedUnread = viewerParticipant.isMarkedUnread ?? false;
     const unreadCount = await countUnreadMessages(
       this.prisma,
       conversation.id,
       userId,
-      viewerLastReadAt
+      viewerLastReadAt,
+      unreadAnchorMessageId
     );
 
     return {
       id: conversation.id,
-      peer: this.mapPeer(peerParticipant.user),
+      peer,
       lastMessage: lastMessage
         ? this.mapMessage(lastMessage, userId, viewerLastReadAt, peerLastReadAt)
         : null,
       unreadCount,
+      unreadAnchorMessageId,
+      isMarkedUnread,
       isPinned: viewerParticipant.isPinned ?? false,
+      isNotes,
       updatedAt: conversation.updatedAt,
     };
   }
@@ -1098,6 +1552,12 @@ export class ChatService {
       createdAt: Date;
       editedAt?: Date | null;
       isRedirected?: boolean;
+      redirectedFromUserId?: string | null;
+      redirectedFromDisplayName?: string | null;
+      replyToId?: string | null;
+      replyToPreview?: string | null;
+      replyToSenderId?: string | null;
+      replyToSenderName?: string | null;
       media?: Array<{
         url: string;
         key: string;
@@ -1126,6 +1586,12 @@ export class ChatService {
       createdAt: message.createdAt,
       editedAt: message.editedAt ?? null,
       isRedirected: message.isRedirected ?? false,
+      redirectedFromUserId: message.redirectedFromUserId ?? null,
+      redirectedFromDisplayName: message.redirectedFromDisplayName ?? null,
+      replyToId: message.replyToId ?? null,
+      replyToPreview: message.replyToPreview ?? null,
+      replyToSenderId: message.replyToSenderId ?? null,
+      replyToSenderName: message.replyToSenderName ?? null,
       isRead: isMessageRead(
         message,
         viewerId,

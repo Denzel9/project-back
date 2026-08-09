@@ -137,6 +137,7 @@ export class TaskCommentsGateway
       await this.tasksService.createComment(this.toAuthUser(user), payload.taskId, {
         content: payload.content,
         media: payload.media,
+        replyToId: payload.replyToId,
       });
 
       await client.join(this.getRoomName(payload.taskId));

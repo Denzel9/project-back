@@ -29,6 +29,25 @@ export class TaskWithCommentsSummaryDto {
   taskId: string;
 
   @ApiProperty({
+    format: 'uuid',
+    description: 'UUID поста, к которому относится задача (для ссылки /task/:postId)',
+  })
+  postId: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    description: 'Владелец задачи',
+  })
+  ownerId: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    nullable: true,
+    description: 'Исполнитель задачи',
+  })
+  executorId: string | null;
+
+  @ApiProperty({
     nullable: true,
     description: 'title задачи или название поста, если title не задан',
   })
