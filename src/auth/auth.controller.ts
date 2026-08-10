@@ -34,6 +34,7 @@ import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthUser } from './auth.types';
+import { ThrottleAuth } from '../common/decorators/throttle.decorator';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
 import { RegisterCreatorDto } from './dto/register-creator.dto';
@@ -57,6 +58,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register/creator')
+  @ThrottleAuth(5)
   @ApiOperation({
     summary: 'Регистрация креатора',
     description:
@@ -80,6 +82,7 @@ export class AuthController {
   }
 
   @Post('register/company')
+  @ThrottleAuth(5)
   @ApiOperation({
     summary: 'Регистрация компании',
     description:
@@ -103,6 +106,7 @@ export class AuthController {
   }
 
   @Post('register/manager')
+  @ThrottleAuth(5)
   @ApiOperation({
     summary: 'Регистрация менеджера',
     description:
@@ -126,6 +130,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @ThrottleAuth(10)
   @ApiOperation({
     summary: 'Вход',
     description:
@@ -276,6 +281,7 @@ export class AuthController {
   }
 
   @Post('recovery-password')
+  @ThrottleAuth(5)
   @ApiOperation({
     summary: 'Запрос сброса пароля',
     description:
@@ -294,6 +300,7 @@ export class AuthController {
   }
 
   @Post('reset-password')
+  @ThrottleAuth(5)
   @ApiOperation({
     summary: 'Установить новый пароль',
     description:
@@ -379,6 +386,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @ThrottleAuth(30)
   @ApiOperation({
     summary: 'Обновить access token',
     description:
@@ -410,10 +418,18 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Выход',
-    description: 'Очищает cookies access-token и refresh-token.',
+    description:
+      'Отзывает refresh-сессию в БД и очищает cookies access-token и refresh-token.',
   })
   @ApiNoContentResponse({ description: 'Выход выполнен' })
-  logout(@Res({ passthrough: true }) res: Response): void {
+  async logout(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response
+  ): Promise<void> {
+    const refreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE] as
+      | string
+      | undefined;
+    await this.authService.logout(refreshToken);
     clearAuthCookies(res);
   }
 }

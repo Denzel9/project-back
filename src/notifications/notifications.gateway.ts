@@ -93,11 +93,12 @@ export class NotificationsGateway
   }
 
   /** Пользователь подключён к namespace `/notifications` (хотя бы одна вкладка). */
-  isUserConnected(userId: string): boolean {
-    const room = this.server?.sockets?.adapter?.rooms?.get(
-      this.getUserRoomName(userId)
-    );
-    return room !== undefined && room.size > 0;
+  isUserConnected(userId: string): Promise<boolean> {
+    return this.server
+      .in(this.getUserRoomName(userId))
+      .fetchSockets()
+      .then(sockets => sockets.length > 0)
+      .catch(() => false);
   }
 
   private getUserRoomName(userId: string): string {

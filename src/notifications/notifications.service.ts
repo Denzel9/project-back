@@ -16,6 +16,7 @@ import { AuthUser } from '../auth/auth.types';
 import { MessengerDeliveryService } from '../integrations/messenger-delivery.service';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PushService } from '../push/push.service';
 import { UserConfigService } from '../user-config/user-config.service';
 import { ChatEmailThrottleService } from './chat-email-throttle.service';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
@@ -44,7 +45,8 @@ export class NotificationsService {
     private readonly notificationsGateway: NotificationsGateway,
     private readonly userConfigService: UserConfigService,
     private readonly chatEmailThrottle: ChatEmailThrottleService,
-    private readonly messengerDelivery: MessengerDeliveryService
+    private readonly messengerDelivery: MessengerDeliveryService,
+    private readonly pushService: PushService
   ) {}
 
   async notify(input: NotifyInput): Promise<NotificationResponseDto | null> {
@@ -99,6 +101,7 @@ export class NotificationsService {
     }
 
     await this.sendMessengerNotifications(input);
+    await this.sendPushNotification(input);
 
     return response;
   }
@@ -115,7 +118,7 @@ export class NotificationsService {
       return input;
     }
 
-    if (this.notificationsGateway.isUserConnected(input.recipientId)) {
+    if (await this.notificationsGateway.isUserConnected(input.recipientId)) {
       return null;
     }
 
@@ -129,7 +132,7 @@ export class NotificationsService {
       return input;
     }
 
-    const decision = this.chatEmailThrottle.decide(
+    const decision = await this.chatEmailThrottle.decide(
       input.recipientId,
       conversationId
     );
@@ -284,6 +287,38 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * Push использует те же типы, что in-app. CHAT_MESSAGE — только если offline.
+   */
+  private async sendPushNotification(input: NotifyInput): Promise<void> {
+    try {
+      const pushAllowed = await this.userConfigService.isInAppEnabled(
+        input.recipientId,
+        input.type
+      );
+      if (!pushAllowed) {
+        return;
+      }
+
+      if (input.type === NotificationType.CHAT_MESSAGE) {
+        if (await this.notificationsGateway.isUserConnected(input.recipientId)) {
+          return;
+        }
+      }
+
+      await this.pushService.sendToUser(input.recipientId, {
+        title: input.title,
+        body: input.body,
+        notificationPayload: input.payload,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Не удалось отправить push-уведомление (${input.type})`,
+        error
+      );
+    }
+  }
+
   private buildMessengerText(input: NotifyInput): string {
     const frontendUrl = this.configService
       .getOrThrow<string>('FRONTEND_URL')
@@ -308,7 +343,7 @@ export class NotificationsService {
 
       if (!email) {
         this.logger.warn(
-          `Email OWNER не найден для получателя уведомления ${recipientId}`
+          `Email не найден для получателя уведомления ${recipientId}`
         );
         return;
       }
@@ -334,11 +369,18 @@ export class NotificationsService {
   private async resolveRecipientEmail(
     recipientId: string
   ): Promise<string | null> {
-    const ownerMembership = await this.prisma.accountMembership.findFirst({
-      where: {
-        userId: recipientId,
-        role: MembershipRole.OWNER,
-      },
+    const user = await this.prisma.user.findUnique({
+      where: { id: recipientId },
+      select: { email: true },
+    });
+
+    const userEmail = user?.email?.trim();
+    if (userEmail) {
+      return userEmail;
+    }
+
+    const memberships = await this.prisma.accountMembership.findMany({
+      where: { userId: recipientId },
       include: {
         account: {
           select: { email: true },
@@ -346,7 +388,16 @@ export class NotificationsService {
       },
     });
 
-    return ownerMembership?.account.email ?? null;
+    const ownerMembership = memberships.find(
+      membership => membership.role === MembershipRole.OWNER
+    );
+
+    const accountEmail =
+      ownerMembership?.account.email?.trim() ||
+      memberships.find(membership => membership.account.email?.trim())?.account
+        .email?.trim();
+
+    return accountEmail || null;
   }
 
   private toResponse(

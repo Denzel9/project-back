@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { MailModule } from '../mail/mail.module';
+import { PushModule } from '../push/push.module';
 import { UserConfigModule } from '../user-config/user-config.module';
 import { ChatEmailThrottleService } from './chat-email-throttle.service';
 import { DeadlineReminderService } from './deadline-reminder.service';
@@ -15,6 +16,7 @@ import { NotificationsService } from './notifications.service';
     MailModule,
     UserConfigModule,
     IntegrationsModule,
+    forwardRef(() => PushModule),
   ],
   controllers: [NotificationsController],
   providers: [

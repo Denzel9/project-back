@@ -31,6 +31,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { MembershipWriteGuard } from '../auth/guards/membership-write.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
+import { ThrottleUpload } from '../common/decorators/throttle.decorator';
 import { TaskMediaKind } from '@prisma/client';
 import { CopyTaskMediaToConversationDto } from './dto/copy-task-media-to-conversation.dto';
 import { UploadResponseDto } from './dto/upload-response.dto';
@@ -62,6 +63,7 @@ export class MediaController {
   constructor(private readonly mediaService: MediaService) {}
 
   @Post('upload')
+  @ThrottleUpload(30)
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({

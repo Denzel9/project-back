@@ -11,11 +11,15 @@ export type EmailCta = {
 
 export type RenderEmailLayoutParams = {
   frontendUrl: string;
+  /** Абсолютный URL логотипа (обычно с API: /assets/mail/Primary.png) */
+  logoUrl: string;
   preheader: string;
   title?: string;
   bodyHtml: string;
   cta?: EmailCta;
   footerNote?: string;
+  /** Ссылка «Настроить уведомления» (product-письма) */
+  notificationSettingsUrl?: string;
 };
 
 export function escapeHtml(value: string): string {
@@ -37,12 +41,15 @@ function normalizeFrontendUrl(frontendUrl: string): string {
 
 export function renderEmailLayout(params: RenderEmailLayoutParams): string {
   const frontendUrl = normalizeFrontendUrl(params.frontendUrl);
-  const logoUrl = `${frontendUrl}/Primary.png`;
+  const logoUrl = escapeHtml(params.logoUrl);
   const preheader = escapeHtml(params.preheader);
   const title = params.title ? escapeHtml(params.title) : '';
   const footerNote = params.footerNote
     ? escapeHtml(params.footerNote)
     : 'Вы получили это письмо, потому что у вас есть аккаунт на платформе Nikssens.';
+  const notificationSettingsUrl = params.notificationSettingsUrl
+    ? escapeHtml(params.notificationSettingsUrl)
+    : '';
   const ctaUrl = params.cta ? escapeHtml(params.cta.url) : '';
   const ctaLabel = params.cta ? escapeHtml(params.cta.label) : '';
 
@@ -70,6 +77,14 @@ export function renderEmailLayout(params: RenderEmailLayoutParams): string {
     `
     : '';
 
+  const settingsLinkBlock = notificationSettingsUrl
+    ? `
+              <p style="margin:12px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:${BRAND_MUTED};">
+                <a href="${notificationSettingsUrl}" style="color:${BRAND_PRIMARY};text-decoration:underline;">Настроить уведомления</a>
+              </p>
+    `
+    : '';
+
   return `
 <!DOCTYPE html>
 <html lang="ru">
@@ -91,7 +106,7 @@ export function renderEmailLayout(params: RenderEmailLayoutParams): string {
           <tr>
             <td align="center" style="padding:0 0 20px;">
               <a href="${escapeHtml(frontendUrl)}" style="text-decoration:none;">
-                <img src="${escapeHtml(logoUrl)}" width="160" alt="Nikssens" style="display:block;width:160px;max-width:60%;height:auto;border:0;" />
+                <img src="${logoUrl}" width="160" alt="Nikssens" style="display:block;width:160px;max-width:60%;height:auto;border:0;" />
               </a>
             </td>
           </tr>
@@ -109,7 +124,8 @@ export function renderEmailLayout(params: RenderEmailLayoutParams): string {
               <p style="margin:0 0 8px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:${BRAND_MUTED};">
                 ${footerNote}
               </p>
-              <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:${BRAND_MUTED};">
+              ${settingsLinkBlock}
+              <p style="margin:12px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:${BRAND_MUTED};">
                 <a href="${escapeHtml(frontendUrl)}" style="color:${BRAND_PRIMARY};text-decoration:none;font-weight:600;">Nikssens</a>
                 ·
                 <a href="mailto:support@nikssens.ru" style="color:${BRAND_PRIMARY};text-decoration:none;">support@nikssens.ru</a>

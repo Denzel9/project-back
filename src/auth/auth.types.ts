@@ -14,6 +14,8 @@ export type RefreshJwtPayload = {
   sub: string;
   accountId: string;
   type: 'refresh';
+  /** ID записи RefreshSession */
+  jti: string;
   remember?: boolean;
 };
 

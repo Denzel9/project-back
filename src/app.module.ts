@@ -1,6 +1,11 @@
+import { BullModule } from '@nestjs/bullmq';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_FILTER } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { seconds, ThrottlerModule } from '@nestjs/throttler';
+import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
@@ -21,11 +26,33 @@ import { UserConfigModule } from './user-config/user-config.module';
 import { GeoModule } from './geo/geo.module';
 import { BillingModule } from './billing/billing.module';
 import { IntegrationsModule } from './integrations/integrations.module';
+import { RedisModule } from './redis/redis.module';
+import { getBullMqConnection, getRedisUrl } from './redis/redis-connection';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    SentryModule.forRoot(),
     ScheduleModule.forRoot(),
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        connection: getBullMqConnection(configService),
+      }),
+    }),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        throttlers: [
+          { name: 'auth', ttl: seconds(60), limit: 10 },
+          { name: 'upload', ttl: seconds(60), limit: 30 },
+        ],
+        storage: new ThrottlerStorageRedisService(getRedisUrl(configService)),
+      }),
+    }),
+    RedisModule,
     PrismaModule,
     UsersModule,
     AuthModule,
@@ -46,6 +73,12 @@ import { IntegrationsModule } from './integrations/integrations.module';
     IntegrationsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    {
+      provide: APP_FILTER,
+      useClass: SentryGlobalFilter,
+    },
+    AppService,
+  ],
 })
 export class AppModule {}

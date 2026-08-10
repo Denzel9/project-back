@@ -211,6 +211,7 @@ model Account {
   password                String
   memberships             AccountMembership[]
   invites                 AccountInvite[]
+  refreshSessions         RefreshSession[]
   messages                Message[]
   taskComments            TaskComment[]       @relation("TaskCommentActorAccount")
   taskActivities          TaskActivity[]      @relation("TaskActivityActorAccount")
@@ -304,6 +305,38 @@ model User {
   messagePins             MessagePin[]
   hiddenMessages          MessageHidden[]
   taskCommentPins         TaskCommentPin[]
+  refreshSessions         RefreshSession[]
+  pushSubscriptions       PushSubscription[]
+}
+
+model RefreshSession {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId String
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  remember  Boolean   @default(false)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([accountId])
+  @@index([expiresAt])
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model UserConfig {

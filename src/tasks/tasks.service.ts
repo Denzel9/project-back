@@ -526,7 +526,7 @@ export class TasksService {
 
   async listCalendar(user: AuthUser, query: ListTasksCalendarQueryDto) {
     const page = query.page ?? 1;
-    const limit = query.limit ?? 100;
+    const limit = query.limit ?? 50;
     const skip = (page - 1) * limit;
     const dateField = query.dateField ?? TaskCalendarDateField.CREATED_AT;
     const where = this.buildCalendarWhere(user, query);

@@ -2,7 +2,8 @@ import { renderEmailLayout } from './layout';
 
 export function buildPasswordResetEmail(
   resetUrl: string,
-  frontendUrl: string
+  frontendUrl: string,
+  logoUrl: string
 ) {
   const subject = 'Сброс пароля';
 
@@ -16,6 +17,7 @@ export function buildPasswordResetEmail(
 
   const html = renderEmailLayout({
     frontendUrl,
+    logoUrl,
     preheader: 'Задайте новый пароль для аккаунта Nikssens.',
     title: 'Сброс пароля',
     bodyHtml: `

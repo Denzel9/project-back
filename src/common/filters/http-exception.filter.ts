@@ -5,6 +5,7 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { Response } from 'express';
 
 const ERROR_STATUS_LABELS: Partial<Record<number, string>> = {
@@ -13,6 +14,7 @@ const ERROR_STATUS_LABELS: Partial<Record<number, string>> = {
   [HttpStatus.FORBIDDEN]: 'Доступ запрещён',
   [HttpStatus.NOT_FOUND]: 'Не найдено',
   [HttpStatus.CONFLICT]: 'Конфликт',
+  [HttpStatus.TOO_MANY_REQUESTS]: 'Слишком много запросов',
   [HttpStatus.INTERNAL_SERVER_ERROR]: 'Внутренняя ошибка сервера',
 };
 
@@ -25,6 +27,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const exceptionResponse = exception.getResponse();
     const errorLabel =
       ERROR_STATUS_LABELS[status] ?? HttpStatus[status] ?? 'Ошибка';
+
+    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      Sentry.captureException(exception);
+    }
 
     if (typeof exceptionResponse === 'string') {
       response.status(status).json({

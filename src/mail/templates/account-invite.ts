@@ -2,7 +2,8 @@ import { renderEmailLayout } from './layout';
 
 export function buildAccountInviteEmail(
   inviteUrl: string,
-  frontendUrl: string
+  frontendUrl: string,
+  logoUrl: string
 ) {
   const subject = 'Приглашение управлять профилем';
 
@@ -16,6 +17,7 @@ export function buildAccountInviteEmail(
 
   const html = renderEmailLayout({
     frontendUrl,
+    logoUrl,
     preheader: 'Вас пригласили управлять профилем на Nikssens.',
     title: 'Приглашение в команду',
     bodyHtml: `

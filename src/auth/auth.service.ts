@@ -19,7 +19,7 @@ import { MailService } from '../mail/mail.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
-import { getRefreshExpiresIn } from './auth-cookies';
+import { getRefreshExpiresIn, parseExpiresInToMs } from './auth-cookies';
 import {
   AuthResponse,
   AuthSessionUser,
@@ -276,6 +276,7 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.newPassword, 10);
     await this.accountsService.updatePassword(accountId, passwordHash);
+    await this.revokeAllRefreshSessionsForAccount(accountId);
 
     return { message: 'Пароль успешно изменён' };
   }
@@ -311,7 +312,21 @@ export class AuthService {
       throw new UnauthorizedException('Неверный refresh-токен');
     }
 
-    if (payload.type !== 'refresh') {
+    if (payload.type !== 'refresh' || !payload.jti) {
+      throw new UnauthorizedException('Неверный refresh-токен');
+    }
+
+    const session = await this.prisma.refreshSession.findUnique({
+      where: { id: payload.jti },
+    });
+
+    if (
+      !session ||
+      session.revokedAt ||
+      session.expiresAt.getTime() <= Date.now() ||
+      session.userId !== payload.sub ||
+      session.accountId !== payload.accountId
+    ) {
       throw new UnauthorizedException('Неверный refresh-токен');
     }
 
@@ -340,8 +355,28 @@ export class AuthService {
       account,
       user,
       membership.role,
-      payload.remember === true
+      payload.remember === true,
+      { replaceSessionId: session.id }
     );
+  }
+
+  async logout(refreshToken?: string): Promise<void> {
+    if (!refreshToken) {
+      return;
+    }
+
+    try {
+      const payload = this.jwtService.verify<RefreshJwtPayload>(refreshToken, {
+        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+        ignoreExpiration: true,
+      });
+
+      if (payload.type === 'refresh' && payload.jti) {
+        await this.revokeRefreshSession(payload.jti);
+      }
+    } catch {
+      // Невалидный cookie при logout игнорируем — cookies всё равно очищаем
+    }
   }
 
   async listProfiles(authUser: AuthUser) {
@@ -380,8 +415,11 @@ export class AuthService {
     }
 
     const rememberMe = this.parseRememberMeFromRefreshToken(refreshToken);
+    const replaceSessionId = this.parseJtiFromRefreshToken(refreshToken);
 
-    return this.buildAuthResponse(account, user, membership.role, rememberMe);
+    return this.buildAuthResponse(account, user, membership.role, rememberMe, {
+      replaceSessionId,
+    });
   }
 
   createInvite(authUser: AuthUser, dto: CreateInviteDto) {
@@ -637,12 +675,50 @@ export class AuthService {
     try {
       const payload = this.jwtService.verify<RefreshJwtPayload>(refreshToken, {
         secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+        ignoreExpiration: true,
       });
 
       return payload.type === 'refresh' && payload.remember === true;
     } catch {
       return false;
     }
+  }
+
+  private parseJtiFromRefreshToken(refreshToken?: string): string | undefined {
+    if (!refreshToken) {
+      return undefined;
+    }
+
+    try {
+      const payload = this.jwtService.verify<RefreshJwtPayload>(refreshToken, {
+        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+        ignoreExpiration: true,
+      });
+
+      if (payload.type === 'refresh' && payload.jti) {
+        return payload.jti;
+      }
+    } catch {
+      return undefined;
+    }
+
+    return undefined;
+  }
+
+  private async revokeRefreshSession(sessionId: string): Promise<void> {
+    await this.prisma.refreshSession.updateMany({
+      where: { id: sessionId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  private async revokeAllRefreshSessionsForAccount(
+    accountId: string
+  ): Promise<void> {
+    await this.prisma.refreshSession.updateMany({
+      where: { accountId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
   }
 
   private async buildAuthResponse(
@@ -654,10 +730,22 @@ export class AuthService {
       isEmailConfirmed: boolean;
     },
     membershipRole: MembershipRole,
-    rememberMe = false
+    rememberMe = false,
+    options?: { replaceSessionId?: string }
   ): Promise<AuthResponse> {
+    if (options?.replaceSessionId) {
+      await this.revokeRefreshSession(options.replaceSessionId);
+    }
+
     const subscription = await this.primeSubscriptionService.getSubscription(
       user.id
+    );
+
+    const tokens = await this.issueTokens(
+      account,
+      user,
+      membershipRole,
+      rememberMe
     );
 
     return {
@@ -672,17 +760,31 @@ export class AuthService {
         primeStatus: subscription.status,
         primeExpiresAt: subscription.expiresAt?.toISOString() ?? null,
       },
-      tokens: this.issueTokens(account, user, membershipRole, rememberMe),
+      tokens,
       rememberMe,
     };
   }
 
-  private issueTokens(
+  private async issueTokens(
     account: { id: string; email: string },
     user: { id: string; role: Role },
     membershipRole: MembershipRole,
     rememberMe = false
-  ): AuthTokens {
+  ): Promise<AuthTokens> {
+    const refreshExpiresIn = getRefreshExpiresIn(rememberMe);
+    const expiresAt = new Date(
+      Date.now() + parseExpiresInToMs(refreshExpiresIn)
+    );
+
+    const session = await this.prisma.refreshSession.create({
+      data: {
+        userId: user.id,
+        accountId: account.id,
+        remember: rememberMe,
+        expiresAt,
+      },
+    });
+
     const accessPayload: JwtPayload = {
       sub: user.id,
       accountId: account.id,
@@ -695,10 +797,9 @@ export class AuthService {
       sub: user.id,
       accountId: account.id,
       type: 'refresh',
+      jti: session.id,
       remember: rememberMe,
     };
-
-    const refreshExpiresIn = getRefreshExpiresIn(rememberMe);
 
     const accessToken = this.jwtService.sign(accessPayload, {
       secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),

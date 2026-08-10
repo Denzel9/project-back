@@ -5,10 +5,11 @@ export type NotificationEmailParams = {
   body?: string | null;
   actionUrl: string;
   frontendUrl: string;
+  logoUrl: string;
 };
 
 export function buildNotificationEmail(params: NotificationEmailParams) {
-  const { title, body, actionUrl, frontendUrl } = params;
+  const { title, body, actionUrl, frontendUrl, logoUrl } = params;
   const subject = title;
 
   const textParts = [title];
@@ -27,6 +28,7 @@ export function buildNotificationEmail(params: NotificationEmailParams) {
 
   const html = renderEmailLayout({
     frontendUrl,
+    logoUrl,
     preheader: body?.trim() || title,
     title,
     bodyHtml: htmlBody,
@@ -34,6 +36,7 @@ export function buildNotificationEmail(params: NotificationEmailParams) {
       url: actionUrl,
       label: 'Открыть',
     },
+    notificationSettingsUrl: `${frontendUrl.replace(/\/$/, '')}/settings/notification`,
   });
 
   return { subject, text, html };

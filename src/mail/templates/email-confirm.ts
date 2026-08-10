@@ -2,7 +2,8 @@ import { renderEmailLayout } from './layout';
 
 export function buildEmailConfirmEmail(
   confirmUrl: string,
-  frontendUrl: string
+  frontendUrl: string,
+  logoUrl: string
 ) {
   const subject = 'Подтверждение почты';
 
@@ -16,6 +17,7 @@ export function buildEmailConfirmEmail(
 
   const html = renderEmailLayout({
     frontendUrl,
+    logoUrl,
     preheader: 'Подтвердите почту, чтобы получить полный доступ к Nikssens.',
     title: 'Подтверждение почты',
     bodyHtml: `

@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -17,6 +18,8 @@ import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class InvitesService {
+  private readonly logger = new Logger(InvitesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly accountsService: AccountsService,
@@ -96,7 +99,22 @@ export class InvitesService {
       },
     });
 
-    await this.mailService.sendAccountInviteEmail(dto.email, token);
+    try {
+      await this.mailService.sendAccountInviteEmail(dto.email, token);
+    } catch (error) {
+      this.logger.error(
+        `Не удалось отправить invite email (${invite.id})`,
+        error instanceof Error ? error.stack : String(error)
+      );
+
+      await this.prisma.accountInvite
+        .delete({ where: { id: invite.id } })
+        .catch(() => undefined);
+
+      throw new BadRequestException(
+        'Не удалось отправить приглашение на email. Попробуйте ещё раз позже'
+      );
+    }
 
     const inviteeAccount = await this.prisma.account.findUnique({
       where: { email: dto.email },
