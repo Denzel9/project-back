@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  EmploymentType,
   PlacementFormat,
   Platform,
   PostAuthorType,
@@ -77,6 +78,9 @@ export class PostResponseDto {
 
   @ApiPropertyOptional({ enum: WorkFormat })
   workFormat?: WorkFormat;
+
+  @ApiPropertyOptional({ enum: EmploymentType })
+  employmentType?: EmploymentType;
 
   @ApiPropertyOptional({ type: PostLocationDto })
   location?: PostLocationDto;

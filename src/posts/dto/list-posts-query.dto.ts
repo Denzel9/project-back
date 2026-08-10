@@ -6,6 +6,7 @@ import {
   PostAuthorType,
   PostCurrency,
   BudgetType,
+  EmploymentType,
   UsageRights,
   WorkFormat,
 } from '@prisma/client';
@@ -163,6 +164,14 @@ export class ListPostsQueryDto {
   @IsOptional()
   @IsEnum(WorkFormat)
   workFormat?: WorkFormat;
+
+  @ApiPropertyOptional({
+    enum: EmploymentType,
+    description: 'Тип занятости: STAFF — в штат, ONE_TIME — разовое сотрудничество',
+  })
+  @IsOptional()
+  @IsEnum(EmploymentType)
+  employmentType?: EmploymentType;
 
   @ApiPropertyOptional({
     format: 'date',

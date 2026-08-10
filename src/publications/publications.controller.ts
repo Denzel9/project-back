@@ -56,7 +56,7 @@ export class PublicationsController {
   @ApiOperation({
     summary: 'Обновить публикацию',
     description:
-      'Участники задачи могут редактировать `title`, `description`, `externalUrl`, `platform`.',
+      'Участники задачи могут редактировать `title`, `description`, `links` (ссылки по платформам), `externalUrl` (legacy), `platform`.',
   })
   @ApiOkResponse({ type: PublicationResponseDto })
   @ApiNotFoundResponse({ description: 'Публикация не найдена' })

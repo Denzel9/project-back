@@ -56,52 +56,67 @@ export class MailService {
     });
   }
 
-  async sendPasswordResetEmail(to: string, token: string): Promise<void> {
-    const frontendUrl = this.configService
+  private getFrontendUrl(): string {
+    return this.configService
       .getOrThrow<string>('FRONTEND_URL')
       .replace(/\/$/, '');
+  }
+
+  async sendPasswordResetEmail(to: string, token: string): Promise<void> {
+    const frontendUrl = this.getFrontendUrl();
     const resetUrl = `${frontendUrl}/auth?token=${encodeURIComponent(token)}`;
-    const { subject, text, html } = buildPasswordResetEmail(resetUrl);
+    const { subject, text, html } = buildPasswordResetEmail(
+      resetUrl,
+      frontendUrl
+    );
 
     await this.sendMail({ to, subject, text, html });
   }
 
   async sendEmailConfirmationEmail(to: string, token: string): Promise<void> {
-    const frontendUrl = this.configService
-      .getOrThrow<string>('FRONTEND_URL')
-      .replace(/\/$/, '');
+    const frontendUrl = this.getFrontendUrl();
     const confirmUrl = `${frontendUrl}/auth/confirm-email?token=${encodeURIComponent(token)}`;
-    const { subject, text, html } = buildEmailConfirmEmail(confirmUrl);
+    const { subject, text, html } = buildEmailConfirmEmail(
+      confirmUrl,
+      frontendUrl
+    );
 
     await this.sendMail({ to, subject, text, html });
   }
 
   async sendAccountInviteEmail(to: string, token: string): Promise<void> {
-    const frontendUrl = this.configService
-      .getOrThrow<string>('FRONTEND_URL')
-      .replace(/\/$/, '');
+    const frontendUrl = this.getFrontendUrl();
     const inviteUrl = `${frontendUrl}/invites/accept?token=${encodeURIComponent(
       token
     )}`;
-    const { subject, text, html } = buildAccountInviteEmail(inviteUrl);
+    const { subject, text, html } = buildAccountInviteEmail(
+      inviteUrl,
+      frontendUrl
+    );
 
     await this.sendMail({ to, subject, text, html });
   }
 
   async sendApplicationReceivedEmail(
     to: string,
-    params: ApplicationReceivedEmailParams
+    params: Omit<ApplicationReceivedEmailParams, 'frontendUrl'>
   ): Promise<void> {
-    const { subject, text, html } = buildApplicationReceivedEmail(params);
+    const { subject, text, html } = buildApplicationReceivedEmail({
+      ...params,
+      frontendUrl: this.getFrontendUrl(),
+    });
 
     await this.sendMail({ to, subject, text, html });
   }
 
   async sendNotificationEmail(
     to: string,
-    params: NotificationEmailParams
+    params: Omit<NotificationEmailParams, 'frontendUrl'>
   ): Promise<void> {
-    const { subject, text, html } = buildNotificationEmail(params);
+    const { subject, text, html } = buildNotificationEmail({
+      ...params,
+      frontendUrl: this.getFrontendUrl(),
+    });
 
     await this.sendMail({ to, subject, text, html });
   }

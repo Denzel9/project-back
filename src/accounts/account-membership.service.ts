@@ -168,6 +168,23 @@ export class AccountMembershipService {
     return membership;
   }
 
+  /**
+   * Чат (включая «Заметки» и ответы во входящих диалогах) доступен
+   * и профилю MANAGER на собственном аккаунте.
+   */
+  async assertCanChat(accountId: string, userId: string) {
+    const membership = await this.assertMembership(accountId, userId);
+
+    if (
+      membership.role !== MembershipRole.OWNER &&
+      membership.role !== MembershipRole.ADMIN
+    ) {
+      throw new ForbiddenException('Недостаточно прав для изменения');
+    }
+
+    return membership;
+  }
+
   async assertCanInvite(accountId: string, userId: string) {
     const membership = await this.assertMembership(accountId, userId);
 

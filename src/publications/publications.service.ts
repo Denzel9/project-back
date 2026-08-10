@@ -1,10 +1,12 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
   NotificationType,
+  Platform,
   Prisma,
   Role,
   TaskMediaKind,
@@ -57,6 +59,8 @@ type PublicationWithRelations = Prisma.PublicationGetPayload<{
 
 @Injectable()
 export class PublicationsService {
+  private readonly logger = new Logger(PublicationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService
@@ -118,26 +122,40 @@ export class PublicationsService {
       return created;
     });
 
-    const recipientId = this.resolveOtherParticipantId(publication, actorId);
+    const recipientIds = await this.resolvePublicationNotificationRecipientIds(
+      {
+        ownerId: publication.ownerId,
+        executorId: publication.executorId,
+        assigneeAccountId: task.assigneeAccountId,
+      },
+      actorId
+    );
 
-    if (recipientId) {
-      await this.notificationsService.notify({
-        recipientId,
-        actorId,
-        type: NotificationType.PUBLICATION_CREATED,
-        title: 'Создана публикация по задаче',
-        body: publication.title ? `«${publication.title}»` : undefined,
-        payload: {
-          entityType: 'publication',
-          entityId: publication.id,
-          postId: publication.postId,
-          taskId: publication.taskId,
-          meta: {
-            title: publication.title,
-            mediaCount: publication.media.length,
+    for (const recipientId of recipientIds) {
+      try {
+        await this.notificationsService.notify({
+          recipientId,
+          actorId,
+          type: NotificationType.PUBLICATION_CREATED,
+          title: 'Создана публикация по задаче',
+          body: publication.title ? `«${publication.title}»` : undefined,
+          payload: {
+            entityType: 'publication',
+            entityId: publication.id,
+            postId: publication.postId,
+            taskId: publication.taskId,
+            meta: {
+              title: publication.title,
+              mediaCount: publication.media.length,
+            },
           },
-        },
-      });
+        });
+      } catch (error) {
+        this.logger.error(
+          `Не удалось отправить уведомление о публикации ${publication.id} → ${recipientId}`,
+          error instanceof Error ? error.stack : String(error)
+        );
+      }
     }
   }
 
@@ -232,14 +250,48 @@ export class PublicationsService {
 
     this.assertParticipant(publication, user.userId);
 
+    const data: Prisma.PublicationUpdateInput = {
+      ...(dto.title !== undefined && { title: dto.title }),
+      ...(dto.description !== undefined && { description: dto.description }),
+      ...(dto.platform !== undefined && { platform: dto.platform }),
+    };
+
+    if (dto.links !== undefined) {
+      const merged = this.mergePlatformLinks(
+        this.parsePlatformLinks(publication.platformLinks),
+        publication.externalUrl,
+        publication.platform,
+        dto.links
+      );
+      data.platformLinks =
+        Object.keys(merged).length > 0 ? merged : Prisma.JsonNull;
+      data.externalUrl = this.firstPlatformLink(merged);
+    } else if (dto.externalUrl !== undefined) {
+      data.externalUrl = dto.externalUrl;
+
+      const existing = this.parsePlatformLinks(publication.platformLinks);
+      if (Object.keys(existing).length === 0) {
+        if (dto.externalUrl) {
+          const key =
+            publication.platform ??
+            this.firstDeliverablePlatform(publication.deliverables) ??
+            Platform.OTHER;
+          data.platformLinks = { [key]: dto.externalUrl };
+        }
+      } else if (dto.externalUrl === null) {
+        // keep platformLinks as-is when clearing legacy field alone
+      } else {
+        const key =
+          publication.platform ??
+          (Object.keys(existing)[0] as Platform | undefined) ??
+          Platform.OTHER;
+        data.platformLinks = { ...existing, [key]: dto.externalUrl };
+      }
+    }
+
     const updated = await this.prisma.publication.update({
       where: { id },
-      data: {
-        ...(dto.title !== undefined && { title: dto.title }),
-        ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.externalUrl !== undefined && { externalUrl: dto.externalUrl }),
-        ...(dto.platform !== undefined && { platform: dto.platform }),
-      },
+      data,
       include: publicationInclude,
     });
 
@@ -290,6 +342,55 @@ export class PublicationsService {
     return null;
   }
 
+  /** Peer + ответственный-менеджер (если назначен). */
+  private async resolvePublicationNotificationRecipientIds(
+    task: {
+      ownerId: string;
+      executorId: string | null;
+      assigneeAccountId: string | null;
+    },
+    actorId: string
+  ): Promise<string[]> {
+    const recipients = new Set<string>();
+
+    const peerId = this.resolveOtherParticipantId(task, actorId);
+    if (peerId) {
+      recipients.add(peerId);
+    }
+
+    if (task.assigneeAccountId) {
+      const assigneeUserId = await this.resolveAssigneeNotificationUserId(
+        task.assigneeAccountId
+      );
+
+      if (assigneeUserId) {
+        recipients.add(assigneeUserId);
+      }
+    }
+
+    recipients.delete(actorId);
+
+    return [...recipients];
+  }
+
+  private async resolveAssigneeNotificationUserId(
+    assigneeAccountId: string
+  ): Promise<string | null> {
+    const memberships = await this.prisma.accountMembership.findMany({
+      where: { accountId: assigneeAccountId },
+      select: {
+        userId: true,
+        user: { select: { role: true } },
+      },
+    });
+
+    const managerMembership = memberships.find(
+      membership => membership.user.role === Role.MANAGER
+    );
+
+    return managerMembership?.userId ?? null;
+  }
+
   private toResponse(
     publication: PublicationWithRelations
   ): PublicationResponseDto {
@@ -299,13 +400,14 @@ export class PublicationsService {
       postId: publication.postId,
       post: publication.post
         ? {
-            id: publication.post.id,
-            title: publication.post.title,
-          }
+          id: publication.post.id,
+          title: publication.post.title,
+        }
         : null,
       title: publication.title,
       description: publication.description,
       externalUrl: publication.externalUrl,
+      platformLinks: this.resolvePlatformLinksForResponse(publication),
       platform: publication.platform,
       brief: this.jsonToRecord(publication.brief),
       deliverables: publication.deliverables,
@@ -337,6 +439,100 @@ export class PublicationsService {
     }
 
     return value as Record<string, unknown>;
+  }
+
+  private parsePlatformLinks(
+    value: Prisma.JsonValue | null
+  ): Partial<Record<Platform, string>> | null {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    const result: Partial<Record<Platform, string>> = {};
+    const platformValues = new Set(Object.values(Platform));
+
+    for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+      if (!platformValues.has(key as Platform)) continue;
+      if (typeof raw !== 'string') continue;
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+      result[key as Platform] = trimmed;
+    }
+
+    return Object.keys(result).length > 0 ? result : null;
+  }
+
+  private resolvePlatformLinksForResponse(
+    publication: PublicationWithRelations
+  ): Partial<Record<Platform, string>> | null {
+    const parsed = this.parsePlatformLinks(publication.platformLinks);
+    if (parsed) return parsed;
+
+    const externalUrl = publication.externalUrl?.trim();
+    if (!externalUrl) return null;
+
+    const key =
+      publication.platform ??
+      this.firstDeliverablePlatform(publication.deliverables) ??
+      Platform.OTHER;
+
+    return { [key]: externalUrl };
+  }
+
+  private mergePlatformLinks(
+    existing: Partial<Record<Platform, string>> | null,
+    externalUrl: string | null,
+    platform: Platform | null,
+    links: { platform: Platform; url?: string | null }[]
+  ): Partial<Record<Platform, string>> {
+    const merged: Partial<Record<Platform, string>> = {
+      ...(existing ?? {}),
+    };
+
+    if (Object.keys(merged).length === 0 && externalUrl?.trim()) {
+      const key = platform ?? Platform.OTHER;
+      merged[key] = externalUrl.trim();
+    }
+
+    for (const item of links) {
+      const trimmed = item.url?.trim() ?? null;
+      if (!trimmed) {
+        delete merged[item.platform];
+      } else {
+        merged[item.platform] = trimmed;
+      }
+    }
+
+    return merged;
+  }
+
+  private firstPlatformLink(
+    links: Partial<Record<Platform, string>>
+  ): string | null {
+    for (const platform of Object.values(Platform)) {
+      const url = links[platform]?.trim();
+      if (url) return url;
+    }
+
+    return null;
+  }
+
+  private firstDeliverablePlatform(
+    deliverables: Prisma.JsonValue | null
+  ): Platform | null {
+    if (!Array.isArray(deliverables)) return null;
+
+    const platformValues = new Set(Object.values(Platform));
+
+    for (const item of deliverables) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      const platform = (item as Record<string, unknown>).platform;
+      if (typeof platform === 'string' && platformValues.has(platform as Platform)) {
+        return platform as Platform;
+      }
+    }
+
+    return null;
   }
 
   private mapOwner(user: PublicationWithRelations['owner']): ApplicationOwnerDto {

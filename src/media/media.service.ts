@@ -8,7 +8,7 @@ import { TaskMediaKind } from '@prisma/client';
 import { ChatService } from '../chat/chat.service';
 import { PostsService } from '../posts/posts.service';
 import { TasksService } from '../tasks/tasks.service';
-import { MIME_TO_EXTENSION } from './media.constants';
+import { MIME_TO_EXTENSION, sanitizeUploadFileName } from './media.constants';
 import { CopyTaskMediaKindDto } from './dto/copy-task-media-to-conversation.dto';
 import { UploadResponseDto } from './dto/upload-response.dto';
 import { StorageService } from './storage.service';
@@ -19,6 +19,8 @@ export type MediaUploadTarget = {
   taskId?: string;
   forComment?: boolean;
   taskMediaKind?: TaskMediaKind;
+  /** Client-provided original name (preferred over multer originalname) */
+  fileName?: string | null;
 };
 
 export type MediaDeleteTarget = {
@@ -79,6 +81,9 @@ export class MediaService {
     }
 
     const url = this.storageService.getPublicUrl(key);
+    const fileName =
+      sanitizeUploadFileName(target.fileName) ??
+      sanitizeUploadFileName(file.originalname);
 
     if (postId) {
       await this.postsService.addMedia(postId, {
@@ -107,6 +112,7 @@ export class MediaService {
       key,
       mimeType: file.mimetype,
       size: file.size,
+      fileName,
     };
   }
 
@@ -165,6 +171,7 @@ export class MediaService {
         key: destKey,
         mimeType: item.mimeType,
         size: Number.isFinite(size) ? size : 0,
+        fileName: null,
       });
     }
 

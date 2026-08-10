@@ -37,6 +37,7 @@ export const EMAIL_ENABLED_NOTIFICATION_TYPES = new Set<NotificationType>([
   NotificationType.TASK_CREATED,
   NotificationType.TASK_STATUS_CHANGED,
   NotificationType.TASK_EXECUTOR_ASSIGNED,
+  NotificationType.TASK_ASSIGNEE_ASSIGNED,
   NotificationType.TASK_COMMENT_CREATED,
   NotificationType.TASK_MEDIA_ADDED,
   NotificationType.TASK_DEADLINE_SOON,

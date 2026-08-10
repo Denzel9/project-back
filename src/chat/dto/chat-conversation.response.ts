@@ -42,6 +42,18 @@ export class ChatConversationResponse {
   })
   isNotes: boolean;
 
+  @ApiProperty({
+    description:
+      'Можно ли отправлять сообщения. false — исполнитель ждёт первого сообщения компании после отклика',
+  })
+  canSendMessages: boolean;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Причина блокировки отправки, если canSendMessages = false',
+  })
+  sendBlockedReason: string | null;
+
   @ApiProperty({ format: 'date-time' })
   updatedAt: Date;
 }

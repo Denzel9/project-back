@@ -192,8 +192,8 @@ export class ChatController {
   @ApiOperation({
     summary: 'Закрепить или открепить сообщение',
     description:
-      'Закреплённые сообщения общие для всех участников диалога. ' +
-      'Текст превью и счетчик вложений используются в верхней строке диалога.',
+      'PERSONAL — видно только текущему пользователю; SHARED — всем участникам. ' +
+      'На сообщение один режим. SHARED открепляет только тот, кто закрепил.',
   })
   @ApiNoContentResponse({ description: 'Готово' })
   @ApiForbiddenResponse({ description: 'Нет доступа к диалогу' })
@@ -208,7 +208,8 @@ export class ChatController {
       conversationId,
       messageId,
       user.userId,
-      dto.isPinned
+      dto.isPinned,
+      dto.scope
     );
   }
 

@@ -1,4 +1,9 @@
-export function buildAccountInviteEmail(inviteUrl: string) {
+import { renderEmailLayout } from './layout';
+
+export function buildAccountInviteEmail(
+  inviteUrl: string,
+  frontendUrl: string
+) {
   const subject = 'Приглашение управлять профилем';
 
   const text = [
@@ -9,13 +14,19 @@ export function buildAccountInviteEmail(inviteUrl: string) {
     'Ссылка действует ограниченное время.',
   ].join('\n');
 
-  const html = `
-    <p>Вас пригласили управлять профилем на платформе.</p>
-    <p><a href="${inviteUrl}">Принять приглашение</a></p>
-    <p>Если кнопка не работает, скопируйте ссылку:</p>
-    <p>${inviteUrl}</p>
-    <p>Ссылка действует ограниченное время.</p>
-  `.trim();
+  const html = renderEmailLayout({
+    frontendUrl,
+    preheader: 'Вас пригласили управлять профилем на Nikssens.',
+    title: 'Приглашение в команду',
+    bodyHtml: `
+      <p style="margin:0 0 12px;">Вас пригласили управлять профилем на платформе Nikssens.</p>
+      <p style="margin:0;">Ссылка действует ограниченное время.</p>
+    `.trim(),
+    cta: {
+      url: inviteUrl,
+      label: 'Принять приглашение',
+    },
+  });
 
   return { subject, text, html };
 }

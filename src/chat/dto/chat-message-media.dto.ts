@@ -15,4 +15,12 @@ export class ChatMessageMediaDto {
 
   @ApiProperty({ example: 'image/jpeg' })
   mimeType: string;
+
+  @ApiProperty({
+    example: 'brief.pdf',
+    required: false,
+    nullable: true,
+    description: 'Оригинальное имя файла',
+  })
+  fileName: string | null;
 }

@@ -137,7 +137,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     try {
-      await this.membershipService.assertCanWrite(user.accountId, user.userId);
+      await this.membershipService.assertCanChat(user.accountId, user.userId);
       await this.assertEmailConfirmed(user.userId);
 
       const message = await this.chatService.createMessage(
@@ -202,7 +202,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     try {
-      await this.membershipService.assertCanWrite(user.accountId, user.userId);
+      await this.membershipService.assertCanChat(user.accountId, user.userId);
       await this.assertEmailConfirmed(user.userId);
 
       await this.chatService.updateMessage(
@@ -232,7 +232,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     try {
-      await this.membershipService.assertCanWrite(user.accountId, user.userId);
+      await this.membershipService.assertCanChat(user.accountId, user.userId);
       await this.assertEmailConfirmed(user.userId);
 
       await this.chatService.removeMessage(
@@ -253,6 +253,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   broadcastMessage(conversationId: string, message: ChatMessageDto): void {
     this.server.to(this.getRoomName(conversationId)).emit('message', message);
+  }
+
+  broadcastMessageToUser(userId: string, message: ChatMessageDto): void {
+    this.server.to(this.getUserRoomName(userId)).emit('message', message);
   }
 
   broadcastMessagesRead(

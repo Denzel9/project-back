@@ -132,6 +132,10 @@ export function buildPostFieldFilters(
     andFilters.push({ workFormat: query.workFormat });
   }
 
+  if (query.employmentType !== undefined) {
+    andFilters.push({ employmentType: query.employmentType });
+  }
+
   const createdAtFilter = buildCalendarDayFilter(query.createdDate);
   if (createdAtFilter) {
     andFilters.push({ createdAt: createdAtFilter });

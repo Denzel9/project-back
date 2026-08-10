@@ -384,6 +384,7 @@ export class PostsService {
       ...(budget && { budget: budget as PostResponseDto['budget'] }),
       ...(post.deadline && { deadline: post.deadline.toISOString() }),
       ...(post.workFormat && { workFormat: post.workFormat }),
+      ...(post.employmentType && { employmentType: post.employmentType }),
       ...(location && { location: location as PostResponseDto['location'] }),
       ...(bloggerRequirements && { bloggerRequirements }),
       ...(cooperationDetails && { cooperationDetails }),

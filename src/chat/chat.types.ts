@@ -3,6 +3,7 @@ export type ChatMessageMediaDto = {
   key: string;
   size: string;
   mimeType: string;
+  fileName: string | null;
 };
 
 export type ChatMessageMediaInput = {
@@ -10,6 +11,7 @@ export type ChatMessageMediaInput = {
   key: string;
   mimeType: string;
   size: number | string;
+  fileName?: string | null;
 };
 
 export type ChatMessageDto = {
@@ -42,6 +44,7 @@ export type ChatMessagePinDto = {
   messageId: string;
   content: string;
   mediaCount: number;
+  scope: 'PERSONAL' | 'SHARED';
   pinnedAt: Date;
   pinnedById?: string;
   createdAt: Date;
@@ -59,6 +62,7 @@ export type ChatAttachmentDto = {
   key: string;
   size: string;
   mimeType: string;
+  fileName: string | null;
   createdAt: Date;
 };
 
@@ -78,6 +82,9 @@ export type ChatConversationDto = {
   isMarkedUnread: boolean;
   isPinned: boolean;
   isNotes: boolean;
+  /** false — исполнитель ждёт первого сообщения от компании после отклика */
+  canSendMessages: boolean;
+  sendBlockedReason: string | null;
   updatedAt: Date;
 };
 

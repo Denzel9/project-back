@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { MessagePinScope } from '@prisma/client';
 
 export class ChatMessagePinResponse {
   @ApiProperty({ format: 'uuid' })
@@ -11,6 +12,9 @@ export class ChatMessagePinResponse {
     description: 'Количество вложений у закреплённого сообщения',
   })
   mediaCount: number;
+
+  @ApiProperty({ enum: MessagePinScope })
+  scope: MessagePinScope;
 
   @ApiProperty({ format: 'date-time' })
   pinnedAt: Date;
@@ -33,4 +37,3 @@ export class ChatMessagePinResponse {
   @ApiProperty({ nullable: true, enum: ['OWNER', 'MANAGER'] })
   actorKind: 'OWNER' | 'MANAGER' | null;
 }
-

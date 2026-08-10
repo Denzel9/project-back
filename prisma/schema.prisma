@@ -52,6 +52,11 @@ enum WorkFormat {
   HYBRID
 }
 
+enum EmploymentType {
+  STAFF
+  ONE_TIME
+}
+
 enum BudgetType {
   FIXED
   RANGE
@@ -152,6 +157,7 @@ enum NotificationType {
   TASK_CREATED
   TASK_STATUS_CHANGED
   TASK_EXECUTOR_ASSIGNED
+  TASK_ASSIGNEE_ASSIGNED
   TASK_COMMENT_CREATED
   TASK_MEDIA_ADDED
   TASK_DEADLINE_SOON
@@ -192,6 +198,11 @@ enum PrimeStatus {
   ACTIVE
   EXPIRED
   CANCELED
+}
+
+enum MessagePinScope {
+  PERSONAL
+  SHARED
 }
 
 model Account {
@@ -452,6 +463,8 @@ model MessageMedia {
   key       String
   size      String
   mimeType  String
+  /// Оригинальное имя файла при загрузке (для отображения; в storage — uuid)
+  fileName  String?
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
 
@@ -459,18 +472,21 @@ model MessageMedia {
 }
 
 model MessagePin {
-  id             String       @id @default(uuid())
+  id             String          @id @default(uuid())
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation   Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  messageId String @unique
+  messageId String
   message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
-  pinnedAt   DateTime @default(now())
+  scope      MessagePinScope @default(SHARED)
+  pinnedAt   DateTime        @default(now())
   pinnedById String
-  pinnedBy   User     @relation(fields: [pinnedById], references: [id], onDelete: Cascade)
+  pinnedBy   User            @relation(fields: [pinnedById], references: [id], onDelete: Cascade)
 
+  @@unique([messageId, pinnedById])
   @@index([conversationId, pinnedAt])
+  @@index([messageId])
 }
 
 model CreatorProfile {
@@ -508,6 +524,7 @@ model Post {
   budget              Json?
   deadline            DateTime?
   workFormat          WorkFormat?
+  employmentType      EmploymentType?
   location            Json?
   minFollowers        Int?
   maxFollowers        Int?
@@ -853,13 +870,14 @@ model Publication {
   owner        User               @relation("OwnedPublications", fields: [ownerId], references: [id], onDelete: Cascade)
   executorId   String?
   executor     User?              @relation("ExecutedPublications", fields: [executorId], references: [id], onDelete: SetNull)
-  title        String?
-  description  String             @default("")
-  externalUrl  String?
-  platform     Platform?
-  brief        Json?
-  deliverables Json?
-  location     Json?
+  title         String?
+  description   String             @default("")
+  externalUrl   String?
+  platformLinks Json?
+  platform      Platform?
+  brief         Json?
+  deliverables  Json?
+  location      Json?
   status       PublicationStatus  @default(PUBLISHED)
   media        PublicationMedia[]
   publishedAt  DateTime           @default(now())

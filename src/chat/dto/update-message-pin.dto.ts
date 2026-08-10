@@ -1,5 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MessagePinScope } from '@prisma/client';
+import { IsBoolean, IsEnum, ValidateIf } from 'class-validator';
 
 export class UpdateChatMessagePinDto {
   @ApiProperty({
@@ -7,5 +8,13 @@ export class UpdateChatMessagePinDto {
   })
   @IsBoolean()
   isPinned: boolean;
-}
 
+  @ApiPropertyOptional({
+    enum: MessagePinScope,
+    description:
+      'Обязателен при isPinned=true. PERSONAL — только для себя, SHARED — для всех участников',
+  })
+  @ValidateIf(dto => dto.isPinned === true)
+  @IsEnum(MessagePinScope)
+  scope?: MessagePinScope;
+}

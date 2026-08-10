@@ -2,9 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import {
   ApplicationStatus,
@@ -17,6 +19,9 @@ import {
 } from '@prisma/client';
 import { AuthUser } from '../auth/auth.types';
 import { ActorAttributionService } from '../accounts/actor-attribution.service';
+import { PrimeSubscriptionService } from '../billing/prime-subscription.service';
+import { ChatGateway } from '../chat/chat.gateway';
+import { ChatService } from '../chat/chat.service';
 import { buildCalendarDayFilter } from '../common/date/calendar-day-filter';
 import { formatApplicationStatus } from '../notifications/notification-labels.util';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -99,7 +104,12 @@ export class ApplicationsService {
     private readonly prisma: PrismaService,
     private readonly tasksService: TasksService,
     private readonly notificationsService: NotificationsService,
-    private readonly actorAttribution: ActorAttributionService
+    private readonly actorAttribution: ActorAttributionService,
+    private readonly primeSubscriptionService: PrimeSubscriptionService,
+    @Inject(forwardRef(() => ChatService))
+    private readonly chatService: ChatService,
+    @Inject(forwardRef(() => ChatGateway))
+    private readonly chatGateway: ChatGateway
   ) {}
 
   async create(
@@ -149,6 +159,11 @@ export class ApplicationsService {
         application,
         user.userId,
         actor
+      );
+
+      await this.sendApplicationCoverLetterToChat(
+        application,
+        user.accountId
       );
 
       return this.mapApplication(application, { includePost: true });
@@ -348,6 +363,14 @@ export class ApplicationsService {
       user.userId
     );
 
+    const shouldCreateTask =
+      dto.status === ApplicationStatus.ACCEPTED &&
+      (
+        await this.primeSubscriptionService.getSubscription(
+          application.post.ownerId
+        )
+      ).isPrime;
+
     const updated = await this.prisma.$transaction(async tx => {
       const application = await tx.postApplication.update({
         where: { id },
@@ -360,7 +383,7 @@ export class ApplicationsService {
         include: applicationInclude,
       });
 
-      if (dto.status === ApplicationStatus.ACCEPTED) {
+      if (shouldCreateTask) {
         createdTask = await this.tasksService.createFromAcceptedApplication(
           tx,
           id,
@@ -589,7 +612,7 @@ export class ApplicationsService {
         actor,
         type: NotificationType.APPLICATION_NEW,
         title: `Новый отклик на «${application.post.title}»`,
-        body: `${this.getApplicantDisplayName(application.applicant)}: ${application.message}`,
+        body: `${this.getApplicantDisplayName(application.applicant)}: ${this.truncateNotificationBody(application.message)}`,
         payload: {
           entityType: 'application',
           entityId: application.id,
@@ -606,6 +629,43 @@ export class ApplicationsService {
     }
   }
 
+  private async sendApplicationCoverLetterToChat(
+    application: ApplicationWithRelations,
+    actorAccountId: string
+  ) {
+    const content = application.message?.trim();
+
+    if (!content) {
+      return;
+    }
+
+    try {
+      const conversation = await this.chatService.findOrCreateConversation(
+        application.applicantId,
+        application.post.ownerId
+      );
+
+      const message = await this.chatService.createMessage(
+        conversation.id,
+        application.applicantId,
+        content,
+        [],
+        {
+          skipNotify: true,
+          skipApplicantWriteGuard: true,
+        },
+        actorAccountId
+      );
+
+      this.chatGateway.broadcastMessage(conversation.id, message);
+    } catch (error) {
+      this.logger.error(
+        'Не удалось отправить сопроводительное в чат после отклика',
+        error
+      );
+    }
+  }
+
   private getApplicantDisplayName(
     applicant: ApplicationWithRelations['applicant']
   ): string {
@@ -618,6 +678,16 @@ export class ApplicationsService {
     }
 
     return applicant.role;
+  }
+
+  private truncateNotificationBody(message: string, maxLength = 160): string {
+    const normalized = message.replace(/\s+/g, ' ').trim();
+
+    if (normalized.length <= maxLength) {
+      return normalized;
+    }
+
+    return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
   }
 
   private async toApplicationResponse(

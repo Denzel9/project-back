@@ -70,7 +70,7 @@ export class PostsController {
       'С `ownerId` = свой id — все свои посты (включая приватные). ' +
       'Поиск: `q` — по title или companyName; `title` — только по названию поста. ' +
       'Базовые фильтры: `type` (свои), `isArchived`, `isPrivate` (свои). ' +
-      'Доп. фильтры: `urgent`, `hasPhoto`, `chips`, `categories`, `platforms`, `placementFormats`, `niche`, `tags`, `workFormat`, ' +
+      'Доп. фильтры: `urgent`, `hasPhoto`, `chips`, `categories`, `platforms`, `placementFormats`, `niche`, `tags`, `workFormat`, `employmentType`, ' +
       '`createdDate`, `deadlineDate`, `budgetType`, `budgetCurrency`, `paymentTerms`, `locationCity`, `locationCountry`, `shootingRequired`, ' +
       '`minFollowers`, `maxFollowers`, `minEngagementRate`, `verifiedAccount`, `experienceWithAds`, `contentStyle`, ' +
       '`exclusivity`, `exclusivityDays`, `usageRights`, `usageDurationDays`, `requiresMarking`, `requiresContract`, `ndaRequired`, ' +

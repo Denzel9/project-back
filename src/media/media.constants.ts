@@ -45,6 +45,26 @@ export const MIME_TO_EXTENSION: Record<string, string> = {
     'docx',
 };
 
+/** Safe display name from multer `originalname` (path stripped, length capped). */
+export const sanitizeUploadFileName = (
+  originalName?: string | null
+): string | null => {
+  if (!originalName?.trim()) {
+    return null;
+  }
+
+  const base = originalName
+    .replace(/^.*[/\\]/, '')
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .trim();
+
+  if (!base || base === '.' || base === '..') {
+    return null;
+  }
+
+  return base.slice(0, 255);
+};
+
 export function isAllowedImageMime(mimetype: string): boolean {
   return (ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(mimetype);
 }

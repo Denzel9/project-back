@@ -5,6 +5,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
   forwardRef,
 } from '@nestjs/common';
@@ -221,6 +222,8 @@ type TaskChange = {
 
 @Injectable()
 export class TasksService {
+  private readonly logger = new Logger(TasksService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
@@ -1805,23 +1808,18 @@ export class TasksService {
     changes: TaskChange[],
     actor?: ActorSnapshot | null
   ): Promise<void> {
-    const recipientId = this.resolveOtherParticipantId(previous, actorId);
-
-    if (!recipientId) {
-      return;
-    }
-
+    const peerRecipientId = this.resolveOtherParticipantId(previous, actorId);
     const taskTitle = updated.title ?? 'Задача';
 
     for (const change of changes) {
-      if (change.type === TaskActivityType.STATUS_CHANGED) {
+      if (change.type === TaskActivityType.STATUS_CHANGED && peerRecipientId) {
         const payload = change.payload as {
           from: TaskStatus;
           to: TaskStatus;
         };
 
         await this.notificationsService.notify({
-          recipientId,
+          recipientId: peerRecipientId,
           actorId,
           actor,
           type: NotificationType.TASK_STATUS_CHANGED,
@@ -1868,7 +1866,97 @@ export class TasksService {
           });
         }
       }
+
+      if (
+        change.type === TaskActivityType.FIELD_UPDATED &&
+        (change.payload as { field?: string }).field === 'assignee'
+      ) {
+        const assigneeAccountId = updated.assigneeAccountId;
+
+        if (!assigneeAccountId) {
+          continue;
+        }
+
+        const assigneeUserId =
+          await this.resolveAssigneeNotificationUserId(assigneeAccountId);
+
+        if (!assigneeUserId || assigneeUserId === actorId) {
+          continue;
+        }
+
+        await this.notificationsService.notify({
+          recipientId: assigneeUserId,
+          actorId,
+          actor,
+          type: NotificationType.TASK_ASSIGNEE_ASSIGNED,
+          title: 'Вас назначили ответственным',
+          body: `«${taskTitle}»`,
+          payload: {
+            entityType: 'task',
+            entityId: updated.id,
+            postId: updated.postId,
+            taskId: updated.id,
+            meta: { taskTitle: updated.title },
+          },
+        });
+      }
     }
+  }
+
+  /** UserId менеджера по аккаунту ответственного (для in-app уведомлений). */
+  private async resolveAssigneeNotificationUserId(
+    assigneeAccountId: string
+  ): Promise<string | null> {
+    const memberships = await this.prisma.accountMembership.findMany({
+      where: { accountId: assigneeAccountId },
+      select: {
+        userId: true,
+        user: { select: { role: true } },
+      },
+    });
+
+    const managerMembership = memberships.find(
+      membership => membership.user.role === Role.MANAGER
+    );
+
+    return managerMembership?.userId ?? null;
+  }
+
+  /**
+   * Кому слать TASK_COMMENT_CREATED:
+   * — peer (owner ↔ executor);
+   * — ответственный-менеджер, если комментарий с стороны исполнителя.
+   */
+  private async resolveCommentNotificationRecipientIds(
+    task: {
+      ownerId: string;
+      executorId: string | null;
+      assigneeAccountId: string | null;
+    },
+    actorId: string
+  ): Promise<string[]> {
+    const recipients = new Set<string>();
+
+    const peerId = this.resolveOtherParticipantId(task, actorId);
+    if (peerId) {
+      recipients.add(peerId);
+    }
+
+    const isExecutorComment = task.executorId === actorId;
+
+    if (isExecutorComment && task.assigneeAccountId) {
+      const assigneeUserId = await this.resolveAssigneeNotificationUserId(
+        task.assigneeAccountId
+      );
+
+      if (assigneeUserId) {
+        recipients.add(assigneeUserId);
+      }
+    }
+
+    recipients.delete(actorId);
+
+    return [...recipients];
   }
 
   private resolveOtherParticipantId(
@@ -2615,9 +2703,12 @@ export class TasksService {
       data: { updatedAt: comment.createdAt },
     });
 
-    const recipientId = this.resolveOtherParticipantId(task, user.userId);
+    const recipientIds = await this.resolveCommentNotificationRecipientIds(
+      task,
+      user.userId
+    );
 
-    if (recipientId) {
+    if (recipientIds.length > 0) {
       const preview =
         content.length > 0
           ? content.slice(0, 200)
@@ -2625,24 +2716,33 @@ export class TasksService {
             ? '[медиа]'
             : '';
 
-      await this.notificationsService.notify({
-        recipientId,
-        actorId: user.userId,
-        actor,
-        type: NotificationType.TASK_COMMENT_CREATED,
-        title: 'Новый комментарий к задаче',
-        body: preview,
-        payload: {
-          entityType: 'task',
-          entityId: taskId,
-          postId: task.postId,
-          taskId,
-          meta: {
-            commentId: comment.id,
-            preview,
-          },
-        },
-      });
+      for (const recipientId of recipientIds) {
+        try {
+          await this.notificationsService.notify({
+            recipientId,
+            actorId: user.userId,
+            actor,
+            type: NotificationType.TASK_COMMENT_CREATED,
+            title: 'Новый комментарий к задаче',
+            body: preview,
+            payload: {
+              entityType: 'task',
+              entityId: taskId,
+              postId: task.postId,
+              taskId,
+              meta: {
+                commentId: comment.id,
+                preview,
+              },
+            },
+          });
+        } catch (error) {
+          this.logger.error(
+            `Не удалось отправить уведомление о комментарии задачи ${taskId} → ${recipientId}`,
+            error instanceof Error ? error.stack : String(error)
+          );
+        }
+      }
     }
 
     const readState = await this.getTaskCommentReadState(task, user.userId);

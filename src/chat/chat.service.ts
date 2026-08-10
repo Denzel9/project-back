@@ -4,10 +4,17 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
   forwardRef,
 } from '@nestjs/common';
-import { Role, Prisma, NotificationType, MessageActorKind } from '@prisma/client';
+import {
+  Role,
+  Prisma,
+  NotificationType,
+  MessageActorKind,
+  MessagePinScope,
+} from '@prisma/client';
 import {
   ActorAttributionService,
   type ActorSnapshot,
@@ -16,6 +23,7 @@ import { StorageService } from '../media/storage.service';
 import {
   ALLOWED_DOCUMENT_MIME_TYPES,
   MIME_TO_EXTENSION,
+  sanitizeUploadFileName,
 } from '../media/media.constants';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
@@ -109,6 +117,8 @@ const buildConversationSearchWhere = (
 
 @Injectable()
 export class ChatService {
+  private readonly logger = new Logger(ChatService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
@@ -219,65 +229,9 @@ export class ChatService {
     });
 
     return Promise.all(
-      participations.map(
-        async ({
-          lastReadAt,
-          unreadAnchorMessageId,
-          isMarkedUnread,
-          isPinned,
-          conversation,
-        }) => {
-        const viewerParticipant = conversation.participants.find(
-          participant => participant.userId === userId
-        );
-        const peerParticipant = conversation.participants.find(
-          participant => participant.userId !== userId
-        );
-
-        if (!viewerParticipant) {
-          throw new NotFoundException('Собеседник не найден');
-        }
-
-        const isNotes = conversation.isNotes;
-        let peer: ChatPeerDto;
-        let peerLastReadAt: Date | null;
-
-        if (isNotes) {
-          peer = {
-            ...this.mapPeer(viewerParticipant.user),
-            displayName: 'Заметки',
-          };
-          peerLastReadAt = viewerParticipant.lastReadAt;
-        } else if (!peerParticipant) {
-          throw new NotFoundException('Собеседник не найден');
-        } else {
-          peer = this.mapPeer(peerParticipant.user);
-          peerLastReadAt = peerParticipant.lastReadAt;
-        }
-
-        const lastMessage = conversation.messages[0];
-        const unreadCount = await countUnreadMessages(
-          this.prisma,
-          conversation.id,
-          userId,
-          lastReadAt,
-          unreadAnchorMessageId
-        );
-
-        return {
-          id: conversation.id,
-          peer,
-          lastMessage: lastMessage
-            ? this.mapMessage(lastMessage, userId, lastReadAt, peerLastReadAt)
-            : null,
-          unreadCount,
-          unreadAnchorMessageId: unreadAnchorMessageId ?? null,
-          isMarkedUnread: isMarkedUnread ?? false,
-          isPinned,
-          isNotes,
-          updatedAt: conversation.updatedAt,
-        };
-      })
+      participations.map(({ conversation }) =>
+        this.mapConversation(conversation, userId)
+      )
     );
   }
 
@@ -325,6 +279,12 @@ export class ChatService {
 
     if (existing) {
       return this.mapConversation(existing, userId);
+    }
+
+    if (currentUser.role === Role.MANAGER) {
+      throw new ForbiddenException(
+        'Менеджер не может начинать новые диалоги. Можно отвечать во входящих и писать в «Заметки».'
+      );
     }
 
     const created = await this.prisma.conversation.create({
@@ -456,7 +416,8 @@ export class ChatService {
     conversationId: string,
     messageId: string,
     userId: string,
-    isPinned: boolean
+    isPinned: boolean,
+    scope?: MessagePinScope
   ): Promise<void> {
     await this.assertParticipant(conversationId, userId);
 
@@ -470,24 +431,78 @@ export class ChatService {
     }
 
     if (isPinned) {
-      await this.prisma.messagePin.upsert({
+      if (!scope) {
+        throw new BadRequestException(
+          'Укажите scope: PERSONAL или SHARED'
+        );
+      }
+
+      const existingPins = await this.prisma.messagePin.findMany({
         where: { messageId },
+        select: { id: true, scope: true, pinnedById: true },
+      });
+
+      const otherPins = existingPins.filter(pin => pin.pinnedById !== userId);
+
+      if (scope === MessagePinScope.PERSONAL) {
+        const foreignShared = otherPins.find(
+          pin => pin.scope === MessagePinScope.SHARED
+        );
+
+        if (foreignShared) {
+          throw new ForbiddenException(
+            'Сообщение уже закреплено для всех'
+          );
+        }
+      }
+
+      if (scope === MessagePinScope.SHARED && otherPins.length > 0) {
+        throw new ForbiddenException(
+          'Сообщение уже закреплено другим участником'
+        );
+      }
+
+      await this.prisma.messagePin.upsert({
+        where: {
+          messageId_pinnedById: { messageId, pinnedById: userId },
+        },
         create: {
           conversationId,
           messageId,
           pinnedById: userId,
+          scope,
         },
         update: {
           conversationId,
           pinnedAt: new Date(),
-          pinnedById: userId,
+          scope,
         },
       });
       return;
     }
 
-    // messageId уникален, но deleteMany более безопасен (не падает, если записи ещё нет)
-    await this.prisma.messagePin.deleteMany({ where: { messageId } });
+    const ownPin = await this.prisma.messagePin.findUnique({
+      where: {
+        messageId_pinnedById: { messageId, pinnedById: userId },
+      },
+      select: { id: true },
+    });
+
+    if (ownPin) {
+      await this.prisma.messagePin.delete({ where: { id: ownPin.id } });
+      return;
+    }
+
+    const sharedPin = await this.prisma.messagePin.findFirst({
+      where: { messageId, scope: MessagePinScope.SHARED },
+      select: { id: true, pinnedById: true },
+    });
+
+    if (sharedPin) {
+      throw new ForbiddenException(
+        'Открепить общее закрепление может только тот, кто закрепил'
+      );
+    }
   }
 
   async listMessagePins(
@@ -498,11 +513,18 @@ export class ChatService {
     await this.assertParticipant(conversationId, userId);
 
     const pins = await this.prisma.messagePin.findMany({
-      where: { conversationId },
+      where: {
+        conversationId,
+        OR: [
+          { scope: MessagePinScope.SHARED },
+          { scope: MessagePinScope.PERSONAL, pinnedById: userId },
+        ],
+      },
       orderBy: { pinnedAt: 'desc' },
       take: limit,
       select: {
         messageId: true,
+        scope: true,
         pinnedAt: true,
         pinnedById: true,
         message: {
@@ -525,6 +547,7 @@ export class ChatService {
       messageId: pin.messageId,
       content: pin.message.content,
       mediaCount: pin.message._count.media,
+      scope: pin.scope,
       pinnedAt: pin.pinnedAt,
       pinnedById: pin.pinnedById ?? undefined,
       createdAt: pin.message.createdAt,
@@ -1105,6 +1128,8 @@ export class ChatService {
       redirectedFromUserId?: string | null;
       redirectedFromDisplayName?: string | null;
       replyToId?: string | null;
+      skipNotify?: boolean;
+      skipApplicantWriteGuard?: boolean;
     },
     actorAccountId?: string
   ): Promise<ChatMessageDto> {
@@ -1115,6 +1140,10 @@ export class ChatService {
     }
 
     await this.assertParticipant(conversationId, senderId);
+
+    if (!options?.skipApplicantWriteGuard) {
+      await this.assertApplicantMayWrite(conversationId, senderId);
+    }
 
     const normalizedMedia = await this.prepareMessageMediaForConversation(
       conversationId,
@@ -1139,24 +1168,58 @@ export class ChatService {
       )
     );
 
-    await this.notifyRecipientAboutMessage(
-      conversationId,
-      senderId,
-      message,
-      actor
-    );
+    if (!options?.skipNotify) {
+      try {
+        await this.notifyRecipientAboutMessage(
+          conversationId,
+          senderId,
+          message,
+          actor
+        );
+      } catch (error) {
+        // Сообщение уже сохранено — не откатываем отправку из‑за сбоя notify
+        this.logger.error(
+          'Не удалось отправить уведомление о сообщении в чате',
+          error instanceof Error ? error.stack : String(error)
+        );
+      }
+    }
 
     const readState = await this.getConversationReadState(
       conversationId,
       senderId
     );
 
-    return this.mapMessage(
+    const mappedForSender = this.mapMessage(
       message,
       senderId,
       readState.viewerLastReadAt,
       readState.peerLastReadAt
     );
+
+    const recipientId = await this.findConversationPeerId(
+      conversationId,
+      senderId
+    );
+
+    if (recipientId) {
+      const recipientReadState = await this.getConversationReadState(
+        conversationId,
+        recipientId
+      );
+      const mappedForRecipient = this.mapMessage(
+        message,
+        recipientId,
+        recipientReadState.viewerLastReadAt,
+        recipientReadState.peerLastReadAt
+      );
+      this.chatGateway.broadcastMessageToUser(
+        recipientId,
+        mappedForRecipient
+      );
+    }
+
+    return mappedForSender;
   }
 
   /**
@@ -1178,7 +1241,10 @@ export class ChatService {
 
     for (const item of media) {
       if (item.key.startsWith(expectedKeyPrefix)) {
-        prepared.push(item);
+        prepared.push({
+          ...item,
+          fileName: sanitizeUploadFileName(item.fileName),
+        });
         continue;
       }
 
@@ -1206,7 +1272,7 @@ export class ChatService {
             ...this.notHiddenFilter(userId),
           },
         },
-        select: { id: true, mimeType: true, size: true },
+        select: { id: true, mimeType: true, size: true, fileName: true },
       });
 
       if (!sourceMedia) {
@@ -1239,6 +1305,8 @@ export class ChatService {
         key: destKey,
         size: item.size || sourceMedia.size,
         mimeType: item.mimeType || sourceMedia.mimeType,
+        fileName:
+          sanitizeUploadFileName(item.fileName) ?? sourceMedia.fileName,
       });
     }
 
@@ -1255,14 +1323,10 @@ export class ChatService {
     },
     actor: ActorSnapshot | null = null
   ): Promise<void> {
-    const participants = await this.prisma.conversationParticipant.findMany({
-      where: { conversationId },
-      select: { userId: true },
-    });
-
-    const recipientId = participants
-      .map(participant => participant.userId)
-      .find(userId => userId !== senderId);
+    const recipientId = await this.findConversationPeerId(
+      conversationId,
+      senderId
+    );
 
     if (!recipientId) {
       return;
@@ -1292,6 +1356,22 @@ export class ChatService {
         },
       },
     });
+  }
+
+  private async findConversationPeerId(
+    conversationId: string,
+    userId: string
+  ): Promise<string | null> {
+    const participants = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId },
+      select: { userId: true },
+    });
+
+    return (
+      participants
+        .map(participant => participant.userId)
+        .find(participantId => participantId !== userId) ?? null
+    );
   }
 
   private async createMessageInTransaction(
@@ -1383,6 +1463,7 @@ export class ChatService {
               key: item.key,
               size: String(item.size),
               mimeType: item.mimeType,
+              fileName: sanitizeUploadFileName(item.fileName),
               sortOrder: index,
             })),
           },
@@ -1415,6 +1496,95 @@ export class ChatService {
     if (!participant) {
       throw new ForbiddenException('Нет доступа к этому диалогу');
     }
+  }
+
+  /**
+   * После отклика на объявление компании исполнитель не может писать,
+   * пока компания не отправит хотя бы одно сообщение в этом диалоге.
+   */
+  async getSendPermission(
+    conversationId: string,
+    userId: string
+  ): Promise<{ canSendMessages: boolean; sendBlockedReason: string | null }> {
+    const blockedReason = await this.getApplicantWriteBlockReason(
+      conversationId,
+      userId
+    );
+
+    return {
+      canSendMessages: blockedReason === null,
+      sendBlockedReason: blockedReason,
+    };
+  }
+
+  private async assertApplicantMayWrite(
+    conversationId: string,
+    senderId: string
+  ): Promise<void> {
+    const reason = await this.getApplicantWriteBlockReason(
+      conversationId,
+      senderId
+    );
+
+    if (reason) {
+      throw new ForbiddenException(reason);
+    }
+  }
+
+  private async getApplicantWriteBlockReason(
+    conversationId: string,
+    senderId: string
+  ): Promise<string | null> {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { isNotes: true },
+    });
+
+    if (!conversation || conversation.isNotes) {
+      return null;
+    }
+
+    const participants = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId },
+      select: { userId: true },
+    });
+
+    const peerId = participants
+      .map(participant => participant.userId)
+      .find(userId => userId !== senderId);
+
+    if (!peerId) {
+      return null;
+    }
+
+    const application = await this.prisma.postApplication.findFirst({
+      where: {
+        applicantId: senderId,
+        post: {
+          ownerId: peerId,
+          owner: { role: Role.COMPANY },
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!application) {
+      return null;
+    }
+
+    const companyMessage = await this.prisma.message.findFirst({
+      where: {
+        conversationId,
+        senderId: peerId,
+      },
+      select: { id: true },
+    });
+
+    if (companyMessage) {
+      return null;
+    }
+
+    return 'Дождитесь первого сообщения от компании';
   }
 
   private async mapConversation(
@@ -1452,6 +1622,7 @@ export class ChatService {
           key: string;
           size: string;
           mimeType: string;
+          fileName?: string | null;
         }>;
       }>;
     },
@@ -1498,6 +1669,11 @@ export class ChatService {
       unreadAnchorMessageId
     );
 
+    const sendPermission = await this.getSendPermission(
+      conversation.id,
+      userId
+    );
+
     return {
       id: conversation.id,
       peer,
@@ -1509,6 +1685,8 @@ export class ChatService {
       isMarkedUnread,
       isPinned: viewerParticipant.isPinned ?? false,
       isNotes,
+      canSendMessages: sendPermission.canSendMessages,
+      sendBlockedReason: sendPermission.sendBlockedReason,
       updatedAt: conversation.updatedAt,
     };
   }
@@ -1563,6 +1741,7 @@ export class ChatService {
         key: string;
         size: string;
         mimeType: string;
+        fileName?: string | null;
       }>;
     },
     viewerId: string,
@@ -1582,6 +1761,7 @@ export class ChatService {
         key: item.key,
         size: item.size,
         mimeType: item.mimeType,
+        fileName: item.fileName ?? null,
       })),
       createdAt: message.createdAt,
       editedAt: message.editedAt ?? null,
@@ -1636,6 +1816,7 @@ export class ChatService {
     key: string;
     size: string;
     mimeType: string;
+    fileName?: string | null;
     message: {
       id: string;
       senderId: string;
@@ -1650,6 +1831,7 @@ export class ChatService {
       key: attachment.key,
       size: attachment.size,
       mimeType: attachment.mimeType,
+      fileName: attachment.fileName ?? null,
       createdAt: attachment.message.createdAt,
     };
   }

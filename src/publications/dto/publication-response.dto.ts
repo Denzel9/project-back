@@ -53,6 +53,14 @@ export class PublicationResponseDto {
   @ApiPropertyOptional({ nullable: true })
   externalUrl: string | null;
 
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: { type: 'string' },
+    nullable: true,
+    description: 'Ссылки на публикацию по платформам',
+  })
+  platformLinks: Partial<Record<Platform, string>> | null;
+
   @ApiPropertyOptional({ enum: Platform, nullable: true })
   platform: Platform | null;
 

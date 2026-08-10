@@ -8,6 +8,7 @@ export const DEFAULT_IN_APP_NOTIFICATION_TYPES: NotificationType[] = [
   NotificationType.TASK_CREATED,
   NotificationType.TASK_STATUS_CHANGED,
   NotificationType.TASK_EXECUTOR_ASSIGNED,
+  NotificationType.TASK_ASSIGNEE_ASSIGNED,
   NotificationType.TASK_COMMENT_CREATED,
   NotificationType.TASK_MEDIA_ADDED,
   NotificationType.TASK_DEADLINE_SOON,

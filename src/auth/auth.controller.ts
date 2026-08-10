@@ -221,12 +221,14 @@ export class AuthController {
     description:
       'Отправляет письмо на email приглашённого. userId — **существующий** профиль, которым вы управляете. ' +
       'Требуется роль OWNER или ADMIN на этом профиле. ' +
+      'Для профиля компании нужна активная Prime-подписка. ' +
       'Роль invite: ADMIN (не OWNER). ' +
       'Приглашённый должен зарегистрироваться/войти своим email и принять invite.',
   })
   @ApiCreatedResponse({ description: 'Приглашение создано, письмо отправлено' })
   @ApiForbiddenResponse({
-    description: 'Недостаточно прав (нужен OWNER/ADMIN на профиле)',
+    description:
+      'Недостаточно прав (нужен OWNER/ADMIN на профиле) или нет Prime у компании',
   })
   createInvite(@CurrentUser() user: AuthUser, @Body() dto: CreateInviteDto) {
     return this.authService.createInvite(user, dto);

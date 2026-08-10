@@ -3,6 +3,7 @@ import {
   PlacementFormat,
   Platform,
   PostAuthorType,
+  EmploymentType,
   WorkFormat,
 } from '@prisma/client';
 import { Type } from 'class-transformer';
@@ -13,6 +14,8 @@ import {
   IsEnum,
   IsOptional,
   IsString,
+  MaxLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { ApplicationOwnerDto } from '../../applications/dto/application-owner.dto';
@@ -41,9 +44,10 @@ export class CreatePostDto {
   @IsString({ each: true })
   chips?: string[];
 
-  @ApiPropertyOptional({ example: '', default: '' })
+  @ApiPropertyOptional({ example: '', default: '', maxLength: 1000 })
   @IsOptional()
   @IsString()
+  @MaxLength(1000)
   description?: string;
 
   @ApiPropertyOptional({ default: false })
@@ -101,6 +105,16 @@ export class CreatePostDto {
   @IsOptional()
   @IsEnum(WorkFormat)
   workFormat?: WorkFormat;
+
+  @ApiPropertyOptional({
+    enum: EmploymentType,
+    nullable: true,
+    description: 'Тип занятости: STAFF — в штат, ONE_TIME — разовое сотрудничество',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsEnum(EmploymentType)
+  employmentType?: EmploymentType | null;
 
   @ApiPropertyOptional({ type: PostLocationDto })
   @IsOptional()

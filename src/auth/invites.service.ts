@@ -10,6 +10,7 @@ import { MembershipRole, NotificationType, Role } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { AccountMembershipService } from '../accounts/account-membership.service';
 import { AccountsService } from '../accounts/accounts.service';
+import { PrimeSubscriptionService } from '../billing/prime-subscription.service';
 import { MailService } from '../mail/mail.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,6 +21,7 @@ export class InvitesService {
     private readonly prisma: PrismaService,
     private readonly accountsService: AccountsService,
     private readonly membershipService: AccountMembershipService,
+    private readonly primeSubscriptionService: PrimeSubscriptionService,
     private readonly mailService: MailService,
     private readonly notificationsService: NotificationsService,
     private readonly configService: ConfigService
@@ -47,6 +49,10 @@ export class InvitesService {
       throw new BadRequestException(
         'Приглашать можно только к профилю креатора или компании'
       );
+    }
+
+    if (profile.role === Role.COMPANY) {
+      await this.assertCompanyPrimeForManagers(profile.id);
     }
 
     const existingMembership = await this.prisma.accountMembership.findFirst({
@@ -154,6 +160,19 @@ export class InvitesService {
       throw new ForbiddenException('Приглашение отправлено на другой email');
     }
 
+    const profile = await this.prisma.user.findUnique({
+      where: { id: invite.userId },
+      select: { id: true, role: true },
+    });
+
+    if (!profile) {
+      throw new NotFoundException('Профиль не найден');
+    }
+
+    if (profile.role === Role.COMPANY) {
+      await this.assertCompanyPrimeForManagers(profile.id);
+    }
+
     const existingMembership = await this.membershipService.getMembership(
       accountId,
       invite.userId
@@ -179,5 +198,16 @@ export class InvitesService {
     });
 
     return { userId: invite.userId, role: invite.role };
+  }
+
+  private async assertCompanyPrimeForManagers(companyUserId: string) {
+    const subscription =
+      await this.primeSubscriptionService.getSubscription(companyUserId);
+
+    if (!subscription.isPrime) {
+      throw new ForbiddenException(
+        'Чтобы добавить менеджера, подключите Prime-подписку для профиля компании'
+      );
+    }
   }
 }

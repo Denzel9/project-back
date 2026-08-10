@@ -6,7 +6,13 @@ import { bloggerCoopFieldsFromDto } from './blogger-coop-fields.util';
 
 type PostJsonWriteFields = Pick<
   Prisma.PostCreateInput,
-  'budget' | 'deadline' | 'workFormat' | 'location' | 'brief' | 'deliverables'
+  | 'budget'
+  | 'deadline'
+  | 'workFormat'
+  | 'employmentType'
+  | 'location'
+  | 'brief'
+  | 'deliverables'
 > &
   ReturnType<typeof bloggerCoopFieldsFromDto>;
 
@@ -29,6 +35,10 @@ export function postJsonFieldsFromDto(
 
   if (dto.workFormat !== undefined) {
     data.workFormat = dto.workFormat;
+  }
+
+  if (dto.employmentType !== undefined) {
+    data.employmentType = dto.employmentType;
   }
 
   if (dto.location !== undefined) {

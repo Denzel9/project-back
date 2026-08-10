@@ -1,8 +1,11 @@
+import { escapeHtml, nl2brEscaped, renderEmailLayout } from './layout';
+
 export type ApplicationReceivedEmailParams = {
   postTitle: string;
   applicantName: string;
   message: string;
   applicationsUrl: string;
+  frontendUrl: string;
 };
 
 function truncateMessage(message: string, maxLength = 200): string {
@@ -16,7 +19,8 @@ function truncateMessage(message: string, maxLength = 200): string {
 export function buildApplicationReceivedEmail(
   params: ApplicationReceivedEmailParams
 ) {
-  const { postTitle, applicantName, message, applicationsUrl } = params;
+  const { postTitle, applicantName, message, applicationsUrl, frontendUrl } =
+    params;
   const preview = truncateMessage(message);
   const subject = `Новый отклик на пост «${postTitle}»`;
 
@@ -31,15 +35,21 @@ export function buildApplicationReceivedEmail(
     `Просмотреть отклики: ${applicationsUrl}`,
   ].join('\n');
 
-  const html = `
-    <p>На ваш пост <strong>«${postTitle}»</strong> поступил новый отклик.</p>
-    <p><strong>Соискатель:</strong> ${applicantName}</p>
-    <p><strong>Сообщение:</strong></p>
-    <p>${preview.replace(/\n/g, '<br>')}</p>
-    <p><a href="${applicationsUrl}">Просмотреть входящие отклики</a></p>
-    <p>Если кнопка не работает, скопируйте ссылку:</p>
-    <p>${applicationsUrl}</p>
-  `.trim();
+  const html = renderEmailLayout({
+    frontendUrl,
+    preheader: `Новый отклик от ${applicantName} на «${postTitle}»`,
+    title: 'Новый отклик',
+    bodyHtml: `
+      <p style="margin:0 0 12px;">На ваш пост <strong>«${escapeHtml(postTitle)}»</strong> поступил новый отклик.</p>
+      <p style="margin:0 0 12px;"><strong>Соискатель:</strong> ${escapeHtml(applicantName)}</p>
+      <p style="margin:0 0 6px;"><strong>Сообщение:</strong></p>
+      <p style="margin:0;padding:12px 14px;background-color:#f5f5f5;border-radius:12px;">${nl2brEscaped(preview)}</p>
+    `.trim(),
+    cta: {
+      url: applicationsUrl,
+      label: 'Просмотреть отклики',
+    },
+  });
 
   return { subject, text, html };
 }

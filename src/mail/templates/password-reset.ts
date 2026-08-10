@@ -1,4 +1,9 @@
-export function buildPasswordResetEmail(resetUrl: string) {
+import { renderEmailLayout } from './layout';
+
+export function buildPasswordResetEmail(
+  resetUrl: string,
+  frontendUrl: string
+) {
   const subject = 'Сброс пароля';
 
   const text = [
@@ -9,13 +14,19 @@ export function buildPasswordResetEmail(resetUrl: string) {
     'Ссылка действует ограниченное время. Если вы не запрашивали сброс, проигнорируйте это письмо.',
   ].join('\n');
 
-  const html = `
-    <p>Вы запросили сброс пароля.</p>
-    <p><a href="${resetUrl}">Задать новый пароль</a></p>
-    <p>Если кнопка не работает, скопируйте ссылку:</p>
-    <p>${resetUrl}</p>
-    <p>Ссылка действует ограниченное время. Если вы не запрашивали сброс, проигнорируйте это письмо.</p>
-  `.trim();
+  const html = renderEmailLayout({
+    frontendUrl,
+    preheader: 'Задайте новый пароль для аккаунта Nikssens.',
+    title: 'Сброс пароля',
+    bodyHtml: `
+      <p style="margin:0 0 12px;">Вы запросили сброс пароля.</p>
+      <p style="margin:0;">Ссылка действует ограниченное время. Если вы не запрашивали сброс, проигнорируйте это письмо.</p>
+    `.trim(),
+    cta: {
+      url: resetUrl,
+      label: 'Задать новый пароль',
+    },
+  });
 
   return { subject, text, html };
 }

@@ -141,6 +141,7 @@ export class MediaController {
     @Query('taskId') taskId: string | undefined,
     @Query('forComment') forCommentRaw: string | undefined,
     @Query('kind') kindRaw: string | undefined,
+    @Body('fileName') bodyFileName: string | undefined,
     @UploadedFile() file?: Express.Multer.File
   ): Promise<UploadResponseDto> {
     if (!file) {
@@ -225,6 +226,7 @@ export class MediaController {
         ...(taskId && { taskId }),
         ...(forComment && { forComment: true }),
         ...(taskMediaKind && { taskMediaKind }),
+        ...(bodyFileName !== undefined && { fileName: bodyFileName }),
       },
       user.accountId
     );

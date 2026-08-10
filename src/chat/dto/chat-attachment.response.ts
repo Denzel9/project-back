@@ -26,6 +26,14 @@ export class ChatAttachmentResponse {
   mimeType: string;
 
   @ApiProperty({
+    example: 'brief.pdf',
+    required: false,
+    nullable: true,
+    description: 'Оригинальное имя файла',
+  })
+  fileName: string | null;
+
+  @ApiProperty({
     format: 'date-time',
     description: 'Дата сообщения, к которому относится вложение',
   })

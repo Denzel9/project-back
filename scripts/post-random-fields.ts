@@ -8,11 +8,13 @@ import {
   Prisma,
   UsageRights,
   WorkFormat,
+  EmploymentType,
 } from '@prisma/client';
 
 const PLATFORMS = Object.values(Platform);
 const PLACEMENT_FORMATS = Object.values(PlacementFormat);
 const WORK_FORMATS = Object.values(WorkFormat);
+const EMPLOYMENT_TYPES = Object.values(EmploymentType);
 const BUDGET_TYPES = Object.values(BudgetType);
 const CURRENCIES = Object.values(PostCurrency);
 const PAYMENT_TERMS = Object.values(PaymentTerms);
@@ -99,6 +101,7 @@ export function buildRandomPostFields() {
     budget,
     deadline: randomFutureDate(),
     workFormat: pickOne(WORK_FORMATS),
+    employmentType: pickOne(EMPLOYMENT_TYPES),
     location: {
       city: pickOne(CITIES),
       country: pickOne(COUNTRIES),

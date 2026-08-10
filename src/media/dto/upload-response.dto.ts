@@ -19,4 +19,12 @@ export class UploadResponseDto {
 
   @ApiProperty({ example: 12345, description: 'Размер файла в байтах' })
   size: number;
+
+  @ApiProperty({
+    example: 'brief.pdf',
+    description: 'Оригинальное имя файла (если передано при загрузке)',
+    required: false,
+    nullable: true,
+  })
+  fileName: string | null;
 }
