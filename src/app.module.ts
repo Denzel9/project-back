@@ -21,6 +21,7 @@ import { UserConfigModule } from './user-config/user-config.module';
 import { GeoModule } from './geo/geo.module';
 import { BillingModule } from './billing/billing.module';
 import { IntegrationsModule } from './integrations/integrations.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { IntegrationsModule } from './integrations/integrations.module';
     GeoModule,
     BillingModule,
     IntegrationsModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

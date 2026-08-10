@@ -861,28 +861,29 @@ model TaskActivity {
 }
 
 model Publication {
-  id           String             @id @default(uuid())
-  taskId       String             @unique
-  task         Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  id           String                  @id @default(uuid())
+  taskId       String                  @unique
+  task         Task                    @relation(fields: [taskId], references: [id], onDelete: Cascade)
   postId       String
-  post         Post               @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post         Post                    @relation(fields: [postId], references: [id], onDelete: Cascade)
   ownerId      String
-  owner        User               @relation("OwnedPublications", fields: [ownerId], references: [id], onDelete: Cascade)
+  owner        User                    @relation("OwnedPublications", fields: [ownerId], references: [id], onDelete: Cascade)
   executorId   String?
-  executor     User?              @relation("ExecutedPublications", fields: [executorId], references: [id], onDelete: SetNull)
+  executor     User?                   @relation("ExecutedPublications", fields: [executorId], references: [id], onDelete: SetNull)
   title         String?
-  description   String             @default("")
+  description   String                  @default("")
   externalUrl   String?
   platformLinks Json?
   platform      Platform?
   brief         Json?
   deliverables  Json?
   location      Json?
-  status       PublicationStatus  @default(PUBLISHED)
+  status       PublicationStatus       @default(PUBLISHED)
   media        PublicationMedia[]
-  publishedAt  DateTime           @default(now())
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  analytics    PublicationAnalytics[]
+  publishedAt  DateTime                @default(now())
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
 
   @@index([ownerId])
   @@index([executorId])
@@ -902,4 +903,47 @@ model PublicationMedia {
   createdAt         DateTime    @default(now())
 
   @@index([publicationId])
+}
+
+model PublicationAnalytics {
+  id             String      @id @default(uuid())
+  publicationId  String
+  publication    Publication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  platform       Platform
+  
+  /// Метрики вовлечения
+  views          Int?        @default(0)
+  likes          Int?        @default(0)
+  comments       Int?        @default(0)
+  shares         Int?        @default(0)
+  saves          Int?        @default(0)
+  
+  /// Охваты и показы
+  reach          Int?        @default(0)
+  impressions    Int?        @default(0)
+  
+  /// Подписчики
+  followersGain  Int?        @default(0)
+  followersLoss  Int?        @default(0)
+  
+  /// Engagement rate (в процентах, например 5.32)
+  engagementRate Float?
+  
+  /// Клики по ссылкам
+  linkClicks     Int?        @default(0)
+  
+  /// Время просмотра (для видео, в секундах)
+  watchTime      Int?        @default(0)
+  avgWatchTime   Float?
+  
+  /// Дополнительные метрики (platform-specific)
+  extraMetrics   Json?
+  
+  /// Когда собраны данные
+  collectedAt    DateTime    @default(now())
+  createdAt      DateTime    @default(now())
+
+  @@index([publicationId])
+  @@index([collectedAt])
+  @@index([platform])
 }
