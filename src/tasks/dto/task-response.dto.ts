@@ -187,6 +187,14 @@ export class TaskResponseDto {
   })
   assigneeKind: 'OWNER' | 'MANAGER' | null;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'userId ответственного для чата: ownerId при OWNER, userId менеджера при MANAGER',
+  })
+  assigneeUserId: string | null;
+
   @ApiProperty({ format: 'date-time' })
   createdAt: string;
 

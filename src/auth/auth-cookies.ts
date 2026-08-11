@@ -21,11 +21,14 @@ function resolveCookieBaseOptions(): Pick<
 }
 
 function getCookieOptions(maxAgeMs: number): CookieOptions {
+  const domain = process.env.COOKIE_DOMAIN?.trim() || undefined;
+
   return {
     httpOnly: true,
     ...resolveCookieBaseOptions(),
     path: '/',
     maxAge: maxAgeMs,
+    ...(domain ? { domain } : {}),
   };
 }
 
@@ -67,7 +70,7 @@ export function setAuthCookies(
 ): void {
   const rememberMe = options.rememberMe ?? false;
   const accessMaxAge = parseExpiresInToMs(
-    process.env.JWT_ACCESS_EXPIRES_IN ?? '15m'
+    process.env.JWT_ACCESS_EXPIRES_IN ?? '2h'
   );
   const refreshMaxAge = parseExpiresInToMs(getRefreshExpiresIn(rememberMe));
 
@@ -84,10 +87,12 @@ export function setAuthCookies(
 }
 
 export function clearAuthCookies(res: Response): void {
+  const domain = process.env.COOKIE_DOMAIN?.trim() || undefined;
   const options: CookieOptions = {
     httpOnly: true,
     ...resolveCookieBaseOptions(),
     path: '/',
+    ...(domain ? { domain } : {}),
   };
 
   res.clearCookie(ACCESS_TOKEN_COOKIE, options);

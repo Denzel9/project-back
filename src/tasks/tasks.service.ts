@@ -151,6 +151,15 @@ export const taskListInclude = {
   executor: {
     include: executorInclude,
   },
+  assigneeAccount: {
+    select: {
+      memberships: {
+        where: { user: { role: Role.MANAGER } },
+        select: { userId: true },
+        take: 1,
+      },
+    },
+  },
 } satisfies Prisma.TaskInclude;
 
 const taskCalendarInclude = {
@@ -1922,6 +1931,23 @@ export class TasksService {
     return managerMembership?.userId ?? null;
   }
 
+  /** userId для чата с ответственным: OWNER → ownerId, MANAGER → userId менеджера. */
+  private resolveAssigneeChatUserId(task: {
+    ownerId: string;
+    assigneeKind?: 'OWNER' | 'MANAGER' | null;
+    assigneeAccount?: { memberships: Array<{ userId: string }> } | null;
+  }): string | null {
+    if (task.assigneeKind === 'OWNER') {
+      return task.ownerId;
+    }
+
+    if (task.assigneeKind === 'MANAGER') {
+      return task.assigneeAccount?.memberships?.[0]?.userId ?? null;
+    }
+
+    return null;
+  }
+
   /**
    * Кому слать TASK_COMMENT_CREATED:
    * — peer (owner ↔ executor);
@@ -3479,6 +3505,7 @@ export class TasksService {
       assigneeAccountId: task.assigneeAccountId ?? null,
       assigneeDisplayName: task.assigneeDisplayName ?? null,
       assigneeKind: task.assigneeKind ?? null,
+      assigneeUserId: this.resolveAssigneeChatUserId(task),
       createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString(),
       ...(options.includePost &&
