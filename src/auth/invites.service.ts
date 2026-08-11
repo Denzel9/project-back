@@ -7,7 +7,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { MembershipRole, NotificationType, Role } from '@prisma/client';
+import {
+  InviteKind,
+  MembershipRole,
+  NotificationType,
+  Role,
+} from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { AccountMembershipService } from '../accounts/account-membership.service';
 import { AccountsService } from '../accounts/accounts.service';
@@ -15,6 +20,7 @@ import { PrimeSubscriptionService } from '../billing/prime-subscription.service'
 import { MailService } from '../mail/mail.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateInviteDto } from './dto/create-invite.dto';
 
 @Injectable()
 export class InvitesService {
@@ -30,10 +36,7 @@ export class InvitesService {
     private readonly configService: ConfigService
   ) {}
 
-  async createInvite(
-    inviterAccountId: string,
-    dto: { email: string; userId: string; role: MembershipRole }
-  ) {
+  async createInvite(inviterAccountId: string, dto: CreateInviteDto) {
     if (dto.role === MembershipRole.OWNER) {
       throw new BadRequestException('Нельзя приглашать с ролью владельца');
     }
@@ -54,14 +57,22 @@ export class InvitesService {
       );
     }
 
-    if (profile.role === Role.COMPANY) {
+    // Мультиаккаунт (менеджеры): для компании нужен Prime
+    if (dto.kind === InviteKind.TEAM && profile.role === Role.COMPANY) {
       await this.assertCompanyPrimeForManagers(profile.id);
+    }
+
+    const email = dto.email.trim().toLowerCase();
+
+    const inviteeAccount = await this.accountsService.findByEmail(email);
+    if (inviteeAccount) {
+      await this.assertInviteKindMatchesAccount(dto.kind, inviteeAccount.id);
     }
 
     const existingMembership = await this.prisma.accountMembership.findFirst({
       where: {
         userId: dto.userId,
-        account: { email: dto.email },
+        account: { email },
       },
     });
 
@@ -72,7 +83,7 @@ export class InvitesService {
     const pendingInvite = await this.prisma.accountInvite.findFirst({
       where: {
         userId: dto.userId,
-        email: dto.email,
+        email,
         acceptedAt: null,
         expiresAt: { gt: new Date() },
       },
@@ -92,32 +103,33 @@ export class InvitesService {
       data: {
         userId: dto.userId,
         inviterId: inviterAccountId,
-        email: dto.email,
+        email,
         role: dto.role,
+        kind: dto.kind,
         token,
         expiresAt,
       },
     });
 
     try {
-      await this.mailService.sendAccountInviteEmail(dto.email, token);
+      await this.mailService.sendAccountInviteEmail(email, token);
     } catch (error) {
-      this.logger.error(
-        `Не удалось отправить invite email (${invite.id})`,
-        error instanceof Error ? error.stack : String(error)
-      );
-
       await this.prisma.accountInvite
         .delete({ where: { id: invite.id } })
         .catch(() => undefined);
+
+      this.logger.error(
+        `Failed to send invite email to ${email}`,
+        error instanceof Error ? error.stack : undefined
+      );
 
       throw new BadRequestException(
         'Не удалось отправить приглашение на email. Попробуйте ещё раз позже'
       );
     }
 
-    const inviteeAccount = await this.prisma.account.findUnique({
-      where: { email: dto.email },
+    const inviteeAccountForNotify = await this.prisma.account.findUnique({
+      where: { email },
       include: {
         memberships: {
           orderBy: { createdAt: 'asc' },
@@ -126,21 +138,27 @@ export class InvitesService {
       },
     });
 
-    const inviteeUserId = inviteeAccount?.memberships[0]?.userId;
+    const inviteeUserId = inviteeAccountForNotify?.memberships[0]?.userId;
 
     if (inviteeUserId) {
+      const title =
+        dto.kind === InviteKind.CROSS
+          ? 'Приглашение к связанному профилю'
+          : 'Приглашение в команду';
+
       await this.notificationsService.notify({
         recipientId: inviteeUserId,
         actorId: dto.userId,
         type: NotificationType.TEAM_INVITE,
-        title: 'Приглашение в команду',
-        body: `Вам предоставят доступ к профилю`,
+        title,
+        body: 'Вам предоставят доступ к профилю',
         payload: {
           entityType: 'invite',
           entityId: invite.id,
           meta: {
             inviteId: invite.id,
             role: invite.role,
+            kind: invite.kind,
           },
         },
       });
@@ -151,6 +169,7 @@ export class InvitesService {
       email: invite.email,
       userId: invite.userId,
       role: invite.role,
+      kind: invite.kind,
       expiresAt: invite.expiresAt,
     };
   }
@@ -178,6 +197,8 @@ export class InvitesService {
       throw new ForbiddenException('Приглашение отправлено на другой email');
     }
 
+    await this.assertInviteKindMatchesAccount(invite.kind, accountId);
+
     const profile = await this.prisma.user.findUnique({
       where: { id: invite.userId },
       select: { id: true, role: true },
@@ -187,7 +208,7 @@ export class InvitesService {
       throw new NotFoundException('Профиль не найден');
     }
 
-    if (profile.role === Role.COMPANY) {
+    if (invite.kind === InviteKind.TEAM && profile.role === Role.COMPANY) {
       await this.assertCompanyPrimeForManagers(profile.id);
     }
 
@@ -215,7 +236,37 @@ export class InvitesService {
       });
     });
 
-    return { userId: invite.userId, role: invite.role };
+    return { userId: invite.userId, role: invite.role, kind: invite.kind };
+  }
+
+  private async assertInviteKindMatchesAccount(
+    kind: InviteKind,
+    accountId: string
+  ) {
+    const accountRole =
+      await this.membershipService.getAccountOwnerUserRole(accountId);
+
+    if (kind === InviteKind.TEAM) {
+      if (accountRole !== Role.MANAGER) {
+        throw new BadRequestException(
+          'В команду можно пригласить только менеджера'
+        );
+      }
+      return;
+    }
+
+    if (kind === InviteKind.CROSS) {
+      if (accountRole === Role.MANAGER) {
+        throw new BadRequestException(
+          'Менеджеру нельзя выдать кросс-доступ'
+        );
+      }
+      if (accountRole !== Role.COMPANY && accountRole !== Role.CREATOR) {
+        throw new BadRequestException(
+          'Кросс-доступ можно выдать только компании или исполнителю'
+        );
+      }
+    }
   }
 
   private async assertCompanyPrimeForManagers(companyUserId: string) {

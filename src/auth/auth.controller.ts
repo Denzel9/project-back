@@ -8,6 +8,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -47,6 +48,7 @@ import { VerifyPasswordResponseDto } from './dto/verify-password-response.dto';
 import { SwitchProfileDto } from './dto/switch-profile.dto';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
+import { ListProfilesQueryDto } from './dto/list-profiles-query.dto';
 import {
   AuthSessionUserResponse,
   ProfileSummaryResponse,
@@ -159,27 +161,31 @@ export class AuthController {
     summary: 'Список доступных профилей',
     description:
       'Все профили User, к которым текущий Account имеет доступ: свои (OWNER) и чужие через invite. ' +
-      'Используйте для переключателя профилей на фронте. Поле isActive — текущий профиль в JWT.',
+      'scope=companies — мультиаккаунт (для вкладки Компании у менеджера); ' +
+      'scope=linked — кросс-аккаунты (вкладка Профили); без scope / all — для switcher.',
   })
   @ApiOkResponse({
     type: ProfileSummaryResponse,
     isArray: true,
     description: 'Массив профилей с displayName, role, membershipRole',
   })
-  listProfiles(@CurrentUser() user: AuthUser) {
-    return this.authService.listProfiles(user);
+  listProfiles(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListProfilesQueryDto
+  ) {
+    return this.authService.listProfiles(user, query.scope);
   }
 
   @Get('profile-members')
   @UseGuards(JwtAuthGuard)
   @ApiCookieAuth('access-token')
   @ApiOperation({
-    summary: 'Участники текущего профиля',
+    summary: 'Команда текущего профиля',
     description:
-      'Аккаунты с доступом к активному профилю (OWNER/ADMIN). ' +
-      'Для фильтра задач по ответственному-менеджеру.',
+      'Менеджеры с доступом к активному профилю (ADMIN + account role MANAGER). ' +
+      'Кросс-аккаунты и владелец не включаются.',
   })
-  @ApiOkResponse({ description: 'Список участников профиля' })
+  @ApiOkResponse({ description: 'Список менеджеров команды' })
   @ApiForbiddenResponse({ description: 'Недостаточно прав' })
   listProfileMembers(@CurrentUser() user: AuthUser) {
     return this.authService.listProfileMembers(user);
@@ -222,13 +228,11 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiCookieAuth('access-token')
   @ApiOperation({
-    summary: 'Пригласить менеджера к существующему профилю',
+    summary: 'Пригласить к профилю (команда или кросс)',
     description:
-      'Отправляет письмо на email приглашённого. userId — **существующий** профиль, которым вы управляете. ' +
-      'Требуется роль OWNER или ADMIN на этом профиле. ' +
-      'Для профиля компании нужна активная Prime-подписка. ' +
-      'Роль invite: ADMIN (не OWNER). ' +
-      'Приглашённый должен зарегистрироваться/войти своим email и принять invite.',
+      'kind=TEAM — мультиаккаунт (менеджер); kind=CROSS — кросс COMPANY/CREATOR. ' +
+      'userId — существующий профиль. OWNER/ADMIN на профиле. ' +
+      'Для TEAM к компании нужен Prime. Роль invite: ADMIN.',
   })
   @ApiCreatedResponse({ description: 'Приглашение создано, письмо отправлено' })
   @ApiForbiddenResponse({

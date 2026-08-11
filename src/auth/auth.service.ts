@@ -379,10 +379,14 @@ export class AuthService {
     }
   }
 
-  async listProfiles(authUser: AuthUser) {
+  async listProfiles(
+    authUser: AuthUser,
+    scope?: import('../accounts/account-membership.service').ProfileListScope
+  ) {
     return this.membershipService.listProfiles(
       authUser.accountId,
-      authUser.userId
+      authUser.userId,
+      scope ?? 'all'
     );
   }
 

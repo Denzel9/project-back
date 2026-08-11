@@ -18,6 +18,11 @@ enum MembershipRole {
   ADMIN
 }
 
+enum InviteKind {
+  TEAM
+  CROSS
+}
+
 enum MessageActorKind {
   OWNER
   MANAGER
@@ -243,6 +248,7 @@ model AccountInvite {
   inviterId  String
   email      String
   role       MembershipRole
+  kind       InviteKind     @default(TEAM)
   token      String         @unique
   expiresAt  DateTime
   acceptedAt DateTime?

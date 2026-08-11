@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { MembershipRole } from '@prisma/client';
-import { IsEmail, IsIn, IsUUID } from 'class-validator';
+import { InviteKind, MembershipRole } from '@prisma/client';
+import { IsEmail, IsEnum, IsIn, IsUUID } from 'class-validator';
 
 export class CreateInviteDto {
   @ApiProperty({
@@ -23,4 +23,12 @@ export class CreateInviteDto {
   })
   @IsIn([MembershipRole.ADMIN])
   role: MembershipRole;
+
+  @ApiProperty({
+    enum: InviteKind,
+    description:
+      'TEAM — мультиаккаунт (менеджер в команду); CROSS — кросс-аккаунт (COMPANY/CREATOR)',
+  })
+  @IsEnum(InviteKind)
+  kind: InviteKind;
 }
