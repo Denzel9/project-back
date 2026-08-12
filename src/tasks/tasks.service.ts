@@ -967,6 +967,9 @@ export class TasksService {
       return {
         ...activeWhere,
         isCompanyAction: true,
+        // Если исполнитель ещё не подтвердил назначение, задача не должна
+        // попадать в «Ожидают действия» (она относится к «ожидают подтверждения»).
+        isExecutorApprove: { not: null },
       };
     }
 
@@ -974,6 +977,7 @@ export class TasksService {
       return {
         ...activeWhere,
         isCompanyAction: false,
+        isExecutorApprove: { not: null },
       };
     }
 
@@ -982,8 +986,16 @@ export class TasksService {
         activeWhere,
         {
           OR: [
-            { ownerId: userId, isCompanyAction: true },
-            { executorId: userId, isCompanyAction: false },
+            {
+              ownerId: userId,
+              isCompanyAction: true,
+              isExecutorApprove: { not: null },
+            },
+            {
+              executorId: userId,
+              isCompanyAction: false,
+              isExecutorApprove: { not: null },
+            },
           ],
         },
       ],
