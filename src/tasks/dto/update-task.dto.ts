@@ -90,6 +90,14 @@ export class UpdateTaskDto {
   urgent?: boolean;
 
   @ApiPropertyOptional({
+    description: '`true` — в архив, `false` — вернуть из архива (только владелец)',
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isArchived?: boolean;
+
+  @ApiPropertyOptional({
     nullable: true,
     description: 'Одобрение задачи исполнителем',
   })

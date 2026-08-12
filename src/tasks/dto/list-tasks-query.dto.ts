@@ -152,6 +152,15 @@ export class ListTasksQueryDto {
 
   @ApiPropertyOptional({
     description:
+      'Архив: `true` — только архивные, `false` — только активные. Без параметра — только неархивные.',
+  })
+  @IsOptional()
+  @Transform(transformOptionalBoolean)
+  @IsBoolean()
+  isArchived?: boolean;
+
+  @ApiPropertyOptional({
+    description:
       'Только задачи, где текущий аккаунт указан как ответственный (`assigneeAccountId`).',
   })
   @IsOptional()

@@ -576,6 +576,7 @@ export class TasksService {
       ...(query.executorId !== undefined && { executorId: query.executorId }),
       ...(query.postId !== undefined && { postId: query.postId }),
       ...(query.urgent !== undefined && { urgent: query.urgent }),
+      isArchived: false,
       ...(query.assigneeMine === true && { assigneeAccountId: accountId }),
       ...(query.assigneeAccountId !== undefined &&
         query.assigneeMine !== true && {
@@ -798,6 +799,9 @@ export class TasksService {
             }),
         }),
       ...(query.urgent !== undefined && { urgent: query.urgent }),
+      ...(query.isArchived !== undefined
+        ? { isArchived: query.isArchived }
+        : { isArchived: false }),
       ...(query.assigneeMine === true && { assigneeAccountId: accountId }),
       ...(query.assigneeAccountId !== undefined &&
         query.assigneeMine !== true && {
@@ -947,6 +951,7 @@ export class TasksService {
       ...(query.postId !== undefined && { postId: query.postId }),
       ...(query.executorId !== undefined && { executorId: query.executorId }),
       ...(query.ownerId !== undefined && { ownerId: query.ownerId }),
+      isArchived: false,
       ...(dateRangeFilter !== undefined && {
         [dateField]: dateRangeFilter,
       }),
@@ -1008,6 +1013,7 @@ export class TasksService {
   ): Prisma.TaskCommentWhereInput {
     const taskWhere: Prisma.TaskWhereInput = {
       ...this.buildParticipantTaskWhere(userId, query.role),
+      isArchived: false,
       ...(query.postId !== undefined && { postId: query.postId }),
       ...(query.taskId !== undefined && { id: query.taskId }),
       ...(query.status !== undefined && { status: query.status }),
@@ -1224,6 +1230,12 @@ export class TasksService {
     if (!task.executorId) {
       throw new BadRequestException(
         'Аннулирование доступно только для задач с исполнителем'
+      );
+    }
+
+    if (task.isArchived) {
+      throw new BadRequestException(
+        'Нельзя аннулировать задачу в архиве'
       );
     }
 
@@ -1506,6 +1518,12 @@ export class TasksService {
     if (!task.executorId) {
       throw new BadRequestException(
         'Перенос дедлайна доступен только для задач с исполнителем'
+      );
+    }
+
+    if (task.isArchived) {
+      throw new BadRequestException(
+        'Нельзя перенести дедлайн задачи в архиве'
       );
     }
 
@@ -3016,6 +3034,17 @@ export class TasksService {
       });
     }
 
+    if (dto.isArchived !== undefined && dto.isArchived !== task.isArchived) {
+      changes.push({
+        type: TaskActivityType.FIELD_UPDATED,
+        payload: {
+          field: 'isArchived',
+          from: task.isArchived,
+          to: dto.isArchived,
+        },
+      });
+    }
+
     if (dto.executorId !== undefined && dto.executorId !== task.executorId) {
       changes.push({
         type: TaskActivityType.FIELD_UPDATED,
@@ -3140,6 +3169,7 @@ export class TasksService {
         'photoCount',
         'videoCount',
         'urgent',
+        'isArchived',
         'executorId',
         'assigneeAccountId',
         'postId',
@@ -3182,6 +3212,7 @@ export class TasksService {
     if (dto.photoCount !== undefined) data.photoCount = dto.photoCount;
     if (dto.videoCount !== undefined) data.videoCount = dto.videoCount;
     if (dto.urgent !== undefined) data.urgent = dto.urgent;
+    if (dto.isArchived !== undefined) data.isArchived = dto.isArchived;
     if (dto.isExecutorApprove !== undefined) {
       data.isExecutorApprove = dto.isExecutorApprove;
     }
@@ -3506,6 +3537,7 @@ export class TasksService {
       photoCount: task.photoCount,
       videoCount: task.videoCount,
       urgent: task.urgent,
+      isArchived: task.isArchived,
       isExecutorApprove: task.isExecutorApprove ?? null,
       isCompanyAction: task.isCompanyAction,
       location: this.mapTaskLocation(task.location),

@@ -27,6 +27,7 @@ import { GeoModule } from './geo/geo.module';
 import { BillingModule } from './billing/billing.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { RedisModule } from './redis/redis.module';
+import { TaskTemplatesModule } from './task-templates/task-templates.module';
 import { getBullMqConnection, getRedisUrl } from './redis/redis-connection';
 
 @Module({
@@ -71,6 +72,7 @@ import { getBullMqConnection, getRedisUrl } from './redis/redis-connection';
     GeoModule,
     BillingModule,
     IntegrationsModule,
+    TaskTemplatesModule,
   ],
   controllers: [AppController],
   providers: [

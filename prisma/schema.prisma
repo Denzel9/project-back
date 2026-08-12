@@ -313,6 +313,7 @@ model User {
   taskCommentPins         TaskCommentPin[]
   refreshSessions         RefreshSession[]
   pushSubscriptions       PushSubscription[]
+  taskTemplates           TaskTemplate[]
 }
 
 model RefreshSession {
@@ -697,6 +698,7 @@ model Task {
   photoCount          String                 @default("0")
   videoCount          String                 @default("0")
   urgent              Boolean                @default(false)
+  isArchived          Boolean                @default(false)
   isExecutorApprove   Boolean?
   isCompanyAction     Boolean                @default(true)
   location            Json?
@@ -739,6 +741,26 @@ model Task {
   @@index([postId])
   @@index([assigneeAccountId])
   @@index([finalDate])
+  @@index([isArchived])
+}
+
+model TaskTemplate {
+  id           String   @id @default(uuid())
+  ownerId      String
+  owner        User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name         String
+  title        String?
+  description  String   @default("")
+  photoCount   String   @default("0")
+  videoCount   String   @default("0")
+  urgent       Boolean  @default(false)
+  brief        Json?
+  deliverables Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([ownerId, updatedAt])
 }
 
 model DeadlineReminderLog {

@@ -120,6 +120,9 @@ export class TaskResponseDto {
   @ApiProperty()
   urgent: boolean;
 
+  @ApiProperty()
+  isArchived: boolean;
+
   @ApiProperty({ nullable: true })
   isExecutorApprove: boolean | null;
 
