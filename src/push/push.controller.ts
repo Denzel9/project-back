@@ -81,4 +81,13 @@ export class PushController {
   ) {
     await this.pushService.unsubscribe(user.userId, dto.endpoint);
   }
+
+  @Delete('subscriptions')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Удалить все Web Push подписки текущего профиля',
+  })
+  async unsubscribeAll(@CurrentUser() user: AuthUser) {
+    await this.pushService.unsubscribeAll(user.userId);
+  }
 }

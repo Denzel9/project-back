@@ -82,6 +82,12 @@ export class PushService implements OnModuleInit {
     });
   }
 
+  async unsubscribeAll(userId: string): Promise<void> {
+    await this.prisma.pushSubscription.deleteMany({
+      where: { userId },
+    });
+  }
+
   async hasSubscription(userId: string): Promise<boolean> {
     const count = await this.prisma.pushSubscription.count({
       where: { userId },
