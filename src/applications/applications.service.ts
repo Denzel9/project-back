@@ -144,7 +144,7 @@ export class ApplicationsService {
           postId: dto.postId,
           applicantId: user.userId,
           message: dto.message,
-          attachStatistics: dto.attachStatistics ?? true,
+          attachStatistics: true,
           createdActorAccountId: actor.accountId,
           createdActorDisplayName: actor.displayName,
           createdActorKind: actor.kind,
@@ -529,12 +529,10 @@ export class ApplicationsService {
 
     const statsByPair = options.includeApplicant
       ? await this.loadApplicantStatisticsMap(
-          items
-            .filter(item => item.attachStatistics)
-            .map(item => ({
-              applicantId: item.applicantId,
-              ownerId: item.post.ownerId,
-            })),
+          items.map(item => ({
+            applicantId: item.applicantId,
+            ownerId: item.post.ownerId,
+          })),
         )
       : new Map<string, ApplicantStatisticsDto>();
 
@@ -545,7 +543,7 @@ export class ApplicationsService {
         return this.mapApplication(item, {
           ...options,
           applicantStatistics:
-            options.includeApplicant && item.attachStatistics
+            options.includeApplicant
               ? (statsByPair.get(pairKey) ?? null)
               : null,
         });
@@ -699,7 +697,7 @@ export class ApplicationsService {
   ): Promise<ApplicationResponseDto> {
     let applicantStatistics: ApplicantStatisticsDto | null = null;
 
-    if (options.includeApplicant && application.attachStatistics) {
+    if (options.includeApplicant) {
       applicantStatistics = await this.getApplicantStatistics(
         application.applicantId,
         application.post.ownerId,
@@ -752,6 +750,8 @@ export class ApplicationsService {
     const [
       completedWorks,
       cancelledWorks,
+      totalPublications,
+      sharedInProgressWorks,
       sharedCompletedWorks,
       sharedPublications,
       favoritedByCount,
@@ -766,6 +766,17 @@ export class ApplicationsService {
         where: {
           status: TaskStatus.ANNULLED,
           OR: [{ executorId: applicantId }, { ownerId: applicantId }],
+        },
+      }),
+      this.prisma.publication.count({
+        where: {
+          OR: [{ executorId: applicantId }, { ownerId: applicantId }],
+        },
+      }),
+      this.prisma.task.count({
+        where: {
+          status: { notIn: [TaskStatus.COMPLETED, TaskStatus.ANNULLED] },
+          OR: sharedPairWhere.OR,
         },
       }),
       this.prisma.task.count({
@@ -787,6 +798,8 @@ export class ApplicationsService {
     return {
       completedWorks,
       cancelledWorks,
+      totalPublications,
+      sharedInProgressWorks,
       sharedCompletedWorks,
       sharedPublications,
       favoritedByCount,

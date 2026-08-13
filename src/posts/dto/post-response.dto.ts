@@ -52,6 +52,9 @@ export class PostResponseDto {
   @ApiProperty({ example: false })
   isArchived: boolean;
 
+  @ApiProperty({ example: false })
+  isTemplate: boolean;
+
   @ApiProperty({ type: [String], example: ['category'] })
   categories: string[];
 

@@ -26,6 +26,14 @@ export class TaskAttachmentResponseDto {
   @ApiProperty({ example: 'image/jpeg' })
   mimeType: string;
 
+  @ApiProperty({
+    example: 'brief.pdf',
+    required: false,
+    nullable: true,
+    description: 'Оригинальное имя файла',
+  })
+  fileName: string | null;
+
   @ApiProperty({ format: 'date-time' })
   createdAt: string;
 }

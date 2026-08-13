@@ -53,6 +53,7 @@ export class PostsController {
     description:
       'Создаёт пост от имени активного профиля. `ownerId` и `type` выставляются из JWT. ' +
       'Для прямого назначения исполнителя без публикации в ленте: `isPrivate: true`. ' +
+      'Для шаблона объявления: `isTemplate: true` (не показывается в ленте). ' +
       'Медиа загружаются отдельно: `POST /media/upload?postId={id}`.',
   })
   @ApiCreatedResponse({ type: PostResponseDto, description: 'Созданный пост' })
@@ -69,7 +70,7 @@ export class PostsController {
       '(креаторы — только COMPANY, компании — только CREATOR); приватные посты скрыты. ' +
       'С `ownerId` = свой id — все свои посты (включая приватные). ' +
       'Поиск: `q` — по title или companyName; `title` — только по названию поста. ' +
-      'Базовые фильтры: `type` (свои), `isArchived`, `isPrivate` (свои). ' +
+      'Базовые фильтры: `type` (свои), `isArchived`, `isPrivate` (свои), `isTemplate` (свои шаблоны). ' +
       'Доп. фильтры: `urgent`, `hasPhoto`, `chips`, `categories`, `platforms`, `placementFormats`, `niche`, `tags`, `workFormat`, `employmentType`, ' +
       '`createdDate`, `deadlineDate`, `budgetType`, `budgetCurrency`, `paymentTerms`, `locationCity`, `locationCountry`, `shootingRequired`, ' +
       '`minFollowers`, `maxFollowers`, `minEngagementRate`, `verifiedAccount`, `experienceWithAds`, `contentStyle`, ' +

@@ -101,6 +101,7 @@ export class MediaService {
           key,
           size: String(file.size),
           mimeType: file.mimetype,
+          fileName,
         },
         taskMediaKind ?? TaskMediaKind.MAIN,
         accountId
@@ -171,7 +172,7 @@ export class MediaService {
         key: destKey,
         mimeType: item.mimeType,
         size: Number.isFinite(size) ? size : 0,
-        fileName: null,
+        fileName: item.fileName ?? null,
       });
     }
 

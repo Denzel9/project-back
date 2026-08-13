@@ -65,6 +65,15 @@ export class ListPostsQueryDto {
   isPrivate?: boolean;
 
   @ApiPropertyOptional({
+    description:
+      'Фильтр шаблонов объявлений. true — только свои шаблоны (нужен ownerId). Без параметра шаблоны скрыты.',
+  })
+  @IsOptional()
+  @Transform(transformOptionalBoolean)
+  @IsBoolean()
+  isTemplate?: boolean;
+
+  @ApiPropertyOptional({
     description: 'Поиск по названию поста или названию компании-автора',
     example: 'реклама',
   })

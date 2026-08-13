@@ -314,6 +314,7 @@ model User {
   refreshSessions         RefreshSession[]
   pushSubscriptions       PushSubscription[]
   taskTemplates           TaskTemplate[]
+  fileTemplates           FileTemplate[]
 }
 
 model RefreshSession {
@@ -555,6 +556,7 @@ model Post {
   urgent              Boolean           @default(false)
   isArchived          Boolean           @default(false)
   isPrivate           Boolean           @default(false)
+  isTemplate          Boolean           @default(false)
   keyWords            String[]          @default([])
   categories          String[]          @default([])
   platforms           Platform[]        @default([])
@@ -594,6 +596,7 @@ model Post {
   @@index([ownerId])
   @@index([isArchived])
   @@index([isPrivate])
+  @@index([isTemplate])
 }
 
 model PostMedia {
@@ -745,19 +748,39 @@ model Task {
 }
 
 model TaskTemplate {
-  id           String   @id @default(uuid())
-  ownerId      String
-  owner        User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  name         String
-  title        String?
-  description  String   @default("")
-  photoCount   String   @default("0")
-  videoCount   String   @default("0")
-  urgent       Boolean  @default(false)
-  brief        Json?
-  deliverables Json?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                    String    @id @default(uuid())
+  ownerId               String
+  owner                 User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name                  String
+  title                 String?
+  description           String    @default("")
+  photoCount            String    @default("0")
+  videoCount            String    @default("0")
+  urgent                Boolean   @default(false)
+  finalDate             DateTime?
+  location              Json?
+  bloggerRequirements   Json?
+  cooperationDetails    Json?
+  brief                 Json?
+  deliverables          Json?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([ownerId])
+  @@index([ownerId, updatedAt])
+}
+
+model FileTemplate {
+  id        String   @id @default(uuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name      String
+  url       String
+  key       String
+  size      String
+  mimeType  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([ownerId])
   @@index([ownerId, updatedAt])
@@ -896,6 +919,7 @@ model TaskMedia {
   key       String
   size      String
   mimeType  String
+  fileName  String?
   sortOrder Int           @default(0)
   createdAt DateTime      @default(now())
 

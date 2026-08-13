@@ -22,9 +22,14 @@ export function visiblePostTypeForRole(role: Role): PostAuthorType | null {
 export function canViewPost(
   role: Role,
   userId: string,
-  post: { ownerId: string; type: PostAuthorType; isPrivate?: boolean }
+  post: {
+    ownerId: string;
+    type: PostAuthorType;
+    isPrivate?: boolean;
+    isTemplate?: boolean;
+  }
 ): boolean {
-  if (post.isPrivate) {
+  if (post.isPrivate || post.isTemplate) {
     return post.ownerId === userId;
   }
 
@@ -47,7 +52,12 @@ export function canViewPost(
 export function assertCanViewPost(
   role: Role,
   userId: string,
-  post: { ownerId: string; type: PostAuthorType; isPrivate?: boolean }
+  post: {
+    ownerId: string;
+    type: PostAuthorType;
+    isPrivate?: boolean;
+    isTemplate?: boolean;
+  }
 ): void {
   if (!canViewPost(role, userId, post)) {
     throw new ForbiddenException('Недостаточно прав для просмотра поста');

@@ -28,6 +28,7 @@ import { BillingModule } from './billing/billing.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { RedisModule } from './redis/redis.module';
 import { TaskTemplatesModule } from './task-templates/task-templates.module';
+import { FileTemplatesModule } from './file-templates/file-templates.module';
 import { getBullMqConnection, getRedisUrl } from './redis/redis-connection';
 
 @Module({
@@ -73,6 +74,7 @@ import { getBullMqConnection, getRedisUrl } from './redis/redis-connection';
     BillingModule,
     IntegrationsModule,
     TaskTemplatesModule,
+    FileTemplatesModule,
   ],
   controllers: [AppController],
   providers: [

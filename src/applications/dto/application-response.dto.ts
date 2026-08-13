@@ -52,8 +52,7 @@ export class ApplicationResponseDto {
   @ApiPropertyOptional({
     type: ApplicantStatisticsDto,
     nullable: true,
-    description:
-      'Статистика кандидата (только если attachStatistics=true и ответ для владельца поста)',
+    description: 'Статистика кандидата (для владельца поста)',
   })
   applicantStatistics?: ApplicantStatisticsDto | null;
 }

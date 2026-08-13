@@ -45,8 +45,7 @@ export class ApplicationsController {
     summary: 'Откликнуться на пост',
     description:
       'Один отклик на пост. Нельзя откликнуться на свой или архивный пост. ' +
-      'ACCEPTED создаёт задачу. Владельцу поста отправляется in-app уведомление и email. ' +
-      '`attachStatistics` (по умолчанию true) — показать владельцу статистику кандидата.',
+      'ACCEPTED создаёт задачу. Владельцу поста отправляется in-app уведомление и email.',
   })
   @ApiCreatedResponse({ type: ApplicationResponseDto })
   @ApiNotFoundResponse({ description: 'Пост не найден' })

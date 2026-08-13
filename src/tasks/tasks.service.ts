@@ -40,7 +40,7 @@ import {
   buildCreatorNameSearch,
 } from '../partners/partner-filters.util';
 import { StorageService } from '../media/storage.service';
-import { ALLOWED_DOCUMENT_MIME_TYPES } from '../media/media.constants';
+import { ALLOWED_DOCUMENT_MIME_TYPES, sanitizeUploadFileName } from '../media/media.constants';
 import { formatTaskStatus } from '../notifications/notification-labels.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PublicationsService } from '../publications/publications.service';
@@ -2075,6 +2075,7 @@ export class TasksService {
         key: true,
         size: true,
         mimeType: true,
+        fileName: true,
       },
     });
 
@@ -2088,7 +2089,13 @@ export class TasksService {
   async addMedia(
     taskId: string,
     actorId: string,
-    data: { url: string; key: string; size: string; mimeType: string },
+    data: {
+      url: string;
+      key: string;
+      size: string;
+      mimeType: string;
+      fileName?: string | null;
+    },
     kind: TaskMediaKind = TaskMediaKind.MAIN,
     accountId?: string
   ) {
@@ -2108,6 +2115,7 @@ export class TasksService {
         key: data.key,
         size: data.size,
         mimeType: data.mimeType,
+        fileName: sanitizeUploadFileName(data.fileName),
         sortOrder: count,
       },
     });
@@ -2123,6 +2131,7 @@ export class TasksService {
         key: media.key,
         mimeType: media.mimeType,
         size: media.size,
+        fileName: media.fileName,
       },
       undefined,
       actor
@@ -3279,6 +3288,7 @@ export class TasksService {
       size: string;
       mimeType: string;
       kind: TaskMediaKind;
+      fileName?: string | null;
     }>
   > {
     const allowedPrefixes = [
@@ -3295,6 +3305,7 @@ export class TasksService {
       size: string;
       mimeType: string;
       kind: TaskMediaKind;
+      fileName?: string | null;
     }> = [];
 
     for (const item of media) {
@@ -3307,6 +3318,7 @@ export class TasksService {
           kind: item.key.includes('/reports/')
             ? TaskMediaKind.REPORT
             : TaskMediaKind.MAIN,
+          fileName: item.fileName,
         });
         continue;
       }
@@ -3328,6 +3340,7 @@ export class TasksService {
           kind: item.key.includes('/reports/')
             ? TaskMediaKind.REPORT
             : TaskMediaKind.MAIN,
+          fileName: item.fileName,
         });
         continue;
       }
@@ -3366,6 +3379,7 @@ export class TasksService {
         size: item.size,
         mimeType: item.mimeType,
         kind,
+        fileName: item.fileName,
       });
     }
 
@@ -3485,6 +3499,7 @@ export class TasksService {
     key: string;
     size: string;
     mimeType: string;
+    fileName?: string | null;
     kind: TaskMediaKind;
   }) {
     return {
@@ -3493,6 +3508,7 @@ export class TasksService {
       key: item.key,
       size: item.size,
       mimeType: item.mimeType,
+      fileName: item.fileName ?? null,
       kind: item.kind,
     };
   }
@@ -3725,6 +3741,7 @@ export class TasksService {
     key: string;
     size: string;
     mimeType: string;
+    fileName?: string | null;
     createdAt: Date;
   }): TaskAttachmentResponseDto {
     return {
@@ -3734,6 +3751,7 @@ export class TasksService {
       key: attachment.key,
       size: attachment.size,
       mimeType: attachment.mimeType,
+      fileName: attachment.fileName ?? null,
       createdAt: attachment.createdAt.toISOString(),
     };
   }

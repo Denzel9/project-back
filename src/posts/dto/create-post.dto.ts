@@ -66,6 +66,15 @@ export class CreatePostDto {
   @IsBoolean()
   isPrivate?: boolean;
 
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Сохранить как шаблон объявления. Шаблон не показывается в ленте и в списке объявлений.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  isTemplate?: boolean;
+
   @ApiPropertyOptional({ type: [String], default: [] })
   @IsOptional()
   @IsArray()

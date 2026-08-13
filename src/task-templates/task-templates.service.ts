@@ -3,15 +3,32 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, TaskTemplate } from '@prisma/client';
 import { AuthUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  columnsToBloggerRequirements,
+  columnsToCooperationDetails,
+} from '../posts/blogger-coop-fields.util';
 import { TasksService } from '../tasks/tasks.service';
 import { TaskResponseDto } from '../tasks/dto/task-response.dto';
 import { CreateTaskTemplateDto } from './dto/create-task-template.dto';
 import { InstantiateTaskTemplateDto } from './dto/instantiate-task-template.dto';
 import { TaskTemplateResponseDto } from './dto/task-template-response.dto';
 import { UpdateTaskTemplateDto } from './dto/update-task-template.dto';
+
+const toJsonWrite = (
+  value: unknown | null | undefined
+): Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null) return Prisma.JsonNull;
+  return value as Prisma.InputJsonValue;
+};
+
+const toJsonRead = <T>(value: Prisma.JsonValue | null): T | null => {
+  if (value == null || typeof value !== 'object') return null;
+  return value as T;
+};
 
 @Injectable()
 export class TaskTemplatesService {
@@ -44,24 +61,13 @@ export class TaskTemplatesService {
     const item = await this.prisma.taskTemplate.create({
       data: {
         ownerId: user.userId,
+        ...this.buildWriteData(dto),
         name: dto.name.trim(),
         title: dto.title === undefined ? null : dto.title,
         description: dto.description ?? '',
         photoCount: dto.photoCount ?? '0',
         videoCount: dto.videoCount ?? '0',
         urgent: dto.urgent ?? false,
-        ...(dto.brief !== undefined && {
-          brief:
-            dto.brief === null
-              ? Prisma.JsonNull
-              : (dto.brief as unknown as Prisma.InputJsonValue),
-        }),
-        ...(dto.deliverables !== undefined && {
-          deliverables:
-            dto.deliverables === null
-              ? Prisma.JsonNull
-              : (dto.deliverables as unknown as Prisma.InputJsonValue),
-        }),
       },
     });
 
@@ -74,17 +80,6 @@ export class TaskTemplatesService {
   ): Promise<TaskTemplateResponseDto> {
     const task = await this.prisma.task.findUnique({
       where: { id: taskId },
-      select: {
-        id: true,
-        ownerId: true,
-        title: true,
-        description: true,
-        photoCount: true,
-        videoCount: true,
-        urgent: true,
-        brief: true,
-        deliverables: true,
-      },
     });
 
     if (!task) {
@@ -110,14 +105,14 @@ export class TaskTemplatesService {
         photoCount: task.photoCount,
         videoCount: task.videoCount,
         urgent: task.urgent,
-        brief:
-          task.brief === null
-            ? Prisma.JsonNull
-            : (task.brief as Prisma.InputJsonValue),
-        deliverables:
-          task.deliverables === null
-            ? Prisma.JsonNull
-            : (task.deliverables as Prisma.InputJsonValue),
+        finalDate: task.finalDate,
+        location: toJsonWrite(task.location) ?? Prisma.JsonNull,
+        bloggerRequirements:
+          toJsonWrite(columnsToBloggerRequirements(task)) ?? Prisma.JsonNull,
+        cooperationDetails:
+          toJsonWrite(columnsToCooperationDetails(task)) ?? Prisma.JsonNull,
+        brief: toJsonWrite(task.brief) ?? Prisma.JsonNull,
+        deliverables: toJsonWrite(task.deliverables) ?? Prisma.JsonNull,
       },
     });
 
@@ -142,18 +137,7 @@ export class TaskTemplatesService {
         ...(dto.photoCount !== undefined && { photoCount: dto.photoCount }),
         ...(dto.videoCount !== undefined && { videoCount: dto.videoCount }),
         ...(dto.urgent !== undefined && { urgent: dto.urgent }),
-        ...(dto.brief !== undefined && {
-          brief:
-            dto.brief === null
-              ? Prisma.JsonNull
-              : (dto.brief as unknown as Prisma.InputJsonValue),
-        }),
-        ...(dto.deliverables !== undefined && {
-          deliverables:
-            dto.deliverables === null
-              ? Prisma.JsonNull
-              : (dto.deliverables as unknown as Prisma.InputJsonValue),
-        }),
+        ...this.buildWriteData(dto),
       },
     });
 
@@ -180,6 +164,18 @@ export class TaskTemplatesService {
       photoCount: template.photoCount,
       videoCount: template.videoCount,
       urgent: template.urgent,
+      ...(template.finalDate != null && {
+        finalDate: template.finalDate.toISOString(),
+      }),
+      ...(template.location != null && {
+        location: template.location as never,
+      }),
+      ...(template.bloggerRequirements != null && {
+        bloggerRequirements: template.bloggerRequirements as never,
+      }),
+      ...(template.cooperationDetails != null && {
+        cooperationDetails: template.cooperationDetails as never,
+      }),
       ...(template.brief != null && {
         brief: template.brief as never,
       }),
@@ -187,6 +183,29 @@ export class TaskTemplatesService {
         deliverables: template.deliverables as never,
       }),
     });
+  }
+
+  private buildWriteData(dto: CreateTaskTemplateDto | UpdateTaskTemplateDto) {
+    return {
+      ...(dto.finalDate !== undefined && {
+        finalDate: dto.finalDate === null ? null : new Date(dto.finalDate),
+      }),
+      ...(dto.location !== undefined && {
+        location: toJsonWrite(dto.location),
+      }),
+      ...(dto.bloggerRequirements !== undefined && {
+        bloggerRequirements: toJsonWrite(dto.bloggerRequirements),
+      }),
+      ...(dto.cooperationDetails !== undefined && {
+        cooperationDetails: toJsonWrite(dto.cooperationDetails),
+      }),
+      ...(dto.brief !== undefined && {
+        brief: toJsonWrite(dto.brief),
+      }),
+      ...(dto.deliverables !== undefined && {
+        deliverables: toJsonWrite(dto.deliverables),
+      }),
+    };
   }
 
   private async findOwned(ownerId: string, id: string) {
@@ -205,20 +224,7 @@ export class TaskTemplatesService {
     return item;
   }
 
-  private toResponse(item: {
-    id: string;
-    ownerId: string;
-    name: string;
-    title: string | null;
-    description: string;
-    photoCount: string;
-    videoCount: string;
-    urgent: boolean;
-    brief: Prisma.JsonValue | null;
-    deliverables: Prisma.JsonValue | null;
-    createdAt: Date;
-    updatedAt: Date;
-  }): TaskTemplateResponseDto {
+  private toResponse(item: TaskTemplate): TaskTemplateResponseDto {
     return {
       id: item.id,
       ownerId: item.ownerId,
@@ -228,8 +234,12 @@ export class TaskTemplatesService {
       photoCount: item.photoCount,
       videoCount: item.videoCount,
       urgent: item.urgent,
-      brief: item.brief,
-      deliverables: item.deliverables,
+      finalDate: item.finalDate?.toISOString() ?? null,
+      location: toJsonRead(item.location),
+      bloggerRequirements: toJsonRead(item.bloggerRequirements),
+      cooperationDetails: toJsonRead(item.cooperationDetails),
+      brief: toJsonRead(item.brief),
+      deliverables: toJsonRead(item.deliverables),
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString(),
     };

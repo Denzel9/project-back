@@ -98,7 +98,8 @@ export class PostsService {
         urgent: dto.urgent ?? false,
         keyWords: dto.keyWords ?? [],
         categories: dto.categories ?? [],
-        isPrivate: dto.isPrivate ?? false,
+        isPrivate: dto.isTemplate ? true : (dto.isPrivate ?? false),
+        isTemplate: dto.isTemplate ?? false,
         platforms: dto.platforms ?? [],
         placementFormats: dto.placementFormats ?? [],
         niche: dto.niche ?? [],
@@ -144,6 +145,12 @@ export class PostsService {
       );
     }
 
+    if (query.isTemplate === true && !viewingOwnPosts) {
+      throw new BadRequestException(
+        'Шаблоны объявлений доступны только для своих постов'
+      );
+    }
+
     const where: Prisma.PostWhereInput = {
       ...(query.ownerId !== undefined
         ? { ownerId: query.ownerId }
@@ -159,6 +166,7 @@ export class PostsService {
       ...(!viewingOwnPosts && { isPrivate: false }),
       ...(viewingOwnPosts &&
         query.isPrivate !== undefined && { isPrivate: query.isPrivate }),
+      isTemplate: query.isTemplate === true,
       ...(query.q !== undefined && buildPostSearchWhere(query.q)),
       ...buildPostFieldFilters(query),
     };
@@ -187,6 +195,7 @@ export class PostsService {
       where: {
         ownerId: user.userId,
         isArchived: false,
+        isTemplate: false,
       },
       select: {
         id: true,
@@ -210,11 +219,22 @@ export class PostsService {
     id: string,
     dto: UpdatePostDto
   ): Promise<PostResponseDto> {
-    await this.assertOwner(user.userId, id);
+    const existing = await this.assertOwner(user.userId, id);
+    const data = this.buildUpdateData(dto);
+
+    if (dto.isTemplate === false) {
+      data.isTemplate = false;
+      if (dto.isPrivate === undefined) {
+        data.isPrivate = false;
+      }
+    } else if (existing.isTemplate || dto.isTemplate) {
+      data.isPrivate = true;
+      data.isTemplate = true;
+    }
 
     const post = await this.prisma.post.update({
       where: { id },
-      data: this.buildUpdateData(dto),
+      data,
       include: postWithMediaInclude,
     });
 
@@ -297,7 +317,7 @@ export class PostsService {
   private async assertOwner(userId: string, postId: string) {
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
-      select: { ownerId: true },
+      select: { ownerId: true, isTemplate: true },
     });
 
     if (!post) {
@@ -307,6 +327,8 @@ export class PostsService {
     if (post.ownerId !== userId) {
       throw new ForbiddenException('Недостаточно прав для изменения поста');
     }
+
+    return post;
   }
 
   private roleToPostAuthorType(role: Role): PostAuthorType {
@@ -331,6 +353,7 @@ export class PostsService {
     if (dto.urgent !== undefined) data.urgent = dto.urgent;
     if (dto.isArchived !== undefined) data.isArchived = dto.isArchived;
     if (dto.isPrivate !== undefined) data.isPrivate = dto.isPrivate;
+    if (dto.isTemplate !== undefined) data.isTemplate = dto.isTemplate;
     if (dto.keyWords !== undefined) data.keyWords = dto.keyWords;
     if (dto.categories !== undefined) data.categories = dto.categories;
     if (dto.platforms !== undefined) data.platforms = dto.platforms;
@@ -372,6 +395,7 @@ export class PostsService {
       description: post.description,
       isPrivate: post.isPrivate,
       isArchived: post.isArchived,
+      isTemplate: post.isTemplate,
       categories: post.categories,
       permissions: post.permissions,
       ...(post.keyWords.length > 0 && { keyWords: post.keyWords }),

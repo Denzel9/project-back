@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, MinLength } from 'class-validator';
 
 export class TaskCommentMediaInputDto {
   @ApiProperty({
@@ -24,4 +24,13 @@ export class TaskCommentMediaInputDto {
   @IsString()
   @MinLength(1)
   mimeType: string;
+
+  @ApiPropertyOptional({
+    example: 'brief.pdf',
+    nullable: true,
+    description: 'Оригинальное имя файла',
+  })
+  @IsOptional()
+  @IsString()
+  fileName?: string | null;
 }

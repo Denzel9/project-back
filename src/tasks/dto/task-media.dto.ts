@@ -21,6 +21,14 @@ export class TaskMediaDto {
   mimeType: string;
 
   @ApiProperty({
+    example: 'brief.pdf',
+    required: false,
+    nullable: true,
+    description: 'Оригинальное имя файла',
+  })
+  fileName: string | null;
+
+  @ApiProperty({
     enum: TaskMediaKind,
     description: 'MAIN — основные вложения задачи, REPORT — отчёт исполнителя',
   })

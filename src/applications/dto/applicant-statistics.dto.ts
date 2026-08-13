@@ -8,6 +8,17 @@ export class ApplicantStatisticsDto {
   cancelledWorks: number;
 
   @ApiProperty({
+    description: 'Публикации кандидата (как исполнитель или заказчик)',
+  })
+  totalPublications: number;
+
+  @ApiProperty({
+    description:
+      'Совместные задачи в работе между кандидатом и владельцем поста',
+  })
+  sharedInProgressWorks: number;
+
+  @ApiProperty({
     description:
       'Совместно завершённые задачи между кандидатом и владельцем поста',
   })
