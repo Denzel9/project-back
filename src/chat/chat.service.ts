@@ -1350,6 +1350,8 @@ export class ChatService {
         entityType: 'conversation',
         entityId: conversationId,
         conversationId,
+        peerId: senderId,
+        senderId,
         meta: {
           messageId: message.id,
           preview,

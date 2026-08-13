@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { NotificationType } from '@prisma/client';
 import * as webpush from 'web-push';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildNotificationActionUrl } from '../notifications/notification-action-url.util';
@@ -94,6 +95,8 @@ export class PushService implements OnModuleInit {
       title: string;
       body?: string | null;
       notificationPayload: NotificationPayload;
+      type?: NotificationType;
+      actorId?: string | null;
     }
   ): Promise<void> {
     if (!this.enabled) {
@@ -113,7 +116,8 @@ export class PushService implements OnModuleInit {
       .replace(/\/$/, '');
     const url = buildNotificationActionUrl(
       frontendUrl,
-      payload.notificationPayload
+      payload.notificationPayload,
+      { type: payload.type, actorId: payload.actorId }
     );
 
     const body = JSON.stringify({

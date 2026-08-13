@@ -12,5 +12,9 @@ export type NotificationPayload = {
   taskId?: string;
   conversationId?: string;
   applicationId?: string;
+  peerId?: string;
+  senderId?: string;
+  inviteToken?: string;
+  token?: string;
   meta?: Record<string, unknown>;
 };

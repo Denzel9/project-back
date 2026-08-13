@@ -310,6 +310,8 @@ export class NotificationsService {
         title: input.title,
         body: input.body,
         notificationPayload: input.payload,
+        type: input.type,
+        actorId: input.actorId,
       });
     } catch (error) {
       this.logger.error(
@@ -323,7 +325,10 @@ export class NotificationsService {
     const frontendUrl = this.configService
       .getOrThrow<string>('FRONTEND_URL')
       .replace(/\/$/, '');
-    const actionUrl = buildNotificationActionUrl(frontendUrl, input.payload);
+    const actionUrl = buildNotificationActionUrl(frontendUrl, input.payload, {
+      type: input.type,
+      actorId: input.actorId,
+    });
     const parts = [input.title];
 
     if (input.body) {
@@ -351,7 +356,10 @@ export class NotificationsService {
       const frontendUrl = this.configService
         .getOrThrow<string>('FRONTEND_URL')
         .replace(/\/$/, '');
-      const actionUrl = buildNotificationActionUrl(frontendUrl, input.payload);
+      const actionUrl = buildNotificationActionUrl(frontendUrl, input.payload, {
+        type: input.type,
+        actorId: input.actorId,
+      });
 
       await this.mailService.sendNotificationEmail(email, {
         title: input.title,
