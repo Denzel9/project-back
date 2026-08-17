@@ -40,6 +40,12 @@ export type ChatMessageDto = {
   isRead: boolean;
 };
 
+export type ChatMessagesPageDto = {
+  items: ChatMessageDto[];
+  hasOlder: boolean;
+  hasNewer: boolean;
+};
+
 export type ChatMessagePinDto = {
   messageId: string;
   content: string;

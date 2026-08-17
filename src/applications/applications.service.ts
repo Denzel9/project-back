@@ -200,14 +200,27 @@ export class ApplicationsService {
     return { incomingNew, mineActive };
   }
 
+  private resolveStatusFilter(query: ListApplicationsQueryDto) {
+    if (query.statuses !== undefined && query.statuses.length > 0) {
+      return { in: query.statuses };
+    }
+
+    if (query.status !== undefined) {
+      return query.status;
+    }
+
+    return undefined;
+  }
+
   async listMine(user: AuthUser, query: ListApplicationsQueryDto) {
     const postFilter = this.buildPostListFilter(query);
     const createdAtFilter = buildCalendarDayFilter(query.createdDate);
+    const statusFilter = this.resolveStatusFilter(query);
 
     return this.listApplications(
       {
         applicantId: user.userId,
-        ...(query.status !== undefined && { status: query.status }),
+        ...(statusFilter !== undefined && { status: statusFilter }),
         ...(postFilter !== undefined && { post: postFilter }),
         ...(createdAtFilter !== undefined && { createdAt: createdAtFilter }),
       },
@@ -219,11 +232,12 @@ export class ApplicationsService {
   async listIncoming(user: AuthUser, query: ListApplicationsQueryDto) {
     const postFilter = this.buildIncomingPostFilter(user.userId, query);
     const createdAtFilter = buildCalendarDayFilter(query.createdDate);
+    const statusFilter = this.resolveStatusFilter(query);
 
     return this.listApplications(
       {
         post: postFilter,
-        ...(query.status !== undefined && { status: query.status }),
+        ...(statusFilter !== undefined && { status: statusFilter }),
         ...(query.userId !== undefined && { applicantId: query.userId }),
         ...(createdAtFilter !== undefined && { createdAt: createdAtFilter }),
       },
@@ -267,12 +281,13 @@ export class ApplicationsService {
     }
 
     const createdAtFilter = buildCalendarDayFilter(query.createdDate);
+    const statusFilter = this.resolveStatusFilter(query);
 
     return this.listApplications(
       {
         postId,
         ...(!isOwner && { applicantId: user.userId }),
-        ...(query.status !== undefined && { status: query.status }),
+        ...(statusFilter !== undefined && { status: statusFilter }),
         ...(createdAtFilter !== undefined && { createdAt: createdAtFilter }),
       },
       query,
@@ -631,11 +646,11 @@ export class ApplicationsService {
     application: ApplicationWithRelations,
     actorAccountId: string
   ) {
-    const content = application.message?.trim();
-
-    if (!content) {
-      return;
-    }
+    const title = application.post.title.trim() || 'объявление';
+    const letter = application.message?.trim() ?? '';
+    const header = `Новый отклик на объявление «${title}»`;
+    const body = letter ? `${header}\n\n${letter}` : header;
+    const content = `<!-- chat-application:${application.postId} -->\n${body}`;
 
     try {
       const conversation = await this.chatService.findOrCreateConversation(

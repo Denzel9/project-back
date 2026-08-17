@@ -49,7 +49,7 @@ import { getBullMqConnection, getRedisUrl } from './redis/redis-connection';
       useFactory: (configService: ConfigService) => ({
         throttlers: [
           { name: 'auth', ttl: seconds(60), limit: 10 },
-          { name: 'upload', ttl: seconds(60), limit: 30 },
+          { name: 'upload', ttl: seconds(60), limit: 100 },
         ],
         storage: new ThrottlerStorageRedisService(getRedisUrl(configService)),
       }),

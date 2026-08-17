@@ -15,6 +15,7 @@ import {
 import {
   ApiCookieAuth,
   ApiCreatedResponse,
+  ApiBadRequestResponse,
   ApiForbiddenResponse,
   ApiNoContentResponse,
   ApiNotFoundResponse,
@@ -114,6 +115,27 @@ export class PostsController {
     return this.applicationsService.listByPost(user, id, query);
   }
 
+  @Post(':id/publish-template')
+  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
+  @ApiOperation({
+    summary: 'Опубликовать объявление из шаблона',
+    description:
+      'Создаёт новое публичное объявление как копию шаблона. ' +
+      'Сам шаблон остаётся в разделе «Шаблоны».',
+  })
+  @ApiCreatedResponse({
+    type: PostResponseDto,
+    description: 'Опубликованное объявление',
+  })
+  @ApiNotFoundResponse({ description: 'Пост не найден' })
+  @ApiForbiddenResponse({ description: 'Недостаточно прав (не владелец)' })
+  publishFromTemplate(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string
+  ) {
+    return this.postsService.publishFromTemplate(user, id);
+  }
+
   @Get(':id')
   @ApiOperation({
     summary: 'Получить пост по id',
@@ -157,11 +179,15 @@ export class PostsController {
   @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
-    summary: 'Удалить пост',
+    summary: 'Удалить шаблон поста',
     description:
-      'Удаляет пост и связанные записи `PostMedia`. Файлы в S3 не удаляются.',
+      'Удаляет только шаблон (`isTemplate`). Обычные объявления удалить нельзя — их нужно архивировать. ' +
+      'Связанные записи `PostMedia` удаляются каскадом. Файлы в S3 не удаляются.',
   })
-  @ApiNoContentResponse({ description: 'Пост удалён' })
+  @ApiNoContentResponse({ description: 'Шаблон удалён' })
+  @ApiBadRequestResponse({
+    description: 'Обычное объявление нельзя удалить, только архивировать',
+  })
   @ApiNotFoundResponse({ description: 'Пост не найден' })
   @ApiForbiddenResponse({
     description: 'Недостаточно прав (не владелец)',

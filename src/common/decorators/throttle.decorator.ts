@@ -10,7 +10,7 @@ export function ThrottleAuth(limit = 10, ttlSeconds = 60) {
 }
 
 /** Rate limit for media upload. */
-export function ThrottleUpload(limit = 30, ttlSeconds = 60) {
+export function ThrottleUpload(limit = 100, ttlSeconds = 60) {
   return applyDecorators(
     Throttle({ upload: { limit, ttl: seconds(ttlSeconds) } }),
     UseGuards(ThrottlerGuard)

@@ -32,6 +32,7 @@ import {
   ChatConversationDto,
   ChatAttachmentDto,
   ChatMessageDto,
+  ChatMessagesPageDto,
   ChatMessagePinDto,
   ChatMessageMediaInput,
   ChatPeerDto,
@@ -136,7 +137,7 @@ export class ChatService {
   async getUnreadCount(userId: string): Promise<{ count: number }> {
     const participations =
       await this.prisma.conversationParticipant.findMany({
-        where: { userId },
+        where: { userId, hiddenAt: null },
         select: {
           conversationId: true,
           lastReadAt: true,
@@ -191,6 +192,7 @@ export class ChatService {
 
     const where: Prisma.ConversationParticipantWhereInput = {
       userId,
+      hiddenAt: null,
       ...(conversationAnd.length > 0 && {
         conversation: { AND: conversationAnd },
       }),
@@ -278,6 +280,7 @@ export class ChatService {
     });
 
     if (existing) {
+      await this.unhideConversationForUser(existing.id, userId);
       return this.mapConversation(existing, userId);
     }
 
@@ -343,6 +346,7 @@ export class ChatService {
     });
 
     if (existing) {
+      await this.unhideConversationForUser(existing.id, userId);
       return this.mapConversation(existing, userId);
     }
 
@@ -410,6 +414,37 @@ export class ChatService {
     });
 
     return this.mapConversation(conversation, userId);
+  }
+
+  async hideConversation(
+    conversationId: string,
+    userId: string
+  ): Promise<void> {
+    await this.assertParticipant(conversationId, userId);
+
+    await this.prisma.conversationParticipant.update({
+      where: {
+        conversationId_userId: {
+          conversationId,
+          userId,
+        },
+      },
+      data: { hiddenAt: new Date() },
+    });
+  }
+
+  private async unhideConversationForUser(
+    conversationId: string,
+    userId: string
+  ): Promise<void> {
+    await this.prisma.conversationParticipant.updateMany({
+      where: {
+        conversationId,
+        userId,
+        hiddenAt: { not: null },
+      },
+      data: { hiddenAt: null },
+    });
   }
 
   async pinMessage(
@@ -558,21 +593,152 @@ export class ChatService {
     }));
   }
 
+  private olderThan(message: {
+    createdAt: Date;
+    id: string;
+  }): Prisma.MessageWhereInput {
+    return {
+      OR: [
+        { createdAt: { lt: message.createdAt } },
+        { createdAt: message.createdAt, id: { lt: message.id } },
+      ],
+    };
+  }
+
+  private newerThan(message: {
+    createdAt: Date;
+    id: string;
+  }): Prisma.MessageWhereInput {
+    return {
+      OR: [
+        { createdAt: { gt: message.createdAt } },
+        { createdAt: message.createdAt, id: { gt: message.id } },
+      ],
+    };
+  }
+
+  private mapMessagePage(
+    messages: Parameters<ChatService['mapMessage']>[0][],
+    userId: string,
+    viewerLastReadAt: Date | null,
+    peerLastReadAt: Date | null,
+    hasOlder: boolean,
+    hasNewer: boolean,
+  ): ChatMessagesPageDto {
+    return {
+      items: messages.map(message =>
+        this.mapMessage(message, userId, viewerLastReadAt, peerLastReadAt),
+      ),
+      hasOlder,
+      hasNewer,
+    };
+  }
+
   async listMessages(
     conversationId: string,
     userId: string,
     cursor?: string,
+    around?: string,
+    after?: string,
     limit = 50,
     markRead?: boolean
-  ): Promise<ChatMessageDto[]> {
+  ): Promise<ChatMessagesPageDto> {
     await this.assertParticipant(conversationId, userId);
 
-    const shouldMarkRead = markRead ?? !cursor;
+    const exclusiveCount = [cursor, around, after].filter(Boolean).length;
+
+    if (exclusiveCount > 1) {
+      throw new BadRequestException(
+        'Параметры cursor, around и after нельзя сочетать',
+      );
+    }
+
+    const shouldMarkRead = markRead ?? exclusiveCount === 0;
     let readState = await this.getConversationReadState(conversationId, userId);
 
     if (shouldMarkRead) {
       const readAt = await this.markConversationAsRead(conversationId, userId);
       readState = { ...readState, viewerLastReadAt: readAt };
+    }
+
+    const mapPage = (
+      messages: Parameters<ChatService['mapMessage']>[0][],
+      hasOlder: boolean,
+      hasNewer: boolean,
+    ) =>
+      this.mapMessagePage(
+        messages,
+        userId,
+        readState.viewerLastReadAt,
+        readState.peerLastReadAt,
+        hasOlder,
+        hasNewer,
+      );
+
+    const baseWhere: Prisma.MessageWhereInput = {
+      conversationId,
+      ...this.notHiddenFilter(userId),
+    };
+
+    if (around) {
+      const target = await this.prisma.message.findFirst({
+        where: { ...baseWhere, id: around },
+        include: messageWithMediaInclude,
+      });
+
+      if (!target) {
+        throw new NotFoundException('Сообщение не найдено');
+      }
+
+      const side = Math.max(1, Math.floor(limit / 2));
+
+      const [older, newer] = await Promise.all([
+        this.prisma.message.findMany({
+          where: { ...baseWhere, ...this.olderThan(target) },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: side + 1,
+          include: messageWithMediaInclude,
+        }),
+        this.prisma.message.findMany({
+          where: { ...baseWhere, ...this.newerThan(target) },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          take: side + 1,
+          include: messageWithMediaInclude,
+        }),
+      ]);
+
+      const hasOlder = older.length > side;
+      const hasNewer = newer.length > side;
+
+      return mapPage(
+        [...older.slice(0, side).reverse(), target, ...newer.slice(0, side)],
+        hasOlder,
+        hasNewer,
+      );
+    }
+
+    if (after) {
+      const afterMessage = await this.prisma.message.findUnique({
+        where: { id: after },
+      });
+
+      if (
+        !afterMessage ||
+        afterMessage.conversationId !== conversationId
+      ) {
+        throw new BadRequestException('Недействительный курсор пагинации');
+      }
+
+      const newer = await this.prisma.message.findMany({
+        where: { ...baseWhere, ...this.newerThan(afterMessage) },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: limit + 1,
+        include: messageWithMediaInclude,
+      });
+
+      const hasNewer = newer.length > limit;
+
+      return mapPage(newer.slice(0, limit), true, hasNewer);
     }
 
     const cursorMessage = cursor
@@ -590,35 +756,21 @@ export class ChatService {
 
     const messages = await this.prisma.message.findMany({
       where: {
-        conversationId,
-        ...this.notHiddenFilter(userId),
-        ...(cursorMessage
-          ? {
-            OR: [
-              { createdAt: { lt: cursorMessage.createdAt } },
-              {
-                createdAt: cursorMessage.createdAt,
-                id: { lt: cursorMessage.id },
-              },
-            ],
-          }
-          : {}),
+        ...baseWhere,
+        ...(cursorMessage ? this.olderThan(cursorMessage) : {}),
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: limit,
+      take: limit + 1,
       include: messageWithMediaInclude,
     });
 
-    return messages
-      .reverse()
-      .map(message =>
-        this.mapMessage(
-          message,
-          userId,
-          readState.viewerLastReadAt,
-          readState.peerLastReadAt
-        )
-      );
+    const hasOlder = messages.length > limit;
+
+    return mapPage(
+      messages.slice(0, limit).reverse(),
+      hasOlder,
+      Boolean(cursor),
+    );
   }
 
   async markConversationAsRead(
@@ -1477,6 +1629,14 @@ export class ChatService {
     await tx.conversation.update({
       where: { id: conversationId },
       data: { updatedAt: created.createdAt },
+    });
+
+    await tx.conversationParticipant.updateMany({
+      where: {
+        conversationId,
+        hiddenAt: { not: null },
+      },
+      data: { hiddenAt: null },
     });
 
     return created;

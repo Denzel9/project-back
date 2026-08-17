@@ -8,7 +8,7 @@ import { TaskMediaKind } from '@prisma/client';
 import { ChatService } from '../chat/chat.service';
 import { PostsService } from '../posts/posts.service';
 import { TasksService } from '../tasks/tasks.service';
-import { MIME_TO_EXTENSION, sanitizeUploadFileName } from './media.constants';
+import { MIME_TO_EXTENSION, resolveUploadMime, sanitizeUploadFileName } from './media.constants';
 import { CopyTaskMediaKindDto } from './dto/copy-task-media-to-conversation.dto';
 import { UploadResponseDto } from './dto/upload-response.dto';
 import { StorageService } from './storage.service';
@@ -21,6 +21,8 @@ export type MediaUploadTarget = {
   taskMediaKind?: TaskMediaKind;
   /** Client-provided original name (preferred over multer originalname) */
   fileName?: string | null;
+  /** Canonical MIME after alias/extension resolution */
+  mimeType?: string;
 };
 
 export type MediaDeleteTarget = {
@@ -49,7 +51,10 @@ export class MediaService {
     target: MediaUploadTarget = {},
     accountId?: string
   ): Promise<UploadResponseDto> {
-    const extension = MIME_TO_EXTENSION[file.mimetype];
+    const mimeType =
+      target.mimeType ||
+      resolveUploadMime(file.mimetype, file.originalname);
+    const extension = MIME_TO_EXTENSION[mimeType];
     const { postId, conversationId, taskId, forComment, taskMediaKind } =
       target;
 
@@ -75,7 +80,7 @@ export class MediaService {
     }
 
     try {
-      await this.storageService.putObject(key, file.buffer, file.mimetype);
+      await this.storageService.putObject(key, file.buffer, mimeType);
     } catch {
       throw new InternalServerErrorException('Не удалось загрузить файл');
     }
@@ -90,7 +95,7 @@ export class MediaService {
         url,
         key,
         size: String(file.size),
-        mimeType: file.mimetype,
+        mimeType,
       });
     } else if (taskId && !forComment) {
       await this.tasksService.addMedia(
@@ -100,7 +105,7 @@ export class MediaService {
           url,
           key,
           size: String(file.size),
-          mimeType: file.mimetype,
+          mimeType,
           fileName,
         },
         taskMediaKind ?? TaskMediaKind.MAIN,
@@ -111,7 +116,7 @@ export class MediaService {
     return {
       url,
       key,
-      mimeType: file.mimetype,
+      mimeType,
       size: file.size,
       fileName,
     };

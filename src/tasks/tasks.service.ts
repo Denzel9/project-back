@@ -40,7 +40,7 @@ import {
   buildCreatorNameSearch,
 } from '../partners/partner-filters.util';
 import { StorageService } from '../media/storage.service';
-import { ALLOWED_DOCUMENT_MIME_TYPES, sanitizeUploadFileName } from '../media/media.constants';
+import { ALLOWED_DOCUMENT_MIME_TYPES, MAX_TASK_REPORT_MEDIA, sanitizeUploadFileName } from '../media/media.constants';
 import { formatTaskStatus } from '../notifications/notification-labels.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PublicationsService } from '../publications/publications.service';
@@ -393,49 +393,6 @@ export class TasksService {
       includePost: true,
       includeExecutor: true,
       includeOwner: true,
-    });
-  }
-
-  async remove(user: AuthUser, id: string): Promise<void> {
-    const task = await this.prisma.task.findUnique({
-      where: { id },
-      include: {
-        media: { select: { key: true } },
-        comments: {
-          include: {
-            media: { select: { key: true } },
-          },
-        },
-      },
-    });
-
-    if (!task) {
-      throw new NotFoundException('Задача не найдена');
-    }
-
-    if (task.ownerId !== user.userId) {
-      throw new ForbiddenException(
-        'Удалять задачу может только владелец поста'
-      );
-    }
-
-    const mediaKeys = [
-      ...task.media.map(item => item.key),
-      ...task.comments.flatMap(comment => comment.media.map(item => item.key)),
-    ];
-
-    for (const key of mediaKeys) {
-      try {
-        await this.storageService.deleteObject(key);
-      } catch {
-        throw new InternalServerErrorException(
-          'Не удалось удалить файлы задачи'
-        );
-      }
-    }
-
-    await this.prisma.task.delete({
-      where: { id },
     });
   }
 
@@ -2103,6 +2060,12 @@ export class TasksService {
       where: { taskId, kind },
     });
 
+    if (kind === TaskMediaKind.REPORT && count >= MAX_TASK_REPORT_MEDIA) {
+      throw new BadRequestException(
+        'Можно загрузить не больше 30 файлов. Если материалов больше — упакуйте их в ZIP-архив и загрузите одним файлом.'
+      );
+    }
+
     const actor = accountId
       ? await this.actorAttribution.resolve(accountId, actorId)
       : null;
@@ -2835,7 +2798,7 @@ export class TasksService {
     const comment = await this.getCommentOrThrow(taskId, commentId, {
       includeMedia: true,
     });
-    this.assertCanModifyComment(task, comment.authorId, user.userId);
+    this.assertCanModifyComment(comment.authorId, user.userId);
 
     const trimmedContent = dto.content.trim();
 
@@ -2888,7 +2851,7 @@ export class TasksService {
     const comment = await this.getCommentOrThrow(taskId, commentId, {
       includeMedia: true,
     });
-    this.assertCanModifyComment(task, comment.authorId, user.userId);
+    this.assertCanModifyComment(comment.authorId, user.userId);
 
     for (const item of comment.media) {
       try {
@@ -3450,15 +3413,7 @@ export class TasksService {
     }
   }
 
-  private assertCanModifyComment(
-    task: Pick<Task, 'ownerId'>,
-    authorId: string,
-    userId: string
-  ) {
-    if (task.ownerId === userId) {
-      return;
-    }
-
+  private assertCanModifyComment(authorId: string, userId: string) {
     if (authorId !== userId) {
       throw new ForbiddenException(
         'Недостаточно прав для изменения комментария'

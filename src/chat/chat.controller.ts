@@ -35,6 +35,7 @@ import { ChatUnreadCountDto } from './dto/chat-unread-count.dto';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { ListConversationsQueryDto } from './dto/list-conversations-query.dto';
 import { ListMessagesQueryDto } from './dto/list-messages-query.dto';
+import { ListMessagesResponse } from './dto/list-messages-response.dto';
 import { SearchMessagesQueryDto } from './dto/search-messages-query.dto';
 import { SearchMessagesResponse } from './dto/search-messages-response.dto';
 import { ListAttachmentsQueryDto } from './dto/list-attachments-query.dto';
@@ -137,6 +138,23 @@ export class ChatController {
     );
   }
 
+  @Delete('conversations/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Скрыть диалог для текущего пользователя',
+    description:
+      'Диалог пропадает только у того, кто удалил. Собеседник видит его как раньше. ' +
+      'Новое сообщение снова показывает чат в списке.',
+  })
+  @ApiNoContentResponse({ description: 'Диалог скрыт' })
+  @ApiForbiddenResponse({ description: 'Нет доступа к диалогу' })
+  async hideConversation(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) conversationId: string
+  ) {
+    await this.chatService.hideConversation(conversationId, user.userId);
+  }
+
   @Get('conversations/:id/messages/search')
   @ApiOperation({
     summary: 'Поиск сообщений в диалоге',
@@ -161,16 +179,17 @@ export class ChatController {
   @ApiOperation({
     summary: 'История сообщений',
     description:
-      'Сообщения диалога с cursor-пагинацией (от новых к старым). ' +
-      'Каждое сообщение содержит media[] и isRead (для входящих — прочитано вами; для исходящих — собеседником). ' +
-      'Без cursor по умолчанию markRead=true (диалог отмечается прочитанным). ' +
-      'cursor — id сообщения, limit по умолчанию 50. Только для участников диалога.',
+      'Страница сообщений: items + hasOlder/hasNewer. ' +
+      'Без cursor/around/after — хвост ленты (новые). cursor — старше id, after — новее id, around — окно вокруг id. ' +
+      'Параметры cursor, around и after взаимно исключают друг друга. ' +
+      'Каждое сообщение содержит media[] и isRead. ' +
+      'markRead по умолчанию true только для хвоста. Только для участников диалога.',
   })
   @ApiOkResponse({
-    description: 'Массив сообщений (хронологический порядок в ответе)',
-    type: ChatMessageResponse,
-    isArray: true,
+    description: 'Страница сообщений в хронологическом порядке',
+    type: ListMessagesResponse,
   })
+  @ApiNotFoundResponse({ description: 'Сообщение around не найдено' })
   @ApiForbiddenResponse({ description: 'Нет доступа к диалогу' })
   listMessages(
     @CurrentUser() user: AuthUser,
@@ -181,8 +200,10 @@ export class ChatController {
       conversationId,
       user.userId,
       query.cursor,
+      query.around,
+      query.after,
       query.limit,
-      query.markRead ?? (query.cursor ? false : undefined)
+      query.markRead
     );
   }
 

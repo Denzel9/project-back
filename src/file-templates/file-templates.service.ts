@@ -17,6 +17,8 @@ import {
   MAX_IMAGE_SIZE_BYTES,
   MAX_VIDEO_SIZE_BYTES,
   MIME_TO_EXTENSION,
+  ALLOWED_UPLOAD_TYPES_LABEL,
+  resolveUploadMime,
   sanitizeUploadFileName,
 } from '../media/media.constants';
 import { UploadResponseDto } from '../media/dto/upload-response.dto';
@@ -49,13 +51,14 @@ export class FileTemplatesService {
     file: Express.Multer.File,
     fileName?: string
   ): Promise<FileTemplateResponseDto> {
-    const isImage = isAllowedImageMime(file.mimetype);
-    const isVideo = isAllowedVideoMime(file.mimetype);
-    const isDocument = isAllowedDocumentMime(file.mimetype);
+    const mimeType = resolveUploadMime(file.mimetype, file.originalname);
+    const isImage = isAllowedImageMime(mimeType);
+    const isVideo = isAllowedVideoMime(mimeType);
+    const isDocument = isAllowedDocumentMime(mimeType);
 
     if (!isImage && !isVideo && !isDocument) {
       throw new BadRequestException(
-        'Недопустимый тип файла. Разрешены: JPEG, PNG, WebP, GIF, MP4, WebM, MOV, PDF, XLS, XLSX, DOC, DOCX'
+        `Недопустимый тип файла. Разрешены: ${ALLOWED_UPLOAD_TYPES_LABEL}`
       );
     }
 
@@ -72,11 +75,11 @@ export class FileTemplatesService {
       );
     }
 
-    const extension = MIME_TO_EXTENSION[file.mimetype] ?? 'bin';
+    const extension = MIME_TO_EXTENSION[mimeType] ?? 'bin';
     const key = `file-templates/${user.userId}/${randomUUID()}.${extension}`;
 
     try {
-      await this.storageService.putObject(key, file.buffer, file.mimetype);
+      await this.storageService.putObject(key, file.buffer, mimeType);
     } catch {
       throw new InternalServerErrorException('Не удалось загрузить файл');
     }
@@ -93,7 +96,7 @@ export class FileTemplatesService {
         url: this.storageService.getPublicUrl(key),
         key,
         size: String(file.size),
-        mimeType: file.mimetype,
+        mimeType,
       },
     });
 

@@ -112,9 +112,14 @@ export class AccountMembershipService {
     }
 
     if (scope === 'linked') {
+      const own = mapped.filter(
+        item =>
+          item.linkKind === 'own' &&
+          (item.role === Role.COMPANY || item.role === Role.CREATOR),
+      );
       const incoming = mapped.filter(item => item.linkKind === 'linked');
       if (!activeUserId) {
-        return incoming;
+        return [...own, ...incoming];
       }
 
       // Обратная сторона кросса: партнёры, которым мы выдали доступ к своему профилю
@@ -122,8 +127,11 @@ export class AccountMembershipService {
         accountId,
         activeUserId
       );
-      const seen = new Set(incoming.map(item => item.userId));
+      const seen = new Set(
+        [...own, ...incoming].map(item => item.userId),
+      );
       return [
+        ...own,
         ...incoming,
         ...outgoing.filter(item => !seen.has(item.userId)),
       ];
@@ -344,6 +352,18 @@ export class AccountMembershipService {
     return membership;
   }
 
+  async assertCanRevokeMembership(accountId: string, userId: string) {
+    const membership = await this.assertMembership(accountId, userId);
+
+    if (membership.role !== MembershipRole.OWNER) {
+      throw new ForbiddenException(
+        'Отзывать доступ может только владелец профиля',
+      );
+    }
+
+    return membership;
+  }
+
   createOwnerMembership(accountId: string, userId: string) {
     return this.prisma.accountMembership.create({
       data: {
@@ -400,7 +420,7 @@ export class AccountMembershipService {
       throw new NotFoundException('Запись о доступе не найдена');
     }
 
-    await this.assertCanManageMembers(actorAccountId, membership.userId);
+    await this.assertCanRevokeMembership(actorAccountId, membership.userId);
 
     if (membership.role === MembershipRole.OWNER) {
       throw new BadRequestException('Нельзя отозвать доступ владельца');

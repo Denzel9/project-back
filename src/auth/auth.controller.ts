@@ -162,7 +162,7 @@ export class AuthController {
     description:
       'Все профили User, к которым текущий Account имеет доступ: свои (OWNER) и чужие через invite. ' +
       'scope=companies — мультиаккаунт (для вкладки Компании у менеджера); ' +
-      'scope=linked — кросс-аккаунты (вкладка Профили); без scope / all — для switcher.',
+      'scope=linked — свой OWNER-профиль + кросс-аккаунты (вкладка Профили); без scope / all — для switcher.',
   })
   @ApiOkResponse({
     type: ProfileSummaryResponse,
@@ -271,9 +271,9 @@ export class AuthController {
   @ApiOperation({
     summary: 'Отозвать доступ к профилю',
     description:
-      'Удаляет membership другого человека к профилю, которым вы управляете. ' +
+      'Удаляет membership другого человека к профилю, которым вы владеете. ' +
       'id — membershipId из GET /auth/profiles. Нельзя отозвать OWNER. ' +
-      'Требуется OWNER или ADMIN на профиле.',
+      'Требуется роль OWNER на профиле.',
   })
   @ApiNoContentResponse({ description: 'Доступ отозван' })
   @ApiForbiddenResponse({ description: 'Недостаточно прав' })

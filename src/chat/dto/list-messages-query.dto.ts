@@ -1,17 +1,42 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 import { transformOptionalBoolean } from '../../common/query/query-param.transforms';
 
 export class ListMessagesQueryDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description:
-      'Cursor-пагинация: id сообщения, старше которого загружать историю',
+      'Cursor-пагинация вверх: id сообщения, старше которого загружать историю',
   })
   @IsOptional()
   @IsUUID()
   cursor?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Окно вокруг сообщения (для прыжка из поиска/закрепа). Не сочетается с cursor/after',
+  })
+  @IsOptional()
+  @IsUUID()
+  around?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Пагинация вниз: id сообщения, новее которого загружать. Не сочетается с cursor/around',
+  })
+  @IsOptional()
+  @IsUUID()
+  after?: string;
 
   @ApiPropertyOptional({
     default: 50,
@@ -29,7 +54,7 @@ export class ListMessagesQueryDto {
   @ApiPropertyOptional({
     default: true,
     description:
-      'Отметить диалог прочитанным (обновляет lastReadAt). По умолчанию true без cursor, false при cursor',
+      'Отметить диалог прочитанным. По умолчанию true только для хвоста ленты (без cursor/around/after)',
   })
   @IsOptional()
   @Transform(transformOptionalBoolean)

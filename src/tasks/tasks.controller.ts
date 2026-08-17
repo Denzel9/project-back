@@ -348,24 +348,6 @@ export class TasksController {
     return this.tasksService.rejectDeadlineExtension(user, id);
   }
 
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @UseGuards(MembershipWriteGuard, EmailConfirmedGuard)
-  @ApiOperation({
-    summary: 'Удалить задачу',
-    description:
-      'Только владелец поста. Удаляет задачу, комментарии, активности и медиа в БД; файлы задачи — в S3.',
-  })
-  @ApiNoContentResponse({ description: 'Задача удалена' })
-  @ApiNotFoundResponse({ description: 'Задача не найдена' })
-  @ApiForbiddenResponse({ description: 'Недостаточно прав' })
-  remove(
-    @CurrentUser() user: AuthUser,
-    @Param('id', ParseUUIDPipe) id: string
-  ) {
-    return this.tasksService.remove(user, id);
-  }
-
   @Get(':id/activities')
   @ApiOperation({
     summary: 'Активности задачи',

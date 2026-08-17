@@ -442,6 +442,8 @@ model ConversationParticipant {
   isMarkedUnread        Boolean      @default(false)
   isPinned              Boolean      @default(false)
   pinnedAt              DateTime?
+  /// Диалог скрыт в списке только у этого участника
+  hiddenAt              DateTime?
   conversation          Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user                  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 

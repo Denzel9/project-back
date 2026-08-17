@@ -12,6 +12,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { transformCsvArray } from '../../common/query/query-param.transforms';
 
 export class ListApplicationsQueryDto {
   @ApiPropertyOptional({
@@ -35,6 +36,16 @@ export class ListApplicationsQueryDto {
   @IsOptional()
   @IsEnum(ApplicationStatus)
   status?: ApplicationStatus;
+
+  @ApiPropertyOptional({
+    enum: ApplicationStatus,
+    isArray: true,
+    description: 'Несколько статусов через запятую, например `NEW,VIEWED`',
+  })
+  @IsOptional()
+  @Transform(transformCsvArray)
+  @IsEnum(ApplicationStatus, { each: true })
+  statuses?: ApplicationStatus[];
 
   @ApiPropertyOptional({
     description:

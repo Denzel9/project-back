@@ -5,9 +5,11 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { Post, PostAuthorType, Prisma, Role } from '@prisma/client';
 import { AuthUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
+import { MIME_TO_EXTENSION } from '../media/media.constants';
 import { StorageService } from '../media/storage.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
@@ -241,8 +243,143 @@ export class PostsService {
     return this.toResponse(post);
   }
 
+  async publishFromTemplate(
+    user: AuthUser,
+    id: string
+  ): Promise<PostResponseDto> {
+    assertMarketplaceTrader(user.role);
+
+    const template = await this.prisma.post.findUnique({
+      where: { id },
+      include: {
+        media: { orderBy: { sortOrder: 'asc' } },
+      },
+    });
+
+    if (!template) {
+      throw new NotFoundException('Пост не найден');
+    }
+
+    if (template.ownerId !== user.userId) {
+      throw new ForbiddenException('Недостаточно прав для изменения поста');
+    }
+
+    if (!template.isTemplate) {
+      throw new BadRequestException('Это не шаблон объявления');
+    }
+
+    const jsonField = (
+      value: Prisma.JsonValue | null
+    ): Prisma.InputJsonValue | typeof Prisma.JsonNull =>
+      value === null ? Prisma.JsonNull : (value as Prisma.InputJsonValue);
+
+    const created = await this.prisma.post.create({
+      data: {
+        title: template.title,
+        ownerId: user.userId,
+        type: template.type,
+        permissions: template.permissions,
+        chips: template.chips,
+        description: template.description,
+        urgent: template.urgent,
+        keyWords: template.keyWords,
+        categories: template.categories,
+        platforms: template.platforms,
+        placementFormats: template.placementFormats,
+        niche: template.niche,
+        tags: template.tags,
+        budget: jsonField(template.budget),
+        deadline: template.deadline,
+        workFormat: template.workFormat,
+        employmentType: template.employmentType,
+        location: jsonField(template.location),
+        minFollowers: template.minFollowers,
+        maxFollowers: template.maxFollowers,
+        minEngagementRate: template.minEngagementRate,
+        verifiedAccount: template.verifiedAccount,
+        experienceWithAds: template.experienceWithAds,
+        languages: template.languages,
+        contentStyle: template.contentStyle,
+        exclusivity: template.exclusivity,
+        exclusivityDays: template.exclusivityDays,
+        usageRights: template.usageRights,
+        usageDurationDays: template.usageDurationDays,
+        requiresMarking: template.requiresMarking,
+        requiresContract: template.requiresContract,
+        ndaRequired: template.ndaRequired,
+        brief: jsonField(template.brief),
+        deliverables: jsonField(template.deliverables),
+        isPrivate: false,
+        isTemplate: false,
+        isArchived: false,
+      },
+    });
+
+    const copiedKeys: string[] = [];
+
+    try {
+      for (const item of template.media) {
+        const extension =
+          MIME_TO_EXTENSION[item.mimeType] ??
+          item.key.split('.').pop()?.toLowerCase() ??
+          'bin';
+        const destKey = `posts/${created.id}/${randomUUID()}.${extension}`;
+
+        try {
+          await this.storageService.copyObject(
+            item.key,
+            destKey,
+            item.mimeType
+          );
+        } catch {
+          throw new InternalServerErrorException(
+            'Не удалось скопировать медиа шаблона'
+          );
+        }
+
+        copiedKeys.push(destKey);
+
+        await this.prisma.postMedia.create({
+          data: {
+            postId: created.id,
+            url: this.storageService.getPublicUrl(destKey),
+            key: destKey,
+            size: item.size,
+            mimeType: item.mimeType,
+            sortOrder: item.sortOrder,
+          },
+        });
+      }
+    } catch (error) {
+      await this.prisma.post.delete({ where: { id: created.id } }).catch(() => {
+        /* ignore rollback failure */
+      });
+
+      await Promise.all(
+        copiedKeys.map(key =>
+          this.storageService.deleteObject(key).catch(() => undefined)
+        )
+      );
+
+      throw error;
+    }
+
+    const post = await this.prisma.post.findUniqueOrThrow({
+      where: { id: created.id },
+      include: postWithMediaInclude,
+    });
+
+    return this.toResponse(post);
+  }
+
   async remove(user: AuthUser, id: string): Promise<void> {
-    await this.assertOwner(user.userId, id);
+    const post = await this.assertOwner(user.userId, id);
+
+    if (!post.isTemplate) {
+      throw new BadRequestException(
+        'Объявление нельзя удалить, переместите его в архив'
+      );
+    }
 
     await this.prisma.post.delete({
       where: { id },

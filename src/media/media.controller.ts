@@ -42,6 +42,8 @@ import {
   MAX_DOCUMENT_SIZE_BYTES,
   MAX_IMAGE_SIZE_BYTES,
   MAX_VIDEO_SIZE_BYTES,
+  ALLOWED_UPLOAD_TYPES_LABEL,
+  resolveUploadMime,
 } from './media.constants';
 import { MediaService } from './media.service';
 
@@ -63,7 +65,7 @@ export class MediaController {
   constructor(private readonly mediaService: MediaService) {}
 
   @Post('upload')
-  @ThrottleUpload(30)
+  @ThrottleUpload(100)
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
@@ -73,7 +75,7 @@ export class MediaController {
       'С `postId` — для поста. С `conversationId` — для чата (затем `send_message` с media[]). ' +
       'С `taskId` — для задачи (media задачи). `kind=report` — вложение отчёта (не смешивается с основными). `forComment=true` + `taskId` — для вложения в комментарий (без добавления в media задачи). ' +
       'Фото: JPEG, PNG, WebP, GIF до 10 МБ. Видео: MP4, WebM, MOV до 100 МБ. ' +
-      'Документы (PDF, XLS, XLSX, DOC, DOCX до 25 МБ) — только с `taskId` или `conversationId`.',
+      'Документы (PDF, XLS, XLSX, CSV, DOC, DOCX, ZIP до 25 МБ) — только с `taskId` или `conversationId`.',
   })
   @ApiQuery({
     name: 'postId',
@@ -190,13 +192,14 @@ export class MediaController {
       );
     }
 
-    const isImage = isAllowedImageMime(file.mimetype);
-    const isVideo = isAllowedVideoMime(file.mimetype);
-    const isDocument = isAllowedDocumentMime(file.mimetype);
+    const mimeType = resolveUploadMime(file.mimetype, file.originalname);
+    const isImage = isAllowedImageMime(mimeType);
+    const isVideo = isAllowedVideoMime(mimeType);
+    const isDocument = isAllowedDocumentMime(mimeType);
 
     if (!isImage && !isVideo && !isDocument) {
       throw new BadRequestException(
-        'Недопустимый тип файла. Разрешены: JPEG, PNG, WebP, GIF, MP4, WebM, MOV, PDF, XLS, XLSX, DOC, DOCX'
+        `Недопустимый тип файла. Разрешены: ${ALLOWED_UPLOAD_TYPES_LABEL}`
       );
     }
 
@@ -229,6 +232,7 @@ export class MediaController {
         ...(forComment && { forComment: true }),
         ...(taskMediaKind && { taskMediaKind }),
         ...(bodyFileName !== undefined && { fileName: bodyFileName }),
+        mimeType,
       },
       user.accountId
     );

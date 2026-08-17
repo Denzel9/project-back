@@ -38,7 +38,7 @@ Backend для marketplace creator ↔ company. Документация для 
 ### Редактирование профиля
 - \`PATCH /users/update\` — единственный эндпоинт обновления (поля User + name/companyName по роли).
 ### Загрузка медиа
-1. \`POST /media/upload\` — multipart, поле \`file\`. Фото/видео — профиль, пост, чат, задача. Документы (PDF, XLS, XLSX, DOC, DOCX) — только чат (\`?conversationId=\`) и задача (\`?taskId=\`). Для задачи: \`?kind=main\` (по умолчанию) или \`?kind=report\` — отчёт исполнителя. Ответ: публичный \`url\`.
+1. \`POST /media/upload\` — multipart, поле \`file\`. Фото/видео — профиль, пост, чат, задача. Документы (PDF, XLS, XLSX, CSV, DOC, DOCX, ZIP) — только чат (\`?conversationId=\`) и задача (\`?taskId=\`). Для задачи: \`?kind=main\` (по умолчанию) или \`?kind=report\` — отчёт исполнителя. Ответ: публичный \`url\`.
 2. \`PATCH /users/update\` — сохранить URL в \`avatar\`, \`banner\` и т.д.
 
 ### Посты с медиа
@@ -79,11 +79,10 @@ Backend для marketplace creator ↔ company. Документация для 
 2f. \`GET /tasks/stats\` — счётчики для дашборда: \`awaitingAction\`, \`awaitingConfirmation\`, \`unassigned\`, \`overdue\`, \`urgent\`, \`underReview\`, \`cancelled\`. Фильтры: \`role\`, \`postId\`.
 3. \`POST /tasks\` — создать задачу вручную (владелец поста: \`postId\`, опционально \`executorId\`). Без отклика; \`applicationId\` = null. Исполнителя можно назначить позже через \`PATCH /tasks/:id\`.
 4. \`GET /tasks/:id\` — задача с \`media[]\` (основные) и \`reportMedia[]\` (отчёт). Комментарии — отдельно (\`GET /tasks/:id/comments\`). Исполнитель не видит \`post\`.
-5. \`PATCH /tasks/:id\` — owner: все поля (включая \`executorId\`); executor: только status. \`description\` — Markdown (хранится как строка).
-6. \`DELETE /tasks/:id\` — удалить задачу (только owner поста).
-7. Медиа задачи: \`POST /media/upload?taskId=\` (main), \`?taskId=&kind=report\` (отчёт), \`GET /tasks/:id/attachments\` (фильтры kind, type).
-8. Комментарии: \`GET/POST /tasks/:id/comments\`, \`POST .../comments/read\`, \`GET .../comments/search?q=\`, \`GET .../comments/attachments\`, \`PATCH/DELETE .../comments/:commentId\`. Поля: \`editedAt\`, \`isRead\`. Вложения: \`POST /media/upload?taskId=&forComment=true\`. Realtime — WebSocket \`/task-comments\`.
-9. При переходе задачи в \`COMPLETED\` автоматически создаётся публикация (снимок \`reportMedia\` и метаданных задачи). См. раздел «Публикации».
+5. \`PATCH /tasks/:id\` — owner: все поля (включая \`executorId\`); executor: только status. \`description\` — Markdown (хранится как строка). Задачу удалить нельзя — только архивировать.
+6. Медиа задачи: \`POST /media/upload?taskId=\` (main), \`?taskId=&kind=report\` (отчёт), \`GET /tasks/:id/attachments\` (фильтры kind, type).
+7. Комментарии: \`GET/POST /tasks/:id/comments\`, \`POST .../comments/read\`, \`GET .../comments/search?q=\`, \`GET .../comments/attachments\`, \`PATCH/DELETE .../comments/:commentId\`. Поля: \`editedAt\`, \`isRead\`. Вложения: \`POST /media/upload?taskId=&forComment=true\`. Realtime — WebSocket \`/task-comments\`.
+8. При переходе задачи в \`COMPLETED\` автоматически создаётся публикация (снимок \`reportMedia\` и метаданных задачи). См. раздел «Публикации».
 
 ### Публикации
 1. Создаются **автоматически** при \`PATCH /tasks/:id\` → \`status: COMPLETED\` (снимок \`reportMedia\` и полей задачи). Ручного \`POST /publications\` нет.
