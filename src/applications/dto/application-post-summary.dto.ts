@@ -16,6 +16,9 @@ export class ApplicationPostSummaryDto {
   @ApiProperty({ format: 'uuid' })
   ownerId: string;
 
+  @ApiProperty()
+  isArchived: boolean;
+
   @ApiPropertyOptional({ type: ApplicationOwnerDto })
   owner?: ApplicationOwnerDto;
 

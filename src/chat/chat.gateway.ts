@@ -19,6 +19,7 @@ import { ChatService } from './chat.service';
 import {
   ChatErrorPayload,
   ChatMessageDto,
+  ChatPresencePayload,
   DeleteMessagePayload,
   EditMessagePayload,
   JoinConversationPayload,
@@ -89,14 +90,45 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       };
 
       await client.join(`user:${payload.sub}`);
+
+      const alreadyOnline = await this.isUserConnected(payload.sub, client.id);
+
+      if (!alreadyOnline) {
+        await this.broadcastPresence(payload.sub, true, null);
+      }
     } catch {
       this.emitError(client, 'Неверный access-токен');
       client.disconnect();
     }
   }
 
-  handleDisconnect(client: AuthenticatedSocket) {
+  async handleDisconnect(client: AuthenticatedSocket) {
     this.logger.debug(`Client disconnected: ${client.id}`);
+
+    const userId = client.data.user?.userId;
+
+    if (!userId) {
+      return;
+    }
+
+    const lastSeenAt = new Date();
+
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { lastSeenAt },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to persist lastSeenAt for ${userId}: ${this.getErrorMessage(error)}`
+      );
+    }
+
+    const stillOnline = await this.isUserConnected(userId, client.id);
+
+    if (!stillOnline) {
+      await this.broadcastPresence(userId, false, lastSeenAt.toISOString());
+    }
   }
 
   @SubscribeMessage('join_conversation')
@@ -291,6 +323,64 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     payload: { conversationId: string; messageIds: string[] }
   ): void {
     this.server.to(this.getUserRoomName(userId)).emit('messages_hidden', payload);
+  }
+
+  async isUserConnected(userId: string, excludeSocketId?: string): Promise<boolean> {
+    try {
+      const sockets = await this.server
+        .in(this.getUserRoomName(userId))
+        .fetchSockets();
+
+      return sockets.some(socket => socket.id !== excludeSocketId);
+    } catch {
+      return false;
+    }
+  }
+
+  private async broadcastPresence(
+    userId: string,
+    isOnline: boolean,
+    lastSeenAt: string | null
+  ) {
+    const payload: ChatPresencePayload = { userId, isOnline, lastSeenAt };
+
+    this.server.to(this.getUserRoomName(userId)).emit('presence', payload);
+
+    try {
+      const conversations = await this.prisma.conversation.findMany({
+        where: {
+          participants: { some: { userId } },
+        },
+        select: {
+          id: true,
+          isNotes: true,
+          participants: {
+            where: { userId: { not: userId } },
+            select: { userId: true },
+          },
+        },
+      });
+
+      for (const conversation of conversations) {
+        this.server
+          .to(this.getRoomName(conversation.id))
+          .emit('presence', payload);
+
+        if (conversation.isNotes) {
+          continue;
+        }
+
+        for (const participant of conversation.participants) {
+          this.server
+            .to(this.getUserRoomName(participant.userId))
+            .emit('presence', payload);
+        }
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to broadcast presence for ${userId}: ${this.getErrorMessage(error)}`
+      );
+    }
   }
 
   private getRoomName(conversationId: string): string {

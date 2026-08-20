@@ -174,7 +174,7 @@ export class TasksController {
       '`unassigned` — без исполнителя (`executorId: null`, `isExecutorApprove: null`, только owner). ' +
       '`overdue` — `finalDate` в прошлом. `urgent` — срочные активные. `underReview` — `CHECKING`. ' +
       '`cancelled` — аннулированные (`ANNULLED`). ' +
-      'Фильтры: `role`, `postId`.',
+      'Фильтры: `role`, `postId`, `executorId`, `ownerId`, `dateFrom`/`dateTo`, `assigneeMine`, `assigneeAccountId`.',
   })
   @ApiOkResponse({ type: TaskStatsResponseDto })
   getStats(
@@ -223,7 +223,7 @@ export class TasksController {
   @ApiOperation({
     summary: 'Обновить задачу',
     description:
-      'owner — все поля (включая `executorId`, `isExecutorApprove`, JSON: `location`, `brief`, `deliverables`, nested `bloggerRequirements`/`cooperationDetails`); executor — `status`, `isExecutorApprove` и `isCompanyAction`. `description` — Markdown.',
+      'owner — все поля (включая `executorId`, `isExecutorApprove`, JSON: `location`, `brief`, `deliverables`, nested `bloggerRequirements`/`cooperationDetails`); executor — `status`, `isExecutorApprove` и `isCompanyAction`. `description` — Markdown. Архив (`isArchived: true`) — только для COMPLETED, ANNULLED или PREPARING, пока исполнитель не подтвердил участие.',
   })
   @ApiOkResponse({ type: TaskResponseDto })
   @ApiNotFoundResponse({ description: 'Задача не найдена' })

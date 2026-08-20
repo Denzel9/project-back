@@ -52,6 +52,7 @@ const applicationInclude = {
       title: true,
       type: true,
       ownerId: true,
+      isArchived: true,
       media: {
         select: {
           id: true,
@@ -453,7 +454,7 @@ export class ApplicationsService {
   }
 
   private buildPostListFilter(
-    query: Pick<ListApplicationsQueryDto, 'q' | 'type'>
+    query: Pick<ListApplicationsQueryDto, 'q' | 'type' | 'isArchived'>
   ): Prisma.PostWhereInput | undefined {
     const parts: Prisma.PostWhereInput[] = [];
 
@@ -463,6 +464,10 @@ export class ApplicationsService {
 
     if (query.type !== undefined) {
       parts.push({ type: query.type });
+    }
+
+    if (query.isArchived !== undefined) {
+      parts.push({ isArchived: query.isArchived });
     }
 
     if (parts.length === 0) {
@@ -478,7 +483,7 @@ export class ApplicationsService {
 
   private buildIncomingPostFilter(
     ownerId: string,
-    query: Pick<ListApplicationsQueryDto, 'postId' | 'q' | 'type'>
+    query: Pick<ListApplicationsQueryDto, 'postId' | 'q' | 'type' | 'isArchived'>
   ): Prisma.PostWhereInput {
     const parts: Prisma.PostWhereInput[] = [{ ownerId }];
 
@@ -494,6 +499,10 @@ export class ApplicationsService {
 
     if (query.type !== undefined) {
       parts.push({ type: query.type });
+    }
+
+    if (query.isArchived !== undefined) {
+      parts.push({ isArchived: query.isArchived });
     }
 
     if (parts.length === 1) {
@@ -875,6 +884,7 @@ export class ApplicationsService {
           title: application.post.title,
           type: application.post.type,
           ownerId: application.post.owner.id,
+          isArchived: application.post.isArchived,
           owner: mapOwnerWithStats(application.post.owner),
           media: application.post.media.map(media => ({
             id: media.id,

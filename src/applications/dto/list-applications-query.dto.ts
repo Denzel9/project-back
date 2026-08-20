@@ -2,6 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { ApplicationStatus, PostAuthorType } from '@prisma/client';
 import { Type, Transform } from 'class-transformer';
 import {
+  IsBoolean,
   IsEnum,
   IsInt,
   IsOptional,
@@ -12,7 +13,10 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { transformCsvArray } from '../../common/query/query-param.transforms';
+import {
+  transformCsvArray,
+  transformOptionalBoolean,
+} from '../../common/query/query-param.transforms';
 
 export class ListApplicationsQueryDto {
   @ApiPropertyOptional({
@@ -80,6 +84,14 @@ export class ListApplicationsQueryDto {
     message: 'createdDate должен быть в формате YYYY-MM-DD',
   })
   createdDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Только отклики на архивные объявления',
+  })
+  @IsOptional()
+  @Transform(transformOptionalBoolean)
+  @IsBoolean()
+  isArchived?: boolean;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()

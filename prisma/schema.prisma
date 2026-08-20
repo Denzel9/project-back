@@ -275,6 +275,7 @@ model User {
   sentMessages             Message[]
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
+  lastSeenAt               DateTime?
   contacts                 Json?
   person                   Json?
   phone                    String?

@@ -77,6 +77,14 @@ export type ChatPeerDto = {
   role: string;
   avatar: string | null;
   displayName: string;
+  isOnline: boolean;
+  lastSeenAt: Date | null;
+};
+
+export type ChatPresencePayload = {
+  userId: string;
+  isOnline: boolean;
+  lastSeenAt: string | null;
 };
 
 export type ChatConversationDto = {

@@ -13,4 +13,16 @@ export class ChatPeerResponse {
 
   @ApiProperty({ example: 'John Doe' })
   displayName: string;
+
+  @ApiProperty({
+    description: 'Собеседник сейчас в сети (есть активное WebSocket-подключение к /chat)',
+  })
+  isOnline: boolean;
+
+  @ApiProperty({
+    format: 'date-time',
+    nullable: true,
+    description: 'Когда собеседник был в сети в последний раз',
+  })
+  lastSeenAt: Date | null;
 }

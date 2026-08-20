@@ -1809,12 +1809,16 @@ export class ChatService {
       peer = {
         ...this.mapPeer(viewerParticipant.user),
         displayName: 'Заметки',
+        isOnline: true,
       };
       peerLastReadAt = viewerParticipant.lastReadAt;
     } else if (!peerParticipant) {
       throw new NotFoundException('Собеседник не найден');
     } else {
-      peer = this.mapPeer(peerParticipant.user);
+      peer = {
+        ...this.mapPeer(peerParticipant.user),
+        isOnline: await this.chatGateway.isUserConnected(peerParticipant.userId),
+      };
       peerLastReadAt = peerParticipant.lastReadAt;
     }
 
@@ -1854,12 +1858,18 @@ export class ChatService {
   }
 
   private mapPeer(user: NonNullable<UserWithProfile>): ChatPeerDto {
+    const presence = {
+      isOnline: false,
+      lastSeenAt: user.lastSeenAt ?? null,
+    };
+
     if (user.role === Role.CREATOR && user.creatorProfile) {
       return {
         id: user.id,
         role: user.role,
         avatar: user.avatar,
         displayName: `${user.creatorProfile.name} ${user.creatorProfile.lastName}`,
+        ...presence,
       };
     }
 
@@ -1869,6 +1879,7 @@ export class ChatService {
         role: user.role,
         avatar: user.avatar,
         displayName: user.companyProfile.companyName,
+        ...presence,
       };
     }
 
@@ -1877,6 +1888,7 @@ export class ChatService {
       role: user.role,
       avatar: user.avatar,
       displayName: user.role,
+      ...presence,
     };
   }
 

@@ -90,7 +90,8 @@ export class UpdateTaskDto {
   urgent?: boolean;
 
   @ApiPropertyOptional({
-    description: '`true` — в архив, `false` — вернуть из архива (только владелец)',
+    description:
+      '`true` — в архив, `false` — вернуть из архива (только владелец). В архив можно отправить завершённую, аннулированную задачу или задачу на стадии подготовки, пока исполнитель не подтвердил участие.',
   })
   @IsOptional()
   @Type(() => Boolean)

@@ -76,10 +76,10 @@ Backend для marketplace creator ↔ company. Документация для 
 2c. \`GET /tasks/comments\` — лента комментариев по всем доступным задачам (\`?role=owner|executor\`, \`?taskId=\`, \`?q=\`).
 2d. \`GET /tasks/with-comments\` — задачи с комментариями: превью последнего, \`commentsCount\`, \`unreadCount\` (по lastReadAt).
 2e. \`GET /tasks/calendar\` — компактный список для календаря (id, postId, даты, urgent, finalDate, title, owner, executor). Фильтры: \`dateFrom\`/\`dateTo\` + \`dateField=createdAt|updatedAt|finalDate\`, \`urgent\`, \`ownerId\`, \`executorId\`, \`role\`.
-2f. \`GET /tasks/stats\` — счётчики для дашборда: \`awaitingAction\`, \`awaitingConfirmation\`, \`unassigned\`, \`overdue\`, \`urgent\`, \`underReview\`, \`cancelled\`. Фильтры: \`role\`, \`postId\`.
+2f. \`GET /tasks/stats\` — счётчики для дашборда: \`awaitingAction\`, \`awaitingConfirmation\`, \`unassigned\`, \`overdue\`, \`urgent\`, \`underReview\`, \`cancelled\`. Фильтры: \`role\`, \`postId\`, \`executorId\`, \`ownerId\`, \`dateFrom\`/\`dateTo\`, \`assigneeMine\`, \`assigneeAccountId\`.
 3. \`POST /tasks\` — создать задачу вручную (владелец поста: \`postId\`, опционально \`executorId\`). Без отклика; \`applicationId\` = null. Исполнителя можно назначить позже через \`PATCH /tasks/:id\`.
 4. \`GET /tasks/:id\` — задача с \`media[]\` (основные) и \`reportMedia[]\` (отчёт). Комментарии — отдельно (\`GET /tasks/:id/comments\`). Исполнитель не видит \`post\`.
-5. \`PATCH /tasks/:id\` — owner: все поля (включая \`executorId\`); executor: только status. \`description\` — Markdown (хранится как строка). Задачу удалить нельзя — только архивировать.
+5. \`PATCH /tasks/:id\` — owner: все поля (включая \`executorId\`); executor: только status. \`description\` — Markdown (хранится как строка). Задачу удалить нельзя — только архивировать (завершённую, аннулированную или на подготовке без подтверждения исполнителя).
 6. Медиа задачи: \`POST /media/upload?taskId=\` (main), \`?taskId=&kind=report\` (отчёт), \`GET /tasks/:id/attachments\` (фильтры kind, type).
 7. Комментарии: \`GET/POST /tasks/:id/comments\`, \`POST .../comments/read\`, \`GET .../comments/search?q=\`, \`GET .../comments/attachments\`, \`PATCH/DELETE .../comments/:commentId\`. Поля: \`editedAt\`, \`isRead\`. Вложения: \`POST /media/upload?taskId=&forComment=true\`. Realtime — WebSocket \`/task-comments\`.
 8. При переходе задачи в \`COMPLETED\` автоматически создаётся публикация (снимок \`reportMedia\` и метаданных задачи). См. раздел «Публикации».
@@ -134,7 +134,8 @@ Backend для marketplace creator ↔ company. Документация для 
 - \`edit_message\` → \`{ conversationId, messageId, content }\`
 - \`delete_message\` → \`{ conversationId, messageId }\`
 - \`mark_read\` → \`{ conversationId }\`
-- Ответ: \`message\`, \`message_edited\`, \`message_deleted\`, \`messages_read\`, ошибки: \`error\`
+- Ответ: \`message\`, \`message_edited\`, \`message_deleted\`, \`messages_read\`, \`presence\` \`{ userId, isOnline, lastSeenAt }\`, ошибки: \`error\`
+- Presence: при connect/disconnect пользователя рассылается \`presence\` в комнаты его диалогов и собеседникам. В REST \`peer\` есть \`isOnline\` и \`lastSeenAt\`.
 
 ## WebSocket /task-comments
 

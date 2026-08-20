@@ -39,6 +39,9 @@ import {
   buildCompanyNameSearch,
   buildCreatorNameSearch,
 } from '../partners/partner-filters.util';
+import { PrimeSubscriptionService } from '../billing/prime-subscription.service';
+import { ChatGateway } from '../chat/chat.gateway';
+import { ChatService } from '../chat/chat.service';
 import { StorageService } from '../media/storage.service';
 import { ALLOWED_DOCUMENT_MIME_TYPES, MAX_TASK_REPORT_MEDIA, sanitizeUploadFileName } from '../media/media.constants';
 import { formatTaskStatus } from '../notifications/notification-labels.util';
@@ -239,6 +242,11 @@ export class TasksService {
     private readonly notificationsService: NotificationsService,
     private readonly publicationsService: PublicationsService,
     private readonly actorAttribution: ActorAttributionService,
+    private readonly primeSubscriptionService: PrimeSubscriptionService,
+    @Inject(forwardRef(() => ChatService))
+    private readonly chatService: ChatService,
+    @Inject(forwardRef(() => ChatGateway))
+    private readonly chatGateway: ChatGateway,
     @Inject(forwardRef(() => TaskCommentsGateway))
     private readonly taskCommentsGateway: TaskCommentsGateway
   ) {}
@@ -387,6 +395,13 @@ export class TasksService {
           meta: { postTitle: task.post.title, taskTitle: task.title },
         },
       });
+      await this.sendExecutorInviteToChat({
+        taskId: task.id,
+        ownerId: task.ownerId,
+        executorId: task.executorId,
+        title,
+        actorAccountId: assignee.accountId,
+      });
     }
 
     return this.toResponse(taskWithMedia, {
@@ -436,12 +451,16 @@ export class TasksService {
       }),
       this.prisma.task.count({
         where: {
-          ...activeWhere,
-          isExecutorApprove: null,
-          executorId: { not: null },
+          AND: [
+            activeWhere,
+            {
+              isExecutorApprove: null,
+              executorId: { not: null },
+            },
+          ],
         },
       }),
-      query.role === TaskListRole.EXECUTOR
+      query.role === TaskListRole.EXECUTOR || query.executorId !== undefined
         ? Promise.resolve(0)
         : this.prisma.task.count({
           where: {
@@ -1071,6 +1090,23 @@ export class TasksService {
 
     const isOwner = task.ownerId === user.userId;
 
+    if (dto.isArchived === true && !task.isArchived) {
+      if (!isOwner) {
+        throw new ForbiddenException('Архивировать задачу может только владелец');
+      }
+
+      const canArchive =
+        TERMINAL_TASK_STATUSES.includes(task.status) ||
+        (task.status === TaskStatus.PREPARING &&
+          task.isExecutorApprove !== true);
+
+      if (!canArchive) {
+        throw new BadRequestException(
+          'В архив можно переместить только завершённую, аннулированную задачу или задачу на стадии подготовки, пока исполнитель не подтвердил участие'
+        );
+      }
+    }
+
     if (dto.postId !== undefined) {
       if (!isOwner) {
         throw new ForbiddenException(
@@ -1122,6 +1158,15 @@ export class TasksService {
     }
 
     const data = this.buildUpdateData(dto, isOwner, nextAssignee);
+    const shouldResetExecutorApprove =
+      isOwner &&
+      dto.executorId !== undefined &&
+      (dto.executorId !== task.executorId || task.isExecutorApprove !== null);
+
+    if (shouldResetExecutorApprove) {
+      data.isExecutorApprove = null;
+    }
+
     const changes = this.collectTaskChanges(task, dto, isOwner, nextAssignee);
     const actor = await this.actorAttribution.resolve(
       user.accountId,
@@ -1168,6 +1213,16 @@ export class TasksService {
       actor
     );
     await this.dispatchPublicationOnCompleted(updated, user.userId, changes);
+
+    if (updated.executorId && shouldResetExecutorApprove) {
+      await this.sendExecutorInviteToChat({
+        taskId: updated.id,
+        ownerId: updated.ownerId,
+        executorId: updated.executorId,
+        title: updated.title ?? updated.post?.title ?? '',
+        actorAccountId: actor.accountId,
+      });
+    }
 
     return this.toResponse(updated, {
       includePost: true,
@@ -1268,6 +1323,21 @@ export class TasksService {
           },
         },
       });
+
+      if (task.executorId) {
+        await this.sendTaskRequestToChat({
+          kind: 'annulment',
+          taskId: updated.id,
+          requestId: created.id,
+          ownerId: task.ownerId,
+          executorId: task.executorId,
+          requesterId: user.userId,
+          recipientId,
+          title: taskTitle,
+          reason: created.reason,
+          actorAccountId: user.accountId,
+        });
+      }
     }
 
     return this.toResponse(
@@ -1574,6 +1644,22 @@ export class TasksService {
           },
         },
       });
+
+      if (task.executorId) {
+        await this.sendTaskRequestToChat({
+          kind: 'deadline',
+          taskId: updated.id,
+          requestId: created.id,
+          ownerId: task.ownerId,
+          executorId: task.executorId,
+          requesterId: user.userId,
+          recipientId,
+          title: taskTitle,
+          reason: created.reason,
+          proposedFinalDate: created.proposedFinalDate,
+          actorAccountId: user.accountId,
+        });
+      }
     }
 
     return this.toResponse(
@@ -3208,6 +3294,135 @@ export class TasksService {
     Object.assign(data, taskJsonFieldsFromDto(dto));
 
     return data;
+  }
+
+  private async sendExecutorInviteToChat(params: {
+    taskId: string;
+    ownerId: string;
+    executorId: string;
+    title: string;
+    actorAccountId?: string;
+  }) {
+    try {
+      const subscription = await this.primeSubscriptionService.getSubscription(
+        params.executorId
+      );
+
+      if (subscription.isPrime) {
+        return;
+      }
+
+      const conversation = await this.chatService.findOrCreateConversation(
+        params.ownerId,
+        params.executorId
+      );
+
+      const title = params.title.trim();
+      const body = title
+        ? `Вас назначили исполнителем задачи «${title}»`
+        : 'Вас назначили исполнителем задачи';
+      const content = `<!-- chat-task-invite:${params.taskId} -->\n${body}`;
+
+      const message = await this.chatService.createMessage(
+        conversation.id,
+        params.ownerId,
+        content,
+        [],
+        {
+          skipNotify: true,
+          skipApplicantWriteGuard: true,
+        },
+        params.actorAccountId
+      );
+
+      this.chatGateway.broadcastMessage(conversation.id, message);
+    } catch (error) {
+      this.logger.error(
+        'Не удалось отправить приглашение исполнителю в чат',
+        error
+      );
+    }
+  }
+
+  private formatChatRequestDate(date: Date): string {
+    return date.toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
+  }
+
+  private async sendTaskRequestToChat(params: {
+    kind: 'annulment' | 'deadline';
+    taskId: string;
+    requestId: string;
+    ownerId: string;
+    executorId: string;
+    requesterId: string;
+    recipientId: string;
+    title: string;
+    reason: string;
+    proposedFinalDate?: Date;
+    actorAccountId?: string;
+  }) {
+    try {
+      const subscription = await this.primeSubscriptionService.getSubscription(
+        params.recipientId
+      );
+
+      if (subscription.isPrime) {
+        return;
+      }
+
+      const conversation = await this.chatService.findOrCreateConversation(
+        params.ownerId,
+        params.executorId
+      );
+
+      const title = params.title.trim() || 'Задача';
+      const reason = params.reason.trim();
+      const marker =
+        params.kind === 'annulment'
+          ? `<!-- chat-task-annulment:${params.taskId}:${params.requestId} -->`
+          : `<!-- chat-task-deadline:${params.taskId}:${params.requestId} -->`;
+      const heading =
+        params.kind === 'annulment'
+          ? `Запрос на аннулирование задачи «${title}»`
+          : `Запрос на перенос дедлайна задачи «${title}»`;
+      const lines = [marker, heading];
+
+      if (params.kind === 'deadline' && params.proposedFinalDate) {
+        lines.push(
+          `Новая дата: ${this.formatChatRequestDate(params.proposedFinalDate)}`
+        );
+      }
+
+      if (reason) {
+        lines.push(`Причина: ${reason}`);
+      }
+
+      const message = await this.chatService.createMessage(
+        conversation.id,
+        params.requesterId,
+        lines.join('\n'),
+        [],
+        {
+          skipNotify: true,
+          skipApplicantWriteGuard: true,
+        },
+        params.actorAccountId
+      );
+
+      this.chatGateway.broadcastMessage(conversation.id, message);
+    } catch (error) {
+      this.logger.error(
+        params.kind === 'annulment'
+          ? 'Не удалось отправить запрос на аннулирование в чат'
+          : 'Не удалось отправить запрос на перенос дедлайна в чат',
+        error
+      );
+    }
   }
 
   private async getTaskOrThrow(id: string) {
