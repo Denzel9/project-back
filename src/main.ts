@@ -8,6 +8,7 @@ import { SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
+import { buildCorsOptions } from './common/cors';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { formatValidationErrors } from './common/validation/format-validation-errors';
 import { getRedisUrl } from './redis/redis-connection';
@@ -40,16 +41,12 @@ async function bootstrap() {
   );
 
   app.use(cookieParser());
-
-  app.enableCors({
-    origin: [process.env.CORS_ORIGIN, 'http://localhost:4173'],
-    credentials: true,
-  });
+  app.enableCors(buildCorsOptions());
 
   const document = buildSwaggerDocument(app);
 
   SwaggerModule.setup('docs', app, document);
 
-  await app.listen(process.env.PORT ?? 3010);
+  await app.listen(process.env.PORT ?? 3010, '0.0.0.0');
 }
 bootstrap();

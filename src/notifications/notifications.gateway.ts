@@ -11,6 +11,7 @@ import { MembershipRole, Role } from '@prisma/client';
 import { Server, Socket } from 'socket.io';
 import { JwtPayload } from '../auth/auth.types';
 import { extractAccessTokenFromHandshake } from '../chat/ws-auth.util';
+import { buildSocketCorsOrigin } from '../common/cors';
 import { NotificationResponseDto } from './dto/notification-response.dto';
 
 type AuthenticatedSocket = Socket & {
@@ -28,7 +29,7 @@ type AuthenticatedSocket = Socket & {
 @WebSocketGateway({
   namespace: '/notifications',
   cors: {
-    origin: process.env.CORS_ORIGIN,
+    origin: buildSocketCorsOrigin(),
     credentials: true,
   },
 })

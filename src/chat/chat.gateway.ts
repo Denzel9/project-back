@@ -29,6 +29,7 @@ import {
   SendMessagePayload,
 } from './chat.types';
 import { extractAccessTokenFromHandshake } from './ws-auth.util';
+import { buildSocketCorsOrigin } from '../common/cors';
 
 type AuthenticatedSocket = Socket & {
   data: {
@@ -45,7 +46,7 @@ type AuthenticatedSocket = Socket & {
 @WebSocketGateway({
   namespace: '/chat',
   cors: {
-    origin: process.env.CORS_ORIGIN,
+    origin: buildSocketCorsOrigin(),
     credentials: true,
   },
 })

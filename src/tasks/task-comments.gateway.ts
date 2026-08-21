@@ -15,6 +15,7 @@ import { MembershipRole, Role } from '@prisma/client';
 import { AccountMembershipService } from '../accounts/account-membership.service';
 import { AuthUser, JwtPayload } from '../auth/auth.types';
 import { extractAccessTokenFromHandshake } from '../chat/ws-auth.util';
+import { buildSocketCorsOrigin } from '../common/cors';
 import { TasksService } from './tasks.service';
 import {
   CommentDeletedPayload,
@@ -43,7 +44,7 @@ type AuthenticatedSocket = Socket & {
 @WebSocketGateway({
   namespace: '/task-comments',
   cors: {
-    origin: process.env.CORS_ORIGIN,
+    origin: buildSocketCorsOrigin(),
     credentials: true,
   },
 })

@@ -100,7 +100,17 @@ export class ListPostsQueryDto {
 
   @ApiPropertyOptional({
     description:
-      'Фильтр по наличию фото в посте (PostMedia с mimeType image/*). true — только с фото, false — без фото',
+      'Фильтр по наличию медиа в посте (PostMedia image/* или video/*). true — только с медиа, false — без медиа. Алиас: hasPhoto',
+  })
+  @IsOptional()
+  @Transform(transformOptionalBoolean)
+  @IsBoolean()
+  hasMedia?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Устаревший алиас hasMedia: фильтр по наличию фото/видео в посте',
+    deprecated: true,
   })
   @IsOptional()
   @Transform(transformOptionalBoolean)
